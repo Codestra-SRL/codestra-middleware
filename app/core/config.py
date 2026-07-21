@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     outbox_base_delay_seconds: int = 5
     outbox_max_delay_seconds: int = 300
     outbox_lease_seconds: int = 60
+    maintenance_interval_seconds: int = 30
     automation_allowed_campaigns: str = "TEST_SYN"
     automation_environment: str = "test"
     automation_hmac_secret: str = ""
