@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -35,6 +36,13 @@ def redact(value: Any) -> Any:
         }
     if isinstance(value, list):
         return [redact(item) for item in value]
+    if isinstance(value, str):
+        value = re.sub(
+            r"(?i)\b(authorization|cookie|credential|password|secret|token)\s*[:=]\s*[^\s,;]+",
+            r"\1=[REDACTED]",
+            value,
+        )
+        value = re.sub(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", value)
     return value
 
 

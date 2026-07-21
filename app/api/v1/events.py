@@ -1,5 +1,6 @@
 import hashlib
 import json
+from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,7 @@ async def ingest_vicidial(
     signature: str | None = Header(default=None, alias="X-Signature"),
     timestamp: str | None = Header(default=None, alias="X-Timestamp"),
     client_instance: str | None = Header(default=None, alias="X-Client-Instance-ID"),
+    x_correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
     db: AsyncSession = Depends(get_session),
 ):
     if not idempotency_key or not client_instance:
@@ -67,16 +69,25 @@ async def ingest_vicidial(
             raise HTTPException(409, "idempotency key conflict")
         return existing.response
     stored_event = sanitize_for_storage(event.model_dump())
+    corr = x_correlation_id or str(uuid4())
     incoming = IntegrationEvent(
+        idempotency_key=key_hash,
         event_type="vicidial",
-        campaign_id=event.campaign_id,
-        payload=stored_event,
+        source_system="vicidial",
+        correlation_id=corr,
+        payload_json=stored_event,
         payload_hash=request_hash,
+        state="queued",
     )
     db.add(incoming)
     await db.flush()
     db.add(IntegrationDelivery(event_id=incoming.id, target="odoo"))
-    response = {"accepted": True, "event_id": str(incoming.id), "status": "queued"}
+    response = {
+        "accepted": True,
+        "event_id": str(incoming.id),
+        "status": "queued",
+        "correlation_id": corr,
+    }
     db.add(
         IdempotencyRecord(
             scope=scope,

@@ -23,15 +23,14 @@ class Base(DeclarativeBase):
 
 class IntegrationEvent(Base):
     __tablename__ = "integration_event"
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
-    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    source: Mapped[str] = mapped_column(String(50), nullable=False, default="vicidial")
-    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    source_system: Mapped[str] = mapped_column(String(50), nullable=False, default="vicidial")
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -43,7 +42,8 @@ class IntegrationDelivery(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    event_id: Mapped[UUID] = mapped_column(
+    event_id: Mapped[int] = mapped_column(
+        BigInteger,
         ForeignKey("integration_event.id", ondelete="CASCADE"), nullable=False
     )
     target: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -101,9 +101,13 @@ class OutboxEvent(Base):
     )
     topic: Mapped[str] = mapped_column(String(128))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), index=True)
     status: Mapped[str] = mapped_column(String(24), default="pending")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    replay_count: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

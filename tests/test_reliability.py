@@ -21,6 +21,7 @@ def test_transactional_outbox_retry_dead_letter_replay_and_restart_recovery():
     policy = RetryPolicy(max_attempts=3, base_seconds=5, max_seconds=20)
     item = OutboxItem("event-1", "test", {}, "corr-1")
     item.fail("token=never-log", policy, NOW)
+    assert "never-log" not in (item.last_error or "")
     assert (item.status, item.attempts, item.next_attempt_at) == (
         "retry",
         1,

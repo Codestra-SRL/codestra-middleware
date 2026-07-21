@@ -40,6 +40,7 @@ class Transfer(BaseModel):
     target: str
     reason: str | None = None
     campaign_id: str = "TEST_SYN"
+    do_not_call: bool = False
 
 
 class Compliance(BaseModel):
@@ -116,6 +117,8 @@ async def event(
     if row:
         return row.response
     eid = body.event_id or str(uuid4())
+    stored["event_id"] = eid
+    stored["correlation_id"] = corr
     db.add(
         EventInbox(
             event_id=eid,
@@ -125,7 +128,7 @@ async def event(
             correlation_id=corr,
         )
     )
-    db.add(OutboxEvent(topic="event.accepted", payload=stored))
+    db.add(OutboxEvent(topic="event.accepted", payload=stored, correlation_id=corr))
     await persist(db, "event.ingest", eid, corr, stored)
     response = {
         "accepted": True,
@@ -209,6 +212,8 @@ async def transfer(
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_correlation_id: str | None = Header(None, alias="X-Correlation-ID"),
 ):
+    if body.do_not_call:
+        raise HTTPException(403, "do-not-call policy denies transfer")
     if body.campaign_id != "TEST_SYN":
         raise HTTPException(403, "production telephony is disabled")
     return await mutation(
@@ -227,14 +232,16 @@ async def transfer_decision(
     db: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_correlation_id: str | None = Header(None, alias="X-Correlation-ID"),
+    x_codestra_role: str = Header("", alias="X-Codestra-Role"),
+    x_do_not_call: bool = Header(False, alias="X-Do-Not-Call"),
 ):
     if decision not in ("approve", "deny"):
         raise HTTPException(404, "unknown decision")
     corr = x_correlation_id or str(uuid4())
     allowed, reason = authorize_transfer(
-        dnc=False,
+        dnc=x_do_not_call,
         authenticated=True,
-        role="manager",
+        role=x_codestra_role,
         campaign_id="TEST_SYN",
         live_enabled=False,
     )

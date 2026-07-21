@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     messaging_enabled: bool = False
     ai_enrichment_enabled: bool = False
     report_delivery_enabled: bool = False
+    outbox_worker_enabled: bool = False
+    outbox_max_attempts: int = 5
+    outbox_base_delay_seconds: int = 5
+    outbox_max_delay_seconds: int = 300
+    outbox_lease_seconds: int = 60
     automation_allowed_campaigns: str = "TEST_SYN"
     automation_environment: str = "test"
     automation_hmac_secret: str = ""
@@ -37,6 +42,7 @@ class Settings(BaseSettings):
             self.n8n_production_workflows_enabled,
             self.vicidial_write_enabled,
             self.messaging_enabled,
+            self.outbox_worker_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")

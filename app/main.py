@@ -3,6 +3,7 @@ from app.api.v1.events import router as events_router
 from app.api.v1.control import router as control_router
 from app.api.v1.automation import router as automation_router
 from app.api.v1.reports import router as reports_router
+from app.api.v1.operations import router as operations_router
 from app.core.config import settings
 from app.core.auth import BearerAuthError, verify_bearer
 from fastapi import Request
@@ -13,6 +14,7 @@ app.include_router(events_router)
 app.include_router(control_router)
 app.include_router(automation_router)
 app.include_router(reports_router)
+app.include_router(operations_router)
 
 SIGNED_WEBHOOK_PATHS = frozenset(
     {
