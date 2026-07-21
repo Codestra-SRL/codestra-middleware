@@ -16,7 +16,7 @@ from app.db.models import (
     ReconciliationCheckpoint,
     TransferPolicyDecision,
 )
-from app.core.reliability import authorize_transfer, redact
+from app.core.reliability import authorize_transfer, redact, sanitize_for_storage
 
 router = APIRouter(prefix="/api/v1", tags=["control-plane"])
 
@@ -110,6 +110,7 @@ async def event(
         raise HTTPException(403, "production campaigns are disabled")
     corr = x_correlation_id or str(uuid4())
     raw = body.model_dump()
+    stored = sanitize_for_storage(raw)
     key = idempotency_key or body.event_id
     row, h, kh = await Idem.check(db, key, "events", raw)
     if row:
@@ -120,12 +121,12 @@ async def event(
             event_id=eid,
             source="odoo" if request.url.path.endswith("odoo") else "vicidial",
             event_type="event",
-            payload=raw,
+            payload=stored,
             correlation_id=corr,
         )
     )
-    db.add(OutboxEvent(topic="event.accepted", payload=raw))
-    await persist(db, "event.ingest", eid, corr, raw)
+    db.add(OutboxEvent(topic="event.accepted", payload=stored))
+    await persist(db, "event.ingest", eid, corr, stored)
     response = {
         "accepted": True,
         "event_id": eid,

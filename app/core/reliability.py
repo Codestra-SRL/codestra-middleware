@@ -38,6 +38,11 @@ def redact(value: Any) -> Any:
     return value
 
 
+def sanitize_for_storage(payload: Any) -> Any:
+    """Return the only representation permitted in durable event payload fields."""
+    return redact(payload)
+
+
 @dataclass(frozen=True)
 class RetryPolicy:
     max_attempts: int = 5

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.policy import PolicyError, enforce_test_campaign
+from app.core.reliability import sanitize_for_storage
 from app.core.security import SecurityError, payload_hash, verify_ingestion_signature
 from app.db.models import IdempotencyRecord, IntegrationDelivery, IntegrationEvent
 from app.db.session import get_session
@@ -65,10 +66,11 @@ async def ingest_vicidial(
         if existing.request_hash != request_hash:
             raise HTTPException(409, "idempotency key conflict")
         return existing.response
+    stored_event = sanitize_for_storage(event.model_dump())
     incoming = IntegrationEvent(
         event_type="vicidial",
         campaign_id=event.campaign_id,
-        payload=event.model_dump(),
+        payload=stored_event,
         payload_hash=request_hash,
     )
     db.add(incoming)

@@ -10,6 +10,7 @@ from app.core.reliability import (
     authorize_transfer,
     enforce_dnc,
     redact,
+    sanitize_for_storage,
 )
 
 
@@ -54,6 +55,21 @@ def test_reconciliation_and_recursive_redaction():
         {"nested": [{"Authorization": "Bearer x", "cookie_value": "x"}], "ok": 1}
     )
     assert "Bearer x" not in repr(value) and value["ok"] == 1
+
+
+def test_durable_event_payload_is_recursively_redacted():
+    marker = "TEST_SECRET_MARKER_DO_NOT_PERSIST"
+    stored = sanitize_for_storage(
+        {
+            "password": marker,
+            "nested": [{"Authorization": f"Bearer {marker}"}],
+            "lead_id": 37,
+        }
+    )
+    assert marker not in repr(stored)
+    assert stored["password"] == "[REDACTED]"
+    assert stored["nested"][0]["Authorization"] == "[REDACTED]"
+    assert stored["lead_id"] == 37
 
 
 def test_dnc_and_transfer_authorization_fail_closed():
