@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -21,7 +22,9 @@ from app.workers.reconciliation import reconcile_internal_outbox
 
 def test_durable_outbox_database_lifecycle():
     database_url = os.environ.get("TEST_DATABASE_URL")
-    assert database_url and "diag" in database_url
+    if not database_url:
+        pytest.skip("requires an explicitly provisioned disposable database")
+    assert "diag" in database_url or "rehearsal" in database_url
     if database_url.startswith("postgresql://"):
         database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     asyncio.run(_scenario(database_url))
