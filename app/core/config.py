@@ -1,4 +1,18 @@
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+VICIDIAL_PRIVATE_HOSTS = frozenset(
+    {
+        "authorization.internal.codestra.agency",
+        "edge.internal.codestra.agency",
+    }
+)
+VICIDIAL_PRIVATE_PORT = 8443
+VICIDIAL_SECRET_ROOT = Path("/run/secrets/vicidial-mtls")
 
 
 class Settings(BaseSettings):
@@ -21,6 +35,13 @@ class Settings(BaseSettings):
     odoo_automation_writes_enabled: bool = False
     vicidial_read_enabled: bool = False
     vicidial_write_enabled: bool = False
+    transfer_control_enabled: bool = False
+    vicidial_authorization_url: str = ""
+    vicidial_edge_url: str = ""
+    vicidial_ca_file: str = ""
+    vicidial_client_cert_file: str = ""
+    vicidial_client_key_file: str = ""
+    vicidial_crl_file: str = ""
     callback_dispatch_enabled: bool = False
     messaging_enabled: bool = False
     ai_enrichment_enabled: bool = False
@@ -47,6 +68,52 @@ class Settings(BaseSettings):
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
+
+    @field_validator("vicidial_authorization_url", "vicidial_edge_url")
+    @classmethod
+    def validate_vicidial_private_url(cls, value: str) -> str:
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname not in VICIDIAL_PRIVATE_HOSTS
+            or parsed.port != VICIDIAL_PRIVATE_PORT
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in ("", "/")
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("VICIdial URL must use an approved private HTTPS endpoint")
+        return value.rstrip("/")
+
+    @field_validator(
+        "vicidial_ca_file",
+        "vicidial_client_cert_file",
+        "vicidial_client_key_file",
+        "vicidial_crl_file",
+    )
+    @classmethod
+    def validate_vicidial_secret_path(cls, value: str) -> str:
+        if not value:
+            return value
+        path = Path(value)
+        if not path.is_absolute() or path.parent != VICIDIAL_SECRET_ROOT:
+            raise ValueError("VICIdial mTLS files must be direct children of the secret mount")
+        return value
+
+    @property
+    def vicidial_mtls_configured(self) -> bool:
+        return all(
+            (
+                self.vicidial_authorization_url,
+                self.vicidial_edge_url,
+                self.vicidial_ca_file,
+                self.vicidial_client_cert_file,
+                self.vicidial_client_key_file,
+            )
+        )
 
     @property
     def allowed_campaigns(self) -> frozenset[str]:
