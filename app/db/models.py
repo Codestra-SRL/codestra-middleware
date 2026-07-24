@@ -26,6 +26,9 @@ class IntegrationEvent(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(16), nullable=False, default="1.0")
+    original_event_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    entity_key: Mapped[str | None] = mapped_column(String(256))
     source_system: Mapped[str] = mapped_column(String(50), nullable=False, default="vicidial")
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
@@ -47,11 +50,16 @@ class IntegrationDelivery(Base):
         ForeignKey("integration_event.id", ondelete="CASCADE"), nullable=False
     )
     target: Mapped[str] = mapped_column(String(32), nullable=False)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="disabled")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_error: Mapped[str | None] = mapped_column(Text)
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_owner: Mapped[str | None] = mapped_column(String(128))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     __table_args__ = (
         UniqueConstraint("event_id", "target", name="uq_delivery_event_target"),
     )
@@ -73,6 +81,7 @@ class IdempotencyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         UniqueConstraint("scope", "key_hash", name="uq_idempotency_scope_key"),
     )
