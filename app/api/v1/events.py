@@ -2,7 +2,7 @@ import hashlib
 import json
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.config import settings
@@ -20,6 +20,26 @@ class VicidialEvent(BaseModel):
     uniqueid: str = Field(min_length=1, max_length=128)
     lead_id: int
     campaign_id: str = Field(min_length=1, max_length=64)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_canonical_synthetic_envelope(cls, value):
+        """Map the approved canonical TEST_SYN envelope without losing its fields."""
+        if not isinstance(value, dict) or value.get("test_syn") is not True:
+            return value
+        payload = value.get("payload")
+        if (
+            value.get("schema_version") != "1.0"
+            or value.get("event_type") != "vicidial.test.synthetic"
+            or not isinstance(payload, dict)
+            or payload.get("marker") != "TEST_SYN"
+        ):
+            return value
+        mapped = dict(value)
+        mapped["uniqueid"] = value.get("event_id", "")
+        mapped["lead_id"] = 0
+        mapped["campaign_id"] = "TEST_SYN"
+        return mapped
 
 
 @router.post("/vicidial", status_code=status.HTTP_202_ACCEPTED)
