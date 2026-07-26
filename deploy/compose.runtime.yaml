@@ -73,11 +73,15 @@ services:
       VICIDIAL_CALLBACK_HMAC_SECRET_FILE: /run/secrets/vicidial-callback-hmac
       PUBLISHER_HMAC_KEYS_FILE: /run/secrets/telephony-publisher-keys.json
       PUBLISHER_CANARY_ENABLED: "false"
+      QUARANTINE_ENCRYPTION_KEY_FILE: /run/secrets/quarantine-encryption-key
+      QUARANTINE_FINGERPRINT_SECRET_FILE: /run/secrets/quarantine-fingerprint-key
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-event-gateway-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
       - /etc/codestra/secrets/vicidial-callback-hmac:/run/secrets/vicidial-callback-hmac:ro
       - /etc/codestra/secrets/telephony-publisher/keys.json:/run/secrets/telephony-publisher-keys.json:ro
+      - /etc/codestra/secrets/middleware-runtime/quarantine-encryption-key:/run/secrets/quarantine-encryption-key:ro
+      - /etc/codestra/secrets/middleware-runtime/quarantine-fingerprint-key:/run/secrets/quarantine-fingerprint-key:ro
     networks: [middleware_backend, middleware_edge]
 
   middleware-integration-api:
@@ -86,12 +90,18 @@ services:
     environment:
       <<: *safe-flags
       SERVICE_NAME: middleware-integration-api
+      QUARANTINE_ENCRYPTION_KEY_FILE: /run/secrets/quarantine-encryption-key
+      QUARANTINE_FINGERPRINT_SECRET_FILE: /run/secrets/quarantine-fingerprint-key
+      QUARANTINE_REVIEWER_SECRET_FILE: /run/secrets/quarantine-reviewer-key
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
       - /etc/codestra/secrets/codestra-compose/provisioning/client_secret:/run/secrets/provisioning/client_secret:ro
       - /etc/codestra/secrets/codestra-compose/provisioning/ca.crt:/run/secrets/provisioning/ca.crt:ro
       - /etc/codestra/secrets/codestra-compose/odoo_identity_hmac:/run/secrets/odoo/identity_hmac:ro
+      - /etc/codestra/secrets/middleware-runtime/quarantine-encryption-key:/run/secrets/quarantine-encryption-key:ro
+      - /etc/codestra/secrets/middleware-runtime/quarantine-fingerprint-key:/run/secrets/quarantine-fingerprint-key:ro
+      - /etc/codestra/secrets/middleware-runtime/quarantine-reviewer-key:/run/secrets/quarantine-reviewer-key:ro
     networks:
       - middleware_backend
       - middleware_edge

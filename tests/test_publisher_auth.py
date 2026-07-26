@@ -6,6 +6,7 @@ import pytest
 
 from app.core.publisher_auth import (
     PublisherAuthenticationError, verify_publisher_request,
+    verify_publisher_signature,
 )
 
 
@@ -42,3 +43,18 @@ def test_valid_rotation_and_authentication_failures():
     for candidate, reason in cases:
         with pytest.raises(PublisherAuthenticationError, match=reason):
             verify_publisher_request(body, candidate, keys, now=now)
+
+
+def test_signature_is_verified_before_timestamp_freshness():
+    now = int(time.time())
+    body = b"{}"
+    keys = {"current": b"a" * 32}
+    candidate = headers(body, "current", keys["current"], now - 999)
+    candidate["X-Codestra-Signature"] = "v2=invalid"
+    with pytest.raises(PublisherAuthenticationError, match="invalid_signature"):
+        verify_publisher_signature(body, candidate, keys)
+    with pytest.raises(PublisherAuthenticationError, match="expired_timestamp"):
+        verify_publisher_request(
+            body, headers(body, "current", keys["current"], now - 999),
+            keys, now=now,
+        )

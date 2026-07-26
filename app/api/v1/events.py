@@ -1,8 +1,6 @@
 """Fast-ACK VICIdial ingress; PostgreSQL commit is the durability boundary."""
 import hashlib
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
-
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import ValidationError
 from sqlalchemy import select, text
@@ -10,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import SecurityError, payload_hash, verify_ingestion_signature
-from app.db.models import AuditEvent, IdempotencyRecord, IntegrationDelivery, IntegrationEvent
+from app.api.v1.publisher import _quarantine, _security_rejection
+from app.db.models import (
+    AuditEvent, IdempotencyRecord, IntegrationDelivery, IntegrationEvent,
+    PublisherNonce,
+)
 from app.db.session import get_session
 from app.schemas.registry import Envelope, parse_event
 
@@ -37,32 +39,84 @@ async def ingest_vicidial(
     timestamp: str | None = Header(default=None, alias="X-Timestamp"),
     client_instance: str | None = Header(default=None, alias="X-Client-Instance-ID"),
     x_correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
+    nonce: str | None = Header(default=None, alias="X-Nonce"),
     db: AsyncSession = Depends(get_session),
 ):
-    if not idempotency_key or len(idempotency_key) > 255 or not client_instance:
-        raise HTTPException(400, "required request identity is missing or invalid")
-    if client_instance not in settings.ingestion_clients:
-        raise HTTPException(401, "client identity is not authorized")
     body = await request.body()
     if len(body) > settings.request_max_bytes:
         raise HTTPException(413, "request too large")
+    if not client_instance or client_instance not in settings.ingestion_clients:
+        await _security_rejection(
+            db, request, body,
+            "missing_authentication" if not client_instance else "unknown_key",
+        )
+        raise HTTPException(401, "client identity is not authorized")
     try:
         verify_ingestion_signature(
             body, timestamp or "", signature or "", settings.ingestion_hmac_secret,
             ttl=settings.signature_ttl_seconds,
         )
-        envelope, parsed_payload = parse_event(body, settings.enabled_events)
     except SecurityError as exc:
+        reason = {
+            "missing signature credentials": "missing_authentication",
+            "invalid signature timestamp": "invalid_timestamp",
+            "expired signature": "expired_timestamp",
+            "invalid signature": "invalid_signature",
+        }.get(str(exc), "invalid_signature")
+        await _security_rejection(db, request, body, reason)
         raise HTTPException(401, "request authentication failed") from exc
+    if not nonce or len(nonce) > 128:
+        await _security_rejection(db, request, body, "missing_authentication")
+        raise HTTPException(401, "request nonce is missing or invalid")
+    replay = await db.scalar(
+        select(PublisherNonce).where(
+            PublisherNonce.key_id == client_instance,
+            PublisherNonce.nonce == nonce,
+        )
+    )
+    if replay:
+        await _security_rejection(db, request, body, "replayed_nonce")
+        raise HTTPException(401, "request replay rejected")
+    db.add(PublisherNonce(
+        key_id=client_instance, nonce=nonce, signed_at=int(timestamp or "0"),
+        expires_at=datetime.now(timezone.utc) + timedelta(
+            seconds=settings.signature_ttl_seconds
+        ),
+    ))
+    try:
+        envelope, parsed_payload = parse_event(body, settings.enabled_events)
     except (ValidationError, ValueError) as exc:
+        try:
+            await _quarantine(
+                db, request, body, key_id=client_instance,
+                publisher_id=client_instance, reason="schema_rejected",
+                parsed=None, source_label="vicidial",
+            )
+        except Exception as persistence_error:
+            await db.rollback()
+            raise HTTPException(
+                503, "quarantine persistence unavailable"
+            ) from persistence_error
         raise HTTPException(422, "event schema validation failed") from exc
     if envelope.client_instance != client_instance:
+        await _quarantine(
+            db, request, body, key_id=client_instance,
+            publisher_id=client_instance, reason="publisher_identity_mismatch",
+            parsed=envelope.model_dump(mode="json"), source_label="vicidial",
+        )
         raise HTTPException(401, "client identity mismatch")
+    if not idempotency_key or len(idempotency_key) > 255:
+        await _quarantine(
+            db, request, body, key_id=client_instance,
+            publisher_id=client_instance, reason="schema_rejected",
+            parsed=envelope.model_dump(mode="json"), source_label="vicidial",
+        )
+        raise HTTPException(400, "idempotency key is missing or invalid")
 
     request_hash = payload_hash(body)
     key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
     scope = f"vicidial:{client_instance}"
-    corr = x_correlation_id or envelope.correlation_id or str(uuid4())
+    corr = request.state.correlation_id
     # Transaction-scoped advisory lock prevents a concurrent duplicate from
     # creating a second logical persistence set.
     await db.execute(

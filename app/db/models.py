@@ -4,14 +4,17 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -108,6 +111,149 @@ class PublisherAcknowledgement(Base):
     acknowledgement: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class SecurityRejection(Base):
+    __tablename__ = "security_rejection"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    claimed_publisher: Mapped[str | None] = mapped_column(String(128))
+    authentication_state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="UNVERIFIED"
+    )
+    key_id: Mapped[str | None] = mapped_column(String(64))
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_ip_classification: Mapped[str] = mapped_column(String(16), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "authentication_state = 'UNVERIFIED'",
+            name="ck_security_rejection_unverified",
+        ),
+    )
+
+
+class InvalidEventQuarantine(Base):
+    __tablename__ = "invalid_event_quarantine"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    server_correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    client_correlation_id: Mapped[str | None] = mapped_column(String(128))
+    claimed_source: Mapped[str | None] = mapped_column(String(64))
+    claimed_publisher_identity: Mapped[str | None] = mapped_column(String(128))
+    authenticated_publisher_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    authentication_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    authentication_key_id: Mapped[str | None] = mapped_column(String(64))
+    original_signature_verification: Mapped[str] = mapped_column(String(24), nullable=False)
+    payload_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_payload: Mapped[bytes | None] = mapped_column(LargeBinary)
+    encryption_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
+    encryption_key_version: Mapped[str | None] = mapped_column(String(32))
+    sanitized_preview: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    business_unit: Mapped[str | None] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING_REVIEW")
+    review_owner: Mapped[str | None] = mapped_column(String(128))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[str | None] = mapped_column(String(128))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    replayed_event_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("integration_event.id")
+    )
+    replay_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    legal_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    retention_policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    retention_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        CheckConstraint("replay_count >= 0", name="ck_quarantine_replay_count"),
+        CheckConstraint("occurrence_count >= 1", name="ck_quarantine_occurrence_count"),
+        CheckConstraint("retention_deadline > received_at", name="ck_quarantine_retention"),
+        CheckConstraint("record_version >= 1", name="ck_quarantine_record_version"),
+        CheckConstraint(
+            "(review_owner IS NULL) = (reviewed_at IS NULL)",
+            name="ck_quarantine_review_consistency",
+        ),
+        CheckConstraint(
+            "(resolved_by IS NULL) = (resolved_at IS NULL)",
+            name="ck_quarantine_resolution_consistency",
+        ),
+        CheckConstraint(
+            "replayed_event_id IS NULL OR (authentication_state = 'VERIFIED' AND "
+            "status = 'REPLAYED' AND resolved_at IS NOT NULL)",
+            name="ck_quarantine_replay_eligibility",
+        ),
+        CheckConstraint(
+            "status IN ('PENDING_REVIEW','UNDER_REVIEW','CORRECTABLE',"
+            "'REPLAY_APPROVED','REPLAYING','REPLAYED','RESOLVED_NO_REPLAY',"
+            "'EXPIRED','REJECTED')",
+            name="ck_quarantine_state",
+        ),
+        CheckConstraint(
+            "authentication_state = 'VERIFIED' AND "
+            "original_signature_verification = 'VERIFIED'",
+            name="ck_quarantine_verified_auth",
+        ),
+        CheckConstraint(
+            "(encrypted_payload IS NULL AND encryption_nonce IS NULL AND "
+            "encryption_key_version IS NULL) OR "
+            "(encrypted_payload IS NOT NULL AND encryption_nonce IS NOT NULL AND "
+            "encryption_key_version IS NOT NULL)",
+            name="ck_quarantine_encryption_fields",
+        ),
+        Index("ix_quarantine_status_received", "status", "received_at"),
+        Index("ix_quarantine_publisher_received", "authenticated_publisher_id", "received_at"),
+        Index("ix_quarantine_correlation", "server_correlation_id"),
+        Index(
+            "ix_quarantine_retention_active",
+            "retention_deadline",
+            postgresql_where=text("legal_hold = false"),
+        ),
+        Index("ix_quarantine_fingerprint", "payload_fingerprint"),
+    )
+
+
+class QuarantineCorrection(Base):
+    __tablename__ = "quarantine_correction"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    quarantine_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("invalid_event_quarantine.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    correction_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    correction_reason: Mapped[str] = mapped_column(String(512), nullable=False)
+    reviewer: Mapped[str] = mapped_column(String(128), nullable=False)
+    derived_correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    encryption_nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    encryption_key_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    sanitized_diff: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "quarantine_id", "correction_version",
+            name="uq_quarantine_correction_version",
+        ),
+        CheckConstraint(
+            "correction_version >= 1", name="ck_quarantine_correction_version"
+        ),
     )
 
 

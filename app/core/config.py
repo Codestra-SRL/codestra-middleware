@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     environment: str = "preproduction"
     publisher_hmac_keys_file: str = ""
     publisher_canary_enabled: bool = False
+    quarantine_encryption_key_file: str = ""
+    quarantine_encryption_key_version: str = "v1"
+    quarantine_fingerprint_secret_file: str = ""
+    quarantine_reviewer_secret_file: str = ""
+    quarantine_retention_days: int = 90
+    quarantine_retention_policy_version: str = "2026-07-26.1"
+    quarantine_store_authenticated_raw: bool = True
+    quarantine_rate_limit_per_minute: int = 30
     webphone_staging_provisioning_enabled: bool = False
     webphone_keycloak_enabled: bool = False
     webphone_endpoint_adapter_url: str = ""
@@ -229,6 +237,42 @@ class Settings(BaseSettings):
             raise ValueError("publisher key file invalid")
         return {key_id: base64.urlsafe_b64decode(value + "===")
                 for key_id, value in values.items()}
+
+    @staticmethod
+    def _load_binary_secret(filename: str, label: str) -> bytes:
+        path = Path(filename)
+        if not filename or not path.is_absolute() or not path.is_file():
+            raise ValueError(f"{label} file unavailable")
+        try:
+            value = base64.urlsafe_b64decode(path.read_text().strip() + "===")
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"{label} file invalid") from exc
+        if len(value) < 32:
+            raise ValueError(f"{label} must contain at least 256 bits")
+        return value
+
+    @property
+    def quarantine_encryption_key(self) -> bytes:
+        value = self._load_binary_secret(
+            self.quarantine_encryption_key_file, "quarantine encryption key"
+        )
+        if len(value) != 32:
+            raise ValueError("quarantine encryption key must be 256 bits")
+        return value
+
+    @property
+    def quarantine_fingerprint_secret(self) -> bytes:
+        return self._load_binary_secret(
+            self.quarantine_fingerprint_secret_file,
+            "quarantine fingerprint secret",
+        )
+
+    @property
+    def quarantine_reviewer_secret(self) -> bytes:
+        return self._load_binary_secret(
+            self.quarantine_reviewer_secret_file,
+            "quarantine reviewer authorization secret",
+        )
 
     @property
     def enabled_events(self) -> frozenset[str]:

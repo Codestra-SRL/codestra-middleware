@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
@@ -59,7 +60,8 @@ def test_api_runtime_health_and_correlation(monkeypatch):
         "/healthz", headers={"X-Correlation-ID": "synthetic-correlation"}
     )
     assert response.status_code == 200
-    assert response.headers["X-Correlation-ID"] == "synthetic-correlation"
+    assert response.headers["X-Correlation-ID"] != "synthetic-correlation"
+    UUID(response.headers["X-Correlation-ID"])
     assert response.headers["Traceparent"].startswith("00-")
 
 

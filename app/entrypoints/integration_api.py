@@ -7,6 +7,7 @@ from app.api.v1.lead_reconciliation import router as lead_reconciliation_router
 from app.api.v1.mappings import router as mappings_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.operations import router as operations_router
+from app.api.v1.quarantine import router as quarantine_router
 from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.webphone import router as webphone_router
@@ -24,6 +25,7 @@ routers = (
     mappings_router,
     webphone_router,
     n8n_staging_router,
+    quarantine_router,
 )
 app = FastAPI(
     title="Codestra Integration API",

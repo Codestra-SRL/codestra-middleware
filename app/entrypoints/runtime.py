@@ -5,7 +5,10 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
+import time
+from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
@@ -28,6 +31,9 @@ WORKER_CYCLES = Counter(
 WORKER_READY = Gauge(
     "codestra_worker_ready", "Worker readiness", ["service"]
 )
+CORRELATION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_RATE_WINDOWS: OrderedDict[str, deque[float]] = OrderedDict()
+MAX_RATE_IDENTITIES = 4096
 
 
 class JsonFormatter(logging.Formatter):
@@ -69,23 +75,49 @@ def validate_runtime(service: str, queue: str | None = None) -> None:
             raise RuntimeError(f"QUEUE_NAME must be {queue}")
     if service == "middleware-event-gateway" and not settings.auth_ready:
         raise RuntimeError("event gateway authorization configuration is incomplete")
+    if service == "middleware-event-gateway":
+        settings.quarantine_fingerprint_secret
+        settings.quarantine_encryption_key
     if service in {"middleware-integration-api", "middleware-policy-engine"} and not settings.middleware_secret:
         raise RuntimeError(f"{service} authorization configuration is incomplete")
+    if service == "middleware-integration-api":
+        settings.quarantine_fingerprint_secret
+        settings.quarantine_encryption_key
+        settings.quarantine_reviewer_secret
 
 
 def add_api_runtime(app: FastAPI, service: str) -> None:
     @app.middleware("http")
     async def request_controls(request: Request, call_next):
-        correlation_id = (
-            request.headers.get("x-correlation-id", "").strip() or str(uuid4())
-        )
+        try:
+            content_length = int(request.headers.get("content-length", "0") or 0)
+        except ValueError:
+            return JSONResponse({"detail": "invalid content length"}, status_code=400)
+        if content_length < 0:
+            return JSONResponse({"detail": "invalid content length"}, status_code=400)
+        if content_length > settings.request_max_bytes:
+            return JSONResponse({"detail": "request too large"}, status_code=413)
+        if request.url.path in {
+            "/api/v1/events/vicidial",
+            "/api/v2/telephony/canary",
+        }:
+            identity = request.client.host if request.client else "unknown"
+            now = time.monotonic()
+            window = _RATE_WINDOWS.setdefault(identity, deque())
+            _RATE_WINDOWS.move_to_end(identity)
+            while len(_RATE_WINDOWS) > MAX_RATE_IDENTITIES:
+                _RATE_WINDOWS.popitem(last=False)
+            while window and window[0] < now - 60:
+                window.popleft()
+            if len(window) >= settings.quarantine_rate_limit_per_minute:
+                return JSONResponse({"detail": "rate limit exceeded"}, status_code=429)
+            window.append(now)
+        correlation_id = str(uuid4())
+        client_correlation = request.headers.get("x-correlation-id", "").strip()
         request.state.correlation_id = correlation_id
-        if int(request.headers.get("content-length", "0") or 0) > settings.request_max_bytes:
-            return JSONResponse(
-                {"detail": "request too large"},
-                status_code=413,
-                headers={"X-Correlation-ID": correlation_id},
-            )
+        request.state.client_correlation_id = (
+            client_correlation if CORRELATION_RE.fullmatch(client_correlation) else None
+        )
         signed_paths = {
             "/api/v1/events/vicidial",
             "/api/v1/automation/events",
