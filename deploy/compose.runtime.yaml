@@ -4,6 +4,7 @@ name: codestra-middleware-runtime
 x-runtime: &runtime
   image: ${MIDDLEWARE_IMAGE:?set immutable middleware image digest}
   user: "10001:10001"
+  group_add: ["3999"]
   init: true
   restart: unless-stopped
   read_only: true
@@ -14,6 +15,11 @@ x-runtime: &runtime
     - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001
   env_file:
     - /opt/codestra/env/middleware.env
+  secrets:
+    - database_url
+    - redis_url
+    - middleware_secret
+    - webhook_shared_secret
   environment: &safe-flags
     PORT: "8095"
     LOG_LEVEL: INFO
@@ -37,7 +43,8 @@ x-runtime: &runtime
       - -c
       - >-
         import urllib.request;
-        urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3)
+        urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3);
+        urllib.request.urlopen('http://127.0.0.1:8095/readyz', timeout=3)
     interval: 15s
     timeout: 5s
     retries: 10
@@ -63,6 +70,12 @@ services:
     environment:
       <<: *safe-flags
       SERVICE_NAME: middleware-event-gateway
+      PUBLISHER_HMAC_KEYS_FILE: /run/secrets/telephony-publisher-keys.json
+      PUBLISHER_CANARY_ENABLED: "false"
+    volumes:
+      - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
+      - /etc/codestra/secrets/vicidial-callback-hmac:/run/secrets/vicidial-callback-hmac:ro
+      - /etc/codestra/secrets/telephony-publisher/keys.json:/run/secrets/telephony-publisher-keys.json:ro
     networks: [middleware_backend, middleware_edge]
 
   middleware-integration-api:
@@ -71,7 +84,17 @@ services:
     environment:
       <<: *safe-flags
       SERVICE_NAME: middleware-integration-api
-    networks: [middleware_backend, middleware_edge]
+    volumes:
+      - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
+      - /etc/codestra/secrets/codestra-compose/provisioning/client_secret:/run/secrets/provisioning/client_secret:ro
+      - /etc/codestra/secrets/codestra-compose/provisioning/ca.crt:/run/secrets/provisioning/ca.crt:ro
+      - /etc/codestra/secrets/codestra-compose/odoo_identity_hmac:/run/secrets/odoo/identity_hmac:ro
+    networks:
+      - middleware_backend
+      - middleware_edge
+      - identity_service
+      - provisioning_private
+      - odoo_module_staging
 
   middleware-sync-worker:
     <<: *worker
@@ -123,3 +146,22 @@ networks:
   middleware_edge:
     external: true
     name: codestra_edge
+  identity_service:
+    external: true
+    name: codestra-identity_identity_service
+  provisioning_private:
+    external: true
+    name: codestra-provisioning-service_private
+  odoo_module_staging:
+    external: true
+    name: codestra-odoo19-module-staging_isolated
+
+secrets:
+  database_url:
+    file: /etc/codestra/secrets/codestra-compose/database_url
+  redis_url:
+    file: /etc/codestra/secrets/codestra-compose/redis_url
+  middleware_secret:
+    file: /etc/codestra/secrets/codestra-compose/middleware_secret
+  webhook_shared_secret:
+    file: /etc/codestra/secrets/codestra-compose/webhook_shared_secret
