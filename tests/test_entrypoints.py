@@ -35,7 +35,7 @@ def test_integration_api_excludes_event_gateway_routes_in_fresh_runtime():
             (
                 "from app.entrypoints.integration_api import app;"
                 "paths=app.openapi()['paths'];"
-                "assert '/api/v1/events/vicidial' not in paths"
+                "assert not any(p.startswith('/api/v1/events/') for p in paths)"
             ),
         ],
         check=False,

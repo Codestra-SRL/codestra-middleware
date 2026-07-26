@@ -32,7 +32,7 @@ app = FastAPI(
         route
         for router in routers
         for route in router.routes
-        if getattr(route, "path", None) != "/api/v1/events/vicidial"
+        if not (getattr(route, "path", "") or "").startswith("/api/v1/events/")
     ],
 )
 add_api_runtime(app, SERVICE)
