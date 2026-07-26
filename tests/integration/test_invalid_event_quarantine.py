@@ -15,7 +15,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.v1.publisher import _quarantine, _security_rejection
-from app.api.v1.quarantine import detail, reprocess
+from app.api.v1.quarantine import detail, list_records, reprocess, review
 from app.core.config import settings
 from app.core.quarantine import encrypt_payload, fingerprint
 from app.db.models import (
@@ -285,6 +285,29 @@ async def _scenario(
             session.add(replay_record)
             await session.commit()
             replay_id = replay_record.id
+            for operation in (
+                lambda: list_records(
+                    business_unit="MOY", scopes="", reviewer="",
+                    authorized_units="", authorization_context="", db=session,
+                ),
+                lambda: detail(
+                    replay_id, scopes="", reviewer="", authorized_units="",
+                    authorization_context="", db=session,
+                ),
+                lambda: review(
+                    replay_id, target_state="REPLAYING",
+                    record_version=replay_record.record_version,
+                    scopes="", reviewer="", authorized_units="",
+                    authorization_context="", db=session,
+                ),
+                lambda: reprocess(
+                    replay_id, scopes="", reviewer="", authorized_units="",
+                    authorization_context="", db=session,
+                ),
+            ):
+                with pytest.raises(HTTPException) as unauthorized:
+                    await operation()
+                assert unauthorized.value.status_code == 403
 
         async def attempt():
             async with factory() as candidate:
