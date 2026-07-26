@@ -7,9 +7,11 @@ from app.entrypoints.runtime import add_api_runtime, run_api
 
 
 SERVICE = "middleware-event-gateway"
-app = FastAPI(title="Codestra Event Gateway", version="1.0.0")
-app.include_router(events_router)
-app.include_router(publisher_router)
+app = FastAPI(
+    title="Codestra Event Gateway",
+    version="1.0.0",
+    routes=[*events_router.routes, *publisher_router.routes],
+)
 add_api_runtime(app, SERVICE)
 
 

@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
@@ -22,6 +25,24 @@ def test_api_surfaces_are_narrow_and_cover_existing_routes():
     assert "/api/v2/telephony/canary" in event_paths
     assert "/api/v1/automation/events" in integration_paths
     assert "/webphone-api/v1/session" in integration_paths
+
+
+def test_integration_api_excludes_event_gateway_routes_in_fresh_runtime():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from app.entrypoints.integration_api import app;"
+                "paths=app.openapi()['paths'];"
+                "assert '/api/v1/events/vicidial' not in paths"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_api_runtime_health_and_correlation(monkeypatch):

@@ -14,8 +14,7 @@ from app.entrypoints.runtime import add_api_runtime, run_api
 
 
 SERVICE = "middleware-integration-api"
-app = FastAPI(title="Codestra Integration API", version="1.0.0")
-for router in (
+routers = (
     control_router,
     automation_router,
     reports_router,
@@ -25,8 +24,17 @@ for router in (
     mappings_router,
     webphone_router,
     n8n_staging_router,
-):
-    app.include_router(router)
+)
+app = FastAPI(
+    title="Codestra Integration API",
+    version="1.0.0",
+    routes=[
+        route
+        for router in routers
+        for route in router.routes
+        if getattr(route, "path", None) != "/api/v1/events/vicidial"
+    ],
+)
 add_api_runtime(app, SERVICE)
 
 
