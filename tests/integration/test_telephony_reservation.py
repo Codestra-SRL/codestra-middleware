@@ -29,6 +29,7 @@ async def _scenario(database_url: str):
                 "WHERE code='transportation-intro-sales'"
             ))
             assert pool_id
+            await session.commit()
 
         async def reserve(attempt: int):
             async with factory() as session:
