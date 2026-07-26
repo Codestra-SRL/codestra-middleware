@@ -98,6 +98,14 @@ class Settings(BaseSettings):
     webphone_staging_provisioning_enabled: bool = False
     webphone_keycloak_enabled: bool = False
     webphone_endpoint_adapter_url: str = ""
+    extension_allocator_enabled: bool = False
+    telephony_provisioning_enabled: bool = False
+    vicidial_provisioning_enabled: bool = False
+    pjsip_provisioning_enabled: bool = False
+    webphone_session_issuer_enabled: bool = False
+    telephony_reconciliation_enabled: bool = False
+    telephony_notifications_enabled: bool = False
+    telephony_evidence_enabled: bool = False
 
     def validate_safety(self) -> None:
         production_switches = (
@@ -107,6 +115,9 @@ class Settings(BaseSettings):
             self.vicidial_write_enabled,
             self.messaging_enabled,
             self.outbox_worker_enabled,
+            self.telephony_provisioning_enabled,
+            self.vicidial_provisioning_enabled,
+            self.pjsip_provisioning_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")

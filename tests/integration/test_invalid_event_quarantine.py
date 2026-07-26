@@ -218,7 +218,7 @@ async def _scenario(
             await session.execute(text(
                 "TRUNCATE quarantine_correction, invalid_event_quarantine, "
                 "security_rejection, integration_delivery, integration_event, "
-                "audit_event CASCADE"
+                "publisher_nonce, audit_event CASCADE"
             ))
             await session.commit()
 

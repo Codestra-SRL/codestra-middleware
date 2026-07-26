@@ -7,11 +7,16 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.entrypoints import (
     event_gateway,
+    extension_allocator,
     integration_api,
     notification_worker,
+    pjsip_adapter,
     policy_engine,
     scheduler,
     sync_worker,
+    telephony_provisioning,
+    vicidial_adapter,
+    webphone_session_issuer,
 )
 from app.entrypoints.runtime import worker_app
 
@@ -34,6 +39,13 @@ def test_api_surfaces_are_narrow_and_cover_existing_routes():
         "/dependencies",
     }
     assert "/api/v1/events/vicidial" not in route_paths(policy_engine.app)
+    assert "/v1/telephony/extensions/reserve" in route_paths(extension_allocator.app)
+    assert "/v1/telephony/provisioning" not in route_paths(extension_allocator.app)
+    assert "/v1/telephony/provisioning" in route_paths(telephony_provisioning.app)
+    assert "/v1/telephony/extensions/reserve" not in route_paths(
+        telephony_provisioning.app
+    )
+    assert "/webphone-api/v1/session" in route_paths(webphone_session_issuer.app)
 
 
 def test_integration_api_excludes_event_gateway_routes_in_fresh_runtime():
@@ -78,6 +90,17 @@ def test_disabled_delivery_workers_do_not_claim_or_contact_adapters(monkeypatch)
 def test_disabled_scheduler_is_safe(monkeypatch):
     monkeypatch.setattr(settings, "outbox_worker_enabled", False)
     assert __import__("asyncio").run(scheduler.cycle()) == {"status": "disabled"}
+
+
+def test_telephony_adapters_are_independently_kill_switched(monkeypatch):
+    monkeypatch.setattr(settings, "vicidial_provisioning_enabled", False)
+    monkeypatch.setattr(settings, "pjsip_provisioning_enabled", False)
+    assert __import__("asyncio").run(vicidial_adapter.cycle()) == {
+        "result": "kill_switch_closed"
+    }
+    assert __import__("asyncio").run(pjsip_adapter.cycle()) == {
+        "result": "kill_switch_closed"
+    }
 
 
 def test_worker_has_internal_operational_endpoints():

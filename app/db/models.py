@@ -449,3 +449,98 @@ class SystemHealthSnapshot(Base):
     checked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class TelephonyExtensionPool(Base):
+    __tablename__ = "telephony_extension_pool"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    business_unit: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    range_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    range_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    __table_args__ = (
+        CheckConstraint("range_start >= 6100", name="ck_telephony_pool_start"),
+        CheckConstraint("range_end <= 6999", name="ck_telephony_pool_end"),
+        CheckConstraint("range_start <= range_end", name="ck_telephony_pool_order"),
+    )
+
+
+class TelephonyExtensionReservation(Base):
+    __tablename__ = "telephony_extension_reservation"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    extension: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    employee_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    pool_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("telephony_extension_pool.id"), nullable=False
+    )
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="RESERVED")
+    idempotency_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reserved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("extension <> 6101", name="ck_telephony_reservation_6101"),
+        CheckConstraint("extension <> 1001", name="ck_telephony_reservation_1001"),
+        CheckConstraint(
+            "state IN ('RESERVED','DISABLED_READY','ACTIVE','SUSPENDED','RELEASED','EXPIRED','COOLDOWN')",
+            name="ck_telephony_reservation_state",
+        ),
+        Index(
+            "uq_telephony_active_extension",
+            "extension",
+            unique=True,
+            postgresql_where=text(
+                "state IN ('RESERVED','DISABLED_READY','ACTIVE','SUSPENDED','COOLDOWN')"
+            ),
+        ),
+        Index(
+            "uq_telephony_active_employee",
+            "employee_id",
+            unique=True,
+            postgresql_where=text(
+                "state IN ('RESERVED','DISABLED_READY','ACTIVE','SUSPENDED')"
+            ),
+        ),
+    )
+
+
+class TelephonyProvisioningSaga(Base):
+    __tablename__ = "telephony_provisioning_saga"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    employee_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    business_unit: Mapped[str] = mapped_column(String(64), nullable=False)
+    campaign: Mapped[str] = mapped_column(String(64), nullable=False)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    extension: Mapped[int | None] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT")
+    idempotency_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    approved_odoo_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    credential_reference: Mapped[str | None] = mapped_column(String(255))
+    completed_steps: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    last_error_code: Mapped[str | None] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="ck_telephony_saga_version"),
+        CheckConstraint(
+            "state IN ('DRAFT','PENDING_APPROVAL','APPROVED','INVENTORY_CHECK','RESERVED',"
+            "'PROVISIONING','DISABLED_READY','ACTIVATION_PENDING','ACTIVE','FAILED',"
+            "'ROLLED_BACK','SUSPENDING','SUSPENDED','DEPROVISIONING','COOLDOWN')",
+            name="ck_telephony_saga_state",
+        ),
+    )
