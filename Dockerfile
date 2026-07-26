@@ -1,6 +1,7 @@
-ARG PYTHON_BASE=python@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0
+ARG PYTHON_BASE=codestra/python@sha256:541d6acdaa39568e8e9ba2a12f707ce167a819e553025256c29918a9509fe0c2
 
 FROM ${PYTHON_BASE} AS builder
+USER root
 WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
@@ -19,7 +20,9 @@ USER 10001:10001
 ENTRYPOINT ["pytest"]
 
 FROM ${PYTHON_BASE} AS runtime
-RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
+USER root
+RUN grep -q '^app:' /etc/group || addgroup -S -g 10001 app \
+ && grep -q '^app:' /etc/passwd || adduser -S -D -H -u 10001 -G app app
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 COPY --chown=10001:10001 alembic.ini app.py ./
