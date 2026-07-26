@@ -1,14 +1,34 @@
-FROM python@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
-RUN useradd --system --uid 10001 --create-home app
+ARG PYTHON_BASE=python@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df
+
+FROM ${PYTHON_BASE} AS builder
+WORKDIR /build
+RUN python -m venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
+COPY requirements.lock requirements-test.lock ./
+RUN python -m pip install --no-cache-dir --disable-pip-version-check \
+      --require-hashes -r requirements.lock
+
+FROM builder AS test
+RUN apk add --no-cache openssl=3.5.7-r0
+RUN python -m pip install --no-cache-dir --disable-pip-version-check \
+      --require-hashes -r requirements-test.lock
 WORKDIR /app
-COPY --chown=app:app . /app
-RUN python -m pip install --no-cache-dir --disable-pip-version-check 'pip==26.1.2' \
-    && python -m pip install --no-cache-dir --disable-pip-version-check \
-    'fastapi==0.139.2' 'starlette==1.3.1' 'uvicorn[standard]==0.35.0' \
-    'pydantic-settings==2.10.1' 'sqlalchemy==2.0.43' \
-    'asyncpg==0.30.0' 'alembic==1.16.4' \
-    'redis==6.4.0' 'httpx==0.28.1' 'PyJWT[crypto]==2.13.0' \
-    'prometheus-client==0.22.1' 'pytest==9.1.1' 'ruff==0.12.10' 'mypy==1.17.1'
-USER app
+COPY --chown=10001:10001 . /app
+ENV PYTHONPATH=/app
+USER 10001:10001
+ENTRYPOINT ["pytest"]
+
+FROM ${PYTHON_BASE} AS runtime
+RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
+COPY --from=builder /opt/venv /opt/venv
+WORKDIR /app
+COPY --chown=10001:10001 alembic.ini app.py ./
+COPY --chown=10001:10001 app ./app
+COPY --chown=10001:10001 migrations ./migrations
+ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+USER 10001:10001
 EXPOSE 8095
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8095"]
+CMD ["python", "-m", "app.entrypoints.integration_api"]
