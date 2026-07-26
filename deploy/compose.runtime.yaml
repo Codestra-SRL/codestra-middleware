@@ -16,7 +16,6 @@ x-runtime: &runtime
   env_file:
     - /opt/codestra/env/middleware.env
   secrets:
-    - database_url
     - redis_url
     - middleware_secret
     - webhook_shared_secret
@@ -73,6 +72,7 @@ services:
       PUBLISHER_HMAC_KEYS_FILE: /run/secrets/telephony-publisher-keys.json
       PUBLISHER_CANARY_ENABLED: "false"
     volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-event-gateway-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
       - /etc/codestra/secrets/vicidial-callback-hmac:/run/secrets/vicidial-callback-hmac:ro
       - /etc/codestra/secrets/telephony-publisher/keys.json:/run/secrets/telephony-publisher-keys.json:ro
@@ -85,6 +85,7 @@ services:
       <<: *safe-flags
       SERVICE_NAME: middleware-integration-api
     volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
       - /etc/codestra/secrets/codestra-compose/provisioning/client_secret:/run/secrets/provisioning/client_secret:ro
       - /etc/codestra/secrets/codestra-compose/provisioning/ca.crt:/run/secrets/provisioning/ca.crt:ro
@@ -103,6 +104,8 @@ services:
       <<: *safe-flags
       SERVICE_NAME: middleware-sync-worker
       QUEUE_NAME: middleware.sync.odoo.v1
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-sync-worker-database-url:/run/secrets/database_url:ro
 
   middleware-notification-worker:
     <<: *worker
@@ -111,6 +114,8 @@ services:
       <<: *safe-flags
       SERVICE_NAME: middleware-notification-worker
       QUEUE_NAME: middleware.notification.v1
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-notification-worker-database-url:/run/secrets/database_url:ro
 
   middleware-reconciliation-worker:
     <<: *worker
@@ -120,6 +125,8 @@ services:
       SERVICE_NAME: middleware-reconciliation-worker
       QUEUE_NAME: middleware.reconciliation.v1
       WORKER_INTERVAL_SECONDS: "60"
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-reconciliation-worker-database-url:/run/secrets/database_url:ro
 
   middleware-scheduler:
     <<: *worker
@@ -129,6 +136,8 @@ services:
       SERVICE_NAME: middleware-scheduler
       QUEUE_NAME: middleware.scheduler.v1
       OUTBOX_WORKER_ENABLED: "false"
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-scheduler-database-url:/run/secrets/database_url:ro
 
   middleware-evidence-runner:
     <<: *worker
@@ -138,6 +147,8 @@ services:
       SERVICE_NAME: middleware-evidence-runner
       QUEUE_NAME: middleware.evidence.v1
       WORKER_INTERVAL_SECONDS: "60"
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-evidence-runner-database-url:/run/secrets/database_url:ro
 
 networks:
   middleware_backend:
@@ -157,8 +168,6 @@ networks:
     name: codestra-odoo19-module-staging_isolated
 
 secrets:
-  database_url:
-    file: /etc/codestra/secrets/codestra-compose/database_url
   redis_url:
     file: /etc/codestra/secrets/codestra-compose/redis_url
   middleware_secret:
