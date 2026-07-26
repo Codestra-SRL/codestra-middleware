@@ -69,8 +69,8 @@ def validate_runtime(service: str, queue: str | None = None) -> None:
             raise RuntimeError(f"QUEUE_NAME must be {queue}")
     if service == "middleware-event-gateway" and not settings.auth_ready:
         raise RuntimeError("event gateway authorization configuration is incomplete")
-    if service == "middleware-integration-api" and not settings.middleware_secret:
-        raise RuntimeError("integration API authorization configuration is incomplete")
+    if service in {"middleware-integration-api", "middleware-policy-engine"} and not settings.middleware_secret:
+        raise RuntimeError(f"{service} authorization configuration is incomplete")
 
 
 def add_api_runtime(app: FastAPI, service: str) -> None:

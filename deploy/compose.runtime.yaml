@@ -99,6 +99,17 @@ services:
       - provisioning_private
       - odoo_module_staging
 
+  middleware-policy-engine:
+    <<: *runtime
+    command: [python, -m, app.entrypoints.policy_engine]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-policy-engine
+      POLICY_MODE: shadow
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-policy-engine-database-url:/run/secrets/database_url:ro
+    networks: [middleware_backend, middleware_edge]
+
   middleware-sync-worker:
     <<: *worker
     command: [python, -m, app.entrypoints.sync_worker]
