@@ -1,7 +1,7 @@
-FROM python:3.12.11-slim
+FROM python@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 RUN useradd --system --uid 10001 --create-home app
 WORKDIR /app
-COPY . /app
+COPY --chown=app:app . /app
 RUN python -m pip install --no-cache-dir --disable-pip-version-check 'pip==26.1.2' \
     && python -m pip install --no-cache-dir --disable-pip-version-check \
     'fastapi==0.139.2' 'starlette==1.3.1' 'uvicorn[standard]==0.35.0' \

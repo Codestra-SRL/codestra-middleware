@@ -87,6 +87,30 @@ class IdempotencyRecord(Base):
     )
 
 
+class PublisherNonce(Base):
+    __tablename__ = "publisher_nonce"
+    key_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nonce: Mapped[str] = mapped_column(String(128), primary_key=True)
+    signed_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PublisherAcknowledgement(Base):
+    __tablename__ = "publisher_acknowledgement"
+    acknowledgement_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    duplicate: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    retryable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    acknowledgement: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class EventInbox(Base):
     __tablename__ = "event_inbox"
     id: Mapped[UUID] = mapped_column(
@@ -176,6 +200,68 @@ class PolicyDecision(Base):
     context: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class OrchestrationRequest(Base):
+    __tablename__ = "orchestration_request"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    request_uid: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    business_unit: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    subject_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    department_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    team_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    supervisor_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    campaign_references: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    requested_resources: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="disabled")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CredentialGrant(Base):
+    __tablename__ = "credential_grant"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    orchestration_request_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("orchestration_request.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    credential_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    vault_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    secret_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    retrieval_token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LeadSyncRequest(Base):
+    __tablename__ = "lead_sync_request"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    source_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    business_unit: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    campaign_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    list_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    canonical_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="disabled")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 

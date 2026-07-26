@@ -33,6 +33,6 @@ class KeycloakValidator:
         roles = set(claims.get("realm_access", {}).get("roles", []))
         if not self.required_roles.issubset(roles):
             raise JWTAuthError("required role denied")
-        if claims.get("typ") == "Bearer" and not claims.get("business_units") and not claims.get("client_id"):
+        if claims.get("typ") == "Bearer" and not claims.get("business_units") and not claims.get("client_id") and not claims.get("azp"):
             raise JWTAuthError("business-unit or service-account claim required")
         return claims

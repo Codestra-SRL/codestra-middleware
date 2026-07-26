@@ -1,0 +1,125 @@
+# Render with MIDDLEWARE_IMAGE set to an immutable name@sha256 digest.
+name: codestra-middleware-runtime
+
+x-runtime: &runtime
+  image: ${MIDDLEWARE_IMAGE:?set immutable middleware image digest}
+  user: "10001:10001"
+  init: true
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001
+  env_file:
+    - /opt/codestra/env/middleware.env
+  environment: &safe-flags
+    PORT: "8095"
+    LOG_LEVEL: INFO
+    LIVE_WRITES_ENABLED: "false"
+    ALLOW_NON_TEST_CAMPAIGNS: "false"
+    ODOO_DELIVERY_ENABLED: "false"
+    N8N_DELIVERY_ENABLED: "false"
+    N8N_EVENT_DELIVERY_ENABLED: "false"
+    N8N_PRODUCTION_WORKFLOWS_ENABLED: "false"
+    AUTOMATION_ACTIONS_ENABLED: "false"
+    ODOO_AUTOMATION_WRITES_ENABLED: "false"
+    VICIDIAL_WRITE_ENABLED: "false"
+    TRANSFER_CONTROL_ENABLED: "false"
+    CALLBACK_DISPATCH_ENABLED: "false"
+    MESSAGING_ENABLED: "false"
+    REPORT_DELIVERY_ENABLED: "false"
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - >-
+        import urllib.request;
+        urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3)
+    interval: 15s
+    timeout: 5s
+    retries: 10
+    start_period: 10s
+  logging:
+    driver: json-file
+    options:
+      max-size: 20m
+      max-file: "5"
+  cpus: 0.50
+  mem_limit: 512m
+  pids_limit: 128
+  stop_grace_period: 30s
+  networks: [middleware_backend]
+
+x-worker: &worker
+  <<: *runtime
+
+services:
+  middleware-event-gateway:
+    <<: *runtime
+    command: [python, -m, app.entrypoints.event_gateway]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-event-gateway
+    networks: [middleware_backend, middleware_edge]
+
+  middleware-integration-api:
+    <<: *runtime
+    command: [python, -m, app.entrypoints.integration_api]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-integration-api
+    networks: [middleware_backend, middleware_edge]
+
+  middleware-sync-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.sync_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-sync-worker
+      QUEUE_NAME: middleware.sync.odoo.v1
+
+  middleware-notification-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.notification_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-notification-worker
+      QUEUE_NAME: middleware.notification.v1
+
+  middleware-reconciliation-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.reconciliation_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-reconciliation-worker
+      QUEUE_NAME: middleware.reconciliation.v1
+      WORKER_INTERVAL_SECONDS: "60"
+
+  middleware-scheduler:
+    <<: *worker
+    command: [python, -m, app.entrypoints.scheduler]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-scheduler
+      QUEUE_NAME: middleware.scheduler.v1
+      OUTBOX_WORKER_ENABLED: "false"
+
+  middleware-evidence-runner:
+    <<: *worker
+    command: [python, -m, app.entrypoints.evidence_runner]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-evidence-runner
+      QUEUE_NAME: middleware.evidence.v1
+      WORKER_INTERVAL_SECONDS: "60"
+
+networks:
+  middleware_backend:
+    external: true
+    name: codestra_backend
+  middleware_edge:
+    external: true
+    name: codestra_edge

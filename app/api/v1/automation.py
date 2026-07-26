@@ -1,38 +1,208 @@
-from datetime import datetime, timezone
+import hashlib
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.automation import (
     AutomationSecurityError,
+    canonical_hash,
     redact,
     verify_exact_body,
     verify_timestamp,
 )
 from app.core.config import settings
+from app.db.models import AuditEvent, IdempotencyRecord
+from app.db.session import get_session
 
 router = APIRouter(prefix="/api/v1/automation", tags=["automation"])
+BUSINESS_UNITS = frozenset(
+    {"GLOBAL", "MOY", "COD", "SCP", "MBL", "RLP", "FTP", "TRX", "CAL"}
+)
 
 
 class EventEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    schema_version: str = Field(
+        pattern=r"^1(?:\.\d+)?$",
+        validation_alias=AliasChoices("schema_version", "event_version"),
+    )
     event_id: str = Field(min_length=1, max_length=128)
     event_type: str = Field(pattern=r"^[a-z][a-z0-9_.-]+$")
-    event_version: str = Field(pattern=r"^1(?:\.\d+)?$")
+    event_time: datetime = Field(
+        validation_alias=AliasChoices("event_time", "occurred_at")
+    )
     environment: Literal["test", "staging", "integration", "production"]
-    source: str = Field(min_length=1, max_length=64)
+    source_system: str = Field(
+        min_length=1,
+        max_length=64,
+        validation_alias=AliasChoices("source_system", "source"),
+    )
+    business_unit: str = Field(default="GLOBAL", max_length=16)
     campaign_id: str = Field(min_length=1, max_length=64)
+    entity_type: str = Field(default="unspecified", max_length=128)
+    entity_id: str = Field(default="unspecified", max_length=128)
     correlation_id: str = Field(min_length=1, max_length=128)
-    occurred_at: datetime
+    causation_id: str | None = Field(default=None, max_length=128)
+    idempotency_key: str = Field(default="legacy-unspecified", max_length=255)
     payload: dict[str, Any]
+    workflow_code: str | None = Field(
+        default=None, pattern=r"^(?:WF|N8)-[A-Za-z0-9_.-]+$"
+    )
+    workflow_version: str | None = Field(default=None, max_length=32)
+    data_minimized: bool = False
 
 
 def enforce_scope(envelope: EventEnvelope) -> None:
     if envelope.environment != settings.automation_environment:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "environment not permitted")
+    if envelope.business_unit not in BUSINESS_UNITS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "business unit not permitted")
     if envelope.campaign_id not in settings.allowed_campaigns:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "campaign not permitted")
+
+
+class IdempotencyReservation(BaseModel):
+    environment: Literal["test", "staging", "integration", "production"]
+    workflow_code: str = Field(pattern=r"^(?:WF|N8)-[A-Za-z0-9_.-]+$")
+    event_id: str = Field(min_length=1, max_length=128)
+    correlation_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    business_unit: str = Field(default="GLOBAL", max_length=16)
+    campaign_id: str = Field(default="TEST_SYN", min_length=1, max_length=64)
+
+
+@router.post("/idempotency/check")
+async def reserve_idempotency(
+    body: IdempotencyReservation,
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    if body.environment != settings.automation_environment:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "environment not permitted")
+    scope = f"n8n:{body.environment}:{body.workflow_code}"
+    key_hash = hashlib.sha256(body.idempotency_key.encode()).hexdigest()
+    request_hash = canonical_hash(redact(body.payload))
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:value, 0))"),
+        {"value": f"{scope}:{key_hash}"},
+    )
+    existing = await db.scalar(
+        select(IdempotencyRecord).where(
+            IdempotencyRecord.scope == scope,
+            IdempotencyRecord.key_hash == key_hash,
+        )
+    )
+    if existing:
+        if existing.request_hash != request_hash:
+            await db.rollback()
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "idempotency key conflict"
+            )
+        await db.commit()
+        return {
+            "allowed": False,
+            "duplicate": True,
+            "conflict": False,
+            "environment": body.environment,
+            "workflow_code": body.workflow_code,
+            "event_id": body.event_id,
+            "correlation_id": body.correlation_id,
+            "idempotency_key": body.idempotency_key,
+            "payload": body.payload,
+            "business_unit": body.business_unit,
+            "campaign_id": body.campaign_id,
+        }
+    response = {
+        "allowed": True,
+        "duplicate": False,
+        "conflict": False,
+        "environment": body.environment,
+        "workflow_code": body.workflow_code,
+        "event_id": body.event_id,
+        "correlation_id": body.correlation_id,
+        "idempotency_key": body.idempotency_key,
+        "payload": body.payload,
+        "business_unit": body.business_unit,
+        "campaign_id": body.campaign_id,
+    }
+    db.add(
+        IdempotencyRecord(
+            scope=scope,
+            key_hash=key_hash,
+            request_hash=request_hash,
+            response=response,
+            status_code=202,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        )
+    )
+    db.add(
+        AuditEvent(
+            action="n8n.idempotency.reserved",
+            subject=body.event_id,
+            correlation_id=body.correlation_id,
+            decision="accepted",
+            redacted_payload={
+                "workflow_code": body.workflow_code,
+                "environment": body.environment,
+            },
+        )
+    )
+    await db.commit()
+    return response
+
+
+class AutomationAuditResult(BaseModel):
+    workflow_code: str = Field(pattern=r"^(?:WF|N8)-[A-Za-z0-9_.-]+$")
+    workflow_version: str = Field(min_length=1, max_length=32)
+    execution_id: str = Field(min_length=1, max_length=128)
+    event_id: str = Field(min_length=1, max_length=128)
+    correlation_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    business_unit: str = Field(pattern=r"^(?:GLOBAL|MOY|COD|SCP|MBL|RLP|FTP|TRX|CAL)$")
+    campaign_id: str = Field(min_length=1, max_length=64)
+    action: str = Field(min_length=1, max_length=128)
+    provider: str = Field(min_length=1, max_length=64)
+    status: Literal["accepted", "completed", "failed", "dead_lettered", "duplicate"]
+    error_category: str | None = Field(default=None, max_length=64)
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/audit/result", status_code=202)
+async def record_audit_result(
+    body: AutomationAuditResult,
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    db.add(
+        AuditEvent(
+            action=f"n8n.{body.action}",
+            subject=body.event_id,
+            correlation_id=body.correlation_id,
+            decision=body.status,
+            redacted_payload=redact(
+                {
+                    "workflow_code": body.workflow_code,
+                    "workflow_version": body.workflow_version,
+                    "execution_id": body.execution_id,
+                    "business_unit": body.business_unit,
+                    "campaign_id": body.campaign_id,
+                    "provider": body.provider,
+                    "error_category": body.error_category,
+                    "details": body.details,
+                }
+            ),
+        )
+    )
+    await db.commit()
+    return {
+        "accepted": True,
+        "event_id": body.event_id,
+        "correlation_id": body.correlation_id,
+        "status": body.status,
+    }
 
 
 @router.post("/events", status_code=status.HTTP_202_ACCEPTED)
@@ -76,9 +246,8 @@ async def receive_event(
 async def policy_check(body: EventEnvelope) -> dict[str, Any]:
     enforce_scope(body)
     return {
+        **body.model_dump(mode="json"),
         "allowed": True,
-        "environment": body.environment,
-        "campaign_id": body.campaign_id,
         "workflow_id": "validated-by-router",
     }
 
@@ -161,4 +330,4 @@ async def authorized_action(action: str, body: dict[str, Any]) -> dict[str, Any]
     campaign = body.get("campaign_id")
     if campaign not in settings.allowed_campaigns:
         raise HTTPException(403, "campaign not permitted")
-    return {"accepted": True, "action": action, "payload": redact(body)}
+    return {**redact(body), "accepted": True, "action_result": action}

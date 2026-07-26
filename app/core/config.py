@@ -1,4 +1,6 @@
 from pathlib import Path
+import base64
+import json
 from urllib.parse import urlsplit
 
 from pydantic import field_validator
@@ -12,6 +14,7 @@ VICIDIAL_PRIVATE_HOSTS = frozenset(
     }
 )
 VICIDIAL_PRIVATE_PORT = 8443
+VICIDIAL_ENDPOINT_ADAPTER_PORT = 8444
 VICIDIAL_SECRET_ROOT = Path("/run/secrets/vicidial-mtls")
 
 
@@ -69,11 +72,24 @@ class Settings(BaseSettings):
     keycloak_audience: str = ""
     keycloak_jwks_url: str = ""
     keycloak_authorized_parties: str = ""
+    keycloak_userinfo_url: str = ""
+    provisioning_service_url: str = ""
+    provisioning_service_token_url: str = ""
+    provisioning_service_client_id: str = ""
+    provisioning_service_client_secret_file: str = ""
+    provisioning_service_ca_file: str = ""
+    odoo_identity_lookup_url: str = ""
+    odoo_identity_lookup_hmac_file: str = ""
     maintenance_interval_seconds: int = 30
     automation_allowed_campaigns: str = "TEST_SYN"
     automation_environment: str = "test"
     automation_hmac_secret: str = ""
     environment: str = "preproduction"
+    publisher_hmac_keys_file: str = ""
+    publisher_canary_enabled: bool = False
+    webphone_staging_provisioning_enabled: bool = False
+    webphone_keycloak_enabled: bool = False
+    webphone_endpoint_adapter_url: str = ""
 
     def validate_safety(self) -> None:
         production_switches = (
@@ -125,6 +141,25 @@ class Settings(BaseSettings):
             raise ValueError("VICIdial URL must use an approved private HTTPS endpoint")
         return value.rstrip("/")
 
+    @field_validator("webphone_endpoint_adapter_url")
+    @classmethod
+    def validate_webphone_endpoint_adapter_url(cls, value: str) -> str:
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "authorization.internal.codestra.agency"
+            or parsed.port != VICIDIAL_ENDPOINT_ADAPTER_PORT
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in ("", "/")
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("webphone endpoint adapter must use private HTTPS")
+        return value.rstrip("/")
+
     @field_validator(
         "vicidial_ca_file",
         "vicidial_client_cert_file",
@@ -163,6 +198,37 @@ class Settings(BaseSettings):
     @property
     def auth_ready(self) -> bool:
         return bool(self.middleware_secret and self.ingestion_hmac_secret)
+
+    @property
+    def webphone_identity_ready(self) -> bool:
+        return all(
+            (
+                self.webphone_staging_provisioning_enabled,
+                self.keycloak_issuer,
+                self.keycloak_audience,
+                self.keycloak_jwks_url,
+                self.keycloak_authorized_parties,
+                self.keycloak_userinfo_url,
+                self.provisioning_service_url,
+                self.provisioning_service_token_url,
+                self.provisioning_service_client_id,
+                self.provisioning_service_client_secret_file,
+                self.provisioning_service_ca_file,
+            )
+        )
+
+    @property
+    def publisher_hmac_keys(self) -> dict[str, bytes]:
+        if not self.publisher_hmac_keys_file:
+            return {}
+        path = Path(self.publisher_hmac_keys_file)
+        if not path.is_absolute() or not path.is_file():
+            raise ValueError("publisher key file unavailable")
+        values = json.loads(path.read_text())
+        if not isinstance(values, dict) or not values:
+            raise ValueError("publisher key file invalid")
+        return {key_id: base64.urlsafe_b64decode(value + "===")
+                for key_id, value in values.items()}
 
     @property
     def enabled_events(self) -> frozenset[str]:

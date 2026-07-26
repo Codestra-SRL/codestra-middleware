@@ -4,10 +4,17 @@ from app.api.v1.control import router as control_router
 from app.api.v1.automation import router as automation_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.operations import router as operations_router
+from app.api.v1.lead_reconciliation import router as lead_reconciliation_router
+from app.api.v1.orchestration import router as orchestration_router
+from app.api.v1.mappings import router as mappings_router
+from app.api.v1.publisher import router as publisher_router
+from app.api.v1.webphone import router as webphone_router
+from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.core.config import settings
 from app.core.auth import BearerAuthError, verify_bearer
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from prometheus_client import make_asgi_app
 
 app = FastAPI(title="Codestra Middleware", version="0.2.0")
 app.include_router(events_router)
@@ -15,11 +22,19 @@ app.include_router(control_router)
 app.include_router(automation_router)
 app.include_router(reports_router)
 app.include_router(operations_router)
+app.include_router(lead_reconciliation_router)
+app.include_router(orchestration_router)
+app.include_router(mappings_router)
+app.include_router(publisher_router)
+app.include_router(webphone_router)
+app.include_router(n8n_staging_router)
+app.mount("/metrics", make_asgi_app())
 
 SIGNED_WEBHOOK_PATHS = frozenset(
     {
         "/api/v1/events/vicidial",
         "/api/v1/automation/events",
+        "/api/v2/telephony/canary",
     }
 )
 
@@ -32,7 +47,7 @@ async def control_request_guard(request: Request, call_next):
     ):
         return JSONResponse({"detail": "request too large"}, status_code=413)
     if (
-        request.url.path.startswith("/api/")
+        (request.url.path.startswith("/api/") or request.url.path.startswith("/v1/"))
         and request.url.path not in SIGNED_WEBHOOK_PATHS
     ):
         try:
