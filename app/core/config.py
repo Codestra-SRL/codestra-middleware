@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     database_pool_size: int = 8
     database_max_overflow: int = 4
     database_pool_timeout_seconds: int = 5
-    enabled_event_types: str = "vicidial.call.ended"
+    enabled_event_types: str = (
+        "vicidial.call.started,vicidial.call.connected,vicidial.call.ended"
+    )
     allowed_client_instances: str = "vicidial-server-b"
     live_writes_enabled: bool = False
     allow_non_test_campaigns: bool = False
