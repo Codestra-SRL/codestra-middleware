@@ -108,6 +108,7 @@ class Settings(BaseSettings):
     telephony_reconciliation_enabled: bool = False
     telephony_notifications_enabled: bool = False
     telephony_evidence_enabled: bool = False
+    campaign_design_enabled: bool = False
 
     def validate_safety(self) -> None:
         production_switches = (

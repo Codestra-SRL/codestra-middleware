@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codestra.agency/campaign.design.requested.v1.schema.json",
+  "title": "campaign.design.requested.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "integration_uuid",
+    "odoo_campaign_id",
+    "environment",
+    "business_unit",
+    "purpose",
+    "direction",
+    "owner_user_id",
+    "supervisor_user_id",
+    "correlation_id"
+  ],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "integration_uuid": {"type": "string", "format": "uuid"},
+    "odoo_campaign_id": {"type": "integer", "minimum": 1},
+    "environment": {"enum": ["staging", "test"]},
+    "business_unit": {
+      "enum": ["MOY", "COD", "SCP", "MBL", "RLP", "FTP", "TRX", "CAL", "TEST"]
+    },
+    "purpose": {"type": "string", "pattern": "^[A-Z0-9]{2,16}$"},
+    "direction": {"enum": ["inbound", "outbound", "blended"]},
+    "owner_user_id": {"type": "integer", "minimum": 1},
+    "supervisor_user_id": {"type": "integer", "minimum": 1},
+    "correlation_id": {"type": "string", "minLength": 8, "maxLength": 128}
+  }
+}
