@@ -22,6 +22,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Verify approved repository, ref, and reviewed source ancestry
@@ -30,6 +31,9 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REPOSITORY}" = "Codestra-SRL/codestra-middleware"
           test "${GITHUB_REF}" = "refs/heads/main"
+          test "$(git rev-parse --is-shallow-repository)" = "false"
+          git cat-file -e \
+            419650868659efa3589dcda29c1615c27b71f493^{commit}
           git merge-base --is-ancestor \
             419650868659efa3589dcda29c1615c27b71f493 \
             "${GITHUB_SHA}"

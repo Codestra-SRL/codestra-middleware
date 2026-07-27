@@ -17,7 +17,7 @@ review is submitted by a GitHub user other than appolon1908-hue.
 - PR #2 merge commit: `9ccd5dc1110ae484c5d1f209773791d159e2272f`
 - Security decision SHA-256: `396234e6356b0fc5d0ce496e4b519aef987745ee47969b23fe0b488605145326`
 - OpenVEX SHA-256: `eed2f59523e87385abe2743c438ddb45d00c37bf7926923791ba8da245ae5a2e`
-- Signing workflow SHA-256: `055b5ac14017dba6d0dbf6849c293fb6c7653ab49809ee3610dbec0c93313a50`
+- Signing workflow SHA-256: `c8c36ce2b012c43ebe54ad943b4a096ad980937756177533ac69df626f97fcdc`
 - Signing policy SHA-256: `ff4b9cd8983851355fb5c6a4f9b3be23009296c097063f3a5de0e8c8ca4a62d3`
 
 ## Product scope
