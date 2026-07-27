@@ -6,12 +6,12 @@ OpenVEX workflow may run.
 
 ## Human-supplied fields
 
-Security owner name: <REQUIRED_HUMAN_NAME>
-Security owner organizational role: <REQUIRED_AUTHORIZED_ROLE>
-Decision timestamp UTC: <REQUIRED_UTC_TIMESTAMP>
-Decision: <APPROVED_FIXED_BACKPORT_OR_REJECTED>
-Remediation owner: <REQUIRED_REMEDIATION_OWNER>
-Mandatory review date UTC: <REQUIRED_UTC_REVIEW_DATE>
+Security owner name: Ralph Appolon
+Security owner organizational role: Chief Executive Officer (CEO) and Security Owner
+Decision timestamp UTC: 2026-07-27T12:23:06Z
+Decision: APPROVED_FIXED_BACKPORT
+Remediation owner: Ralph Appolon
+Mandatory review date UTC: 2027-01-27
 
 ## Immutable decision scope
 
