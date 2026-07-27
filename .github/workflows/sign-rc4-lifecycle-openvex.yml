@@ -47,10 +47,10 @@ jobs:
             "af1e0891fb003223ee93f2349752613f4cd17a67bab826ff31b3717f2537f5d2"
 
           test "$(jq '.statements | length' openvex.json)" = "6"
-          test "$(jq '[.statements[].products[0][\"@id\"]] | unique | length' openvex.json)" = "2"
+          test "$(jq '[.statements[].products[0]["@id"]] | unique | length' openvex.json)" = "2"
           test "$(jq '[.statements[].vulnerability.name] | unique | length' openvex.json)" = "3"
-          test "$(jq '[.statements[] | select(.status == \"fixed\")] | length' openvex.json)" = "6"
-          test "$(jq '[.statements[].products[0].subcomponents[0][\"@id\"] | select(. == \"pkg:generic/cpython@3.13.14\")] | length' openvex.json)" = "6"
+          test "$(jq '[.statements[] | select(.status == "fixed")] | length' openvex.json)" = "6"
+          test "$(jq '[.statements[].products[0].subcomponents[0]["@id"] | select(. == "pkg:generic/cpython@3.13.14")] | length' openvex.json)" = "6"
 
           grep -q '041eeb242c68ba8f606b7023c728575d389a2739' \
             candidate-provenance.json
