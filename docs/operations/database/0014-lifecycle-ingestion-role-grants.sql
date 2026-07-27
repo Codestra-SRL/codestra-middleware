@@ -3,7 +3,9 @@
 \if :{?ingestion_role}
 \else
   \echo 'required psql variable ingestion_role is missing'
-  \quit 64
+  DO $failure$ BEGIN
+    RAISE EXCEPTION 'required psql variable ingestion_role is missing';
+  END $failure$;
 \endif
 
 SELECT
@@ -21,7 +23,9 @@ SELECT
 \if :role_is_valid
 \else
   \echo 'ingestion_role failed validation or is privileged'
-  \quit 65
+  DO $failure$ BEGIN
+    RAISE EXCEPTION 'ingestion_role failed validation or is privileged';
+  END $failure$;
 \endif
 
 GRANT USAGE ON SCHEMA public TO :"ingestion_role";

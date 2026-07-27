@@ -9,7 +9,9 @@ Baresip 1.0's installed `ausine` source accepts only 48 kHz stereo, while the
 fixture negotiates G.711 PCMU at 8 kHz mono. The corrected template uses a
 generated 1000 Hz, 8 kHz, mono S16LE WAV through the installed `aufile` module,
 constrains the account to `PCMU/8000/1`, and consumes receive media with the
-ALSA null sink. It records no received audio.
+ALSA null sink. A privileged operator creates only the protected runtime
+directory; the unprivileged test identity generates and reads the mode-`0600`
+WAV. It records no received audio.
 
 ## Database ACL
 
