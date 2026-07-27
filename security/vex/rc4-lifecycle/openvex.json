@@ -9,7 +9,7 @@
   "statements": [
     {
       "vulnerability": {"name": "CVE-2026-11940"},
-      "products": [{"@id": "pkg:oci/codestra/middleware@sha256:8902cd852ab0b03701b3c5ab6b28d184c6a632e9d9b0deb39b0d5280ed38ed46", "subcomponents": [{"@id": "pkg:generic/cpython@3.13.14"}]}],
+      "products": [{"@id": "pkg:oci/middleware@sha256%3A8902cd852ab0b03701b3c5ab6b28d184c6a632e9d9b0deb39b0d5280ed38ed46?repository_url=index.docker.io%2Fcodestra", "subcomponents": [{"@id": "pkg:generic/python@3.13.14"}]}],
       "status": "fixed",
       "timestamp": "2026-07-27T12:23:06Z",
       "action_statement": "Official CPython 3.13 backport 771d12dda5140313db0ac550292987975651bbde is present and its security regression test passed.",
@@ -17,7 +17,7 @@
     },
     {
       "vulnerability": {"name": "CVE-2026-15308"},
-      "products": [{"@id": "pkg:oci/codestra/middleware@sha256:8902cd852ab0b03701b3c5ab6b28d184c6a632e9d9b0deb39b0d5280ed38ed46", "subcomponents": [{"@id": "pkg:generic/cpython@3.13.14"}]}],
+      "products": [{"@id": "pkg:oci/middleware@sha256%3A8902cd852ab0b03701b3c5ab6b28d184c6a632e9d9b0deb39b0d5280ed38ed46?repository_url=index.docker.io%2Fcodestra", "subcomponents": [{"@id": "pkg:generic/python@3.13.14"}]}],
       "status": "fixed",
       "timestamp": "2026-07-27T12:23:06Z",
       "action_statement": "Official CPython 3.13 backport 7933f4bf7131aa4140750f9404f5de0aa2969ced is present and its security regression test passed.",
@@ -25,7 +25,7 @@
     },
     {
       "vulnerability": {"name": "CVE-2026-11972"},
-      "products": [{"@id": "pkg:oci/codestra/middleware@sha256:8902cd852ab0b03701b3c5ab6b28d184c6a632e9d9b0deb39b0d5280ed38ed46", "subcomponents": [{"@id": "pkg:generic/cpython@3.13.14"}]}],
+      "products": [{"@id": "pkg:oci/middleware@sha256%3A8902cd852ab0b03701b3c5ab6b28d184c6a632e9d9b0deb39b0d5280ed38ed46?repository_url=index.docker.io%2Fcodestra", "subcomponents": [{"@id": "pkg:generic/python@3.13.14"}]}],
       "status": "fixed",
       "timestamp": "2026-07-27T12:23:06Z",
       "action_statement": "Official CPython 3.13 backport 3f031d431f80668e14f3bc066bbf4369cd9281b9 is present and its security regression test passed.",
@@ -33,7 +33,7 @@
     },
     {
       "vulnerability": {"name": "CVE-2026-11940"},
-      "products": [{"@id": "pkg:oci/codestra/telephony-event-gateway@sha256:5cdf841d45f5aa195494b7577c1b7f2f8396abae472dfeb02baa1ac5dc2fdf18", "subcomponents": [{"@id": "pkg:generic/cpython@3.13.14"}]}],
+      "products": [{"@id": "pkg:oci/telephony-event-gateway@sha256%3A5cdf841d45f5aa195494b7577c1b7f2f8396abae472dfeb02baa1ac5dc2fdf18?repository_url=index.docker.io%2Fcodestra", "subcomponents": [{"@id": "pkg:generic/python@3.13.14"}]}],
       "status": "fixed",
       "timestamp": "2026-07-27T12:23:06Z",
       "action_statement": "Official CPython 3.13 backport 771d12dda5140313db0ac550292987975651bbde is present and its security regression test passed.",
@@ -41,7 +41,7 @@
     },
     {
       "vulnerability": {"name": "CVE-2026-15308"},
-      "products": [{"@id": "pkg:oci/codestra/telephony-event-gateway@sha256:5cdf841d45f5aa195494b7577c1b7f2f8396abae472dfeb02baa1ac5dc2fdf18", "subcomponents": [{"@id": "pkg:generic/cpython@3.13.14"}]}],
+      "products": [{"@id": "pkg:oci/telephony-event-gateway@sha256%3A5cdf841d45f5aa195494b7577c1b7f2f8396abae472dfeb02baa1ac5dc2fdf18?repository_url=index.docker.io%2Fcodestra", "subcomponents": [{"@id": "pkg:generic/python@3.13.14"}]}],
       "status": "fixed",
       "timestamp": "2026-07-27T12:23:06Z",
       "action_statement": "Official CPython 3.13 backport 7933f4bf7131aa4140750f9404f5de0aa2969ced is present and its security regression test passed.",
@@ -49,7 +49,7 @@
     },
     {
       "vulnerability": {"name": "CVE-2026-11972"},
-      "products": [{"@id": "pkg:oci/codestra/telephony-event-gateway@sha256:5cdf841d45f5aa195494b7577c1b7f2f8396abae472dfeb02baa1ac5dc2fdf18", "subcomponents": [{"@id": "pkg:generic/cpython@3.13.14"}]}],
+      "products": [{"@id": "pkg:oci/telephony-event-gateway@sha256%3A5cdf841d45f5aa195494b7577c1b7f2f8396abae472dfeb02baa1ac5dc2fdf18?repository_url=index.docker.io%2Fcodestra", "subcomponents": [{"@id": "pkg:generic/python@3.13.14"}]}],
       "status": "fixed",
       "timestamp": "2026-07-27T12:23:06Z",
       "action_statement": "Official CPython 3.13 backport 3f031d431f80668e14f3bc066bbf4369cd9281b9 is present and its security regression test passed.",
