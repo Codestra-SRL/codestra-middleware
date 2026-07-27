@@ -42,7 +42,7 @@ jobs:
           sha256sum -c openvex.json.sha256
           sha256sum -c candidate-provenance.json.sha256
           test "$(sha256sum openvex.json | cut -d' ' -f1)" = \
-            "00a54e20791f4e37ade9e8e41595150c01d05d1c9f1faa94f3f418164ec862b7"
+            "1e958509482b4751c8c3c0c9a6c0f6439addd446060682d9f3f59952bc6845c4"
           test "$(sha256sum candidate-provenance.json | cut -d' ' -f1)" = \
             "af1e0891fb003223ee93f2349752613f4cd17a67bab826ff31b3717f2537f5d2"
 
