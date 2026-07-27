@@ -7,11 +7,12 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.call_lifecycle import correlation_id as call_correlation_id, transition
 from app.core.security import SecurityError, payload_hash, verify_ingestion_signature
 from app.api.v1.publisher import _quarantine, _security_rejection
 from app.db.models import (
     AuditEvent, IdempotencyRecord, IntegrationDelivery, IntegrationEvent,
-    PublisherNonce,
+    PublisherNonce, TelephonyCallLifecycle, TelephonyCallLifecycleEvent,
 )
 from app.db.session import get_session
 from app.schemas.registry import Envelope, parse_event
@@ -28,6 +29,15 @@ def _entity_key(event_type: str, payload: dict) -> str | None:
         if value := payload.get(field):
             return f"{field}:{value}"
     return None
+
+
+def _is_lifecycle(envelope: Envelope) -> bool:
+    return envelope.event_type in {
+        "vicidial.call.started", "vicidial.call.connected"
+    } or (
+        envelope.event_type == "vicidial.call.ended"
+        and "lifecycle_status" in envelope.payload
+    )
 
 
 @router.post("/vicidial", status_code=status.HTTP_202_ACCEPTED)
@@ -112,11 +122,23 @@ async def ingest_vicidial(
             parsed=envelope.model_dump(mode="json"), source_label="vicidial",
         )
         raise HTTPException(400, "idempotency key is missing or invalid")
+    if _is_lifecycle(envelope) and idempotency_key != str(envelope.event_id):
+        await _quarantine(
+            db, request, body, key_id=client_instance,
+            publisher_id=client_instance, reason="event_id_mismatch",
+            parsed=envelope.model_dump(mode="json"), source_label="vicidial",
+        )
+        raise HTTPException(400, "idempotency key must equal event ID")
 
     request_hash = payload_hash(body)
     key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
     scope = f"vicidial:{client_instance}"
     corr = request.state.correlation_id
+    if _is_lifecycle(envelope):
+        corr = call_correlation_id(
+            envelope.asterisk_linked_id, envelope.asterisk_unique_id or ""
+        )
+        request.state.correlation_id = corr
     # Transaction-scoped advisory lock prevents a concurrent duplicate from
     # creating a second logical persistence set.
     await db.execute(
@@ -131,6 +153,11 @@ async def ingest_vicidial(
     if existing:
         if existing.request_hash != request_hash:
             await db.rollback()
+            await _quarantine(
+                db, request, body, key_id=client_instance,
+                publisher_id=client_instance, reason="event_id_mismatch",
+                parsed=envelope.model_dump(mode="json"), source_label="vicidial",
+            )
             raise HTTPException(409, "idempotency key conflict")
         await db.commit()
         result = dict(existing.response)
@@ -157,6 +184,54 @@ async def ingest_vicidial(
     )
     db.add(incoming)
     await db.flush()
+    if _is_lifecycle(envelope):
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:value, 0))"),
+            {"value": f"telephony-lifecycle:{corr}"},
+        )
+        call = await db.scalar(
+            select(TelephonyCallLifecycle)
+            .where(TelephonyCallLifecycle.correlation_id == corr)
+            .with_for_update()
+        )
+        incoming_state = payload["lifecycle_status"]
+        previous = call.lifecycle_state if call else None
+        decision = transition(previous, incoming_state)
+        if call is None:
+            call = TelephonyCallLifecycle(
+                correlation_id=corr,
+                linked_id=envelope.asterisk_linked_id,
+                primary_unique_id=envelope.asterisk_unique_id,
+                lifecycle_state=decision.resulting,
+                source_extension=envelope.source_extension,
+                destination=envelope.destination,
+                dialplan_context=envelope.dialplan_context,
+            )
+            db.add(call)
+            await db.flush()
+        elif decision.applied:
+            call.lifecycle_state = decision.resulting
+        if incoming_state == "STARTED" and call.started_at is None:
+            call.started_at = envelope.occurred_at
+        elif incoming_state == "CONNECTED" and call.connected_at is None:
+            call.connected_at = envelope.occurred_at
+        elif incoming_state == "ENDED" and call.ended_at is None:
+            call.ended_at = envelope.occurred_at
+            if decision.applied:
+                call.disposition = payload.get("disposition")
+                call.hangup_cause = payload.get("hangup_cause")
+        db.add(TelephonyCallLifecycleEvent(
+            call_id=call.id,
+            integration_event_id=incoming.id,
+            original_event_id=str(envelope.event_id),
+            unique_id=envelope.asterisk_unique_id,
+            channel=envelope.channel,
+            incoming_state=incoming_state,
+            previous_state=previous,
+            resulting_state=decision.resulting,
+            transition_applied=decision.applied,
+            occurred_at=envelope.occurred_at,
+        ))
     for target in ("odoo", "n8n"):
         db.add(IntegrationDelivery(
             event_id=incoming.id, target=target, status="disabled",

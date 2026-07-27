@@ -544,3 +544,70 @@ class TelephonyProvisioningSaga(Base):
             name="ck_telephony_saga_state",
         ),
     )
+
+
+class TelephonyCallLifecycle(Base):
+    __tablename__ = "telephony_call_lifecycle"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    correlation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True
+    )
+    linked_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    primary_unique_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="STARTED"
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disposition: Mapped[str | None] = mapped_column(String(64))
+    hangup_cause: Mapped[str | None] = mapped_column(String(64))
+    source_extension: Mapped[str] = mapped_column(String(32), nullable=False)
+    destination: Mapped[str] = mapped_column(String(64), nullable=False)
+    dialplan_context: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+        onupdate=func.now(), nullable=False
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle_state IN ('STARTED','CONNECTED','ENDED')",
+            name="ck_telephony_call_lifecycle_state",
+        ),
+    )
+
+
+class TelephonyCallLifecycleEvent(Base):
+    __tablename__ = "telephony_call_lifecycle_event"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    call_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_call_lifecycle.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    integration_event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("integration_event.id", ondelete="CASCADE"),
+        nullable=False, unique=True,
+    )
+    original_event_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True
+    )
+    unique_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    channel: Mapped[str] = mapped_column(String(255), nullable=False)
+    incoming_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_state: Mapped[str | None] = mapped_column(String(16))
+    resulting_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    transition_applied: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
