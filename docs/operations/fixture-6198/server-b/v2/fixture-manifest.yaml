@@ -1,0 +1,16 @@
+package_version: fixture-6198-server-b-v2-20260727
+authority: PATH_A_RECOVERED_AUTHENTICATED_SOURCE
+recovered_source:
+  root: /root/server-b-sip-preparation-20260726T135924Z
+  manifest: evidence/artifact-checksums.txt
+  pjsip_sha256: e84f38709b4d3be911f7ee513f2f5fb54b62fcd0ba086661950264405dc3cdd0
+  dialplan_sha256: ae6148c1611d226e40506a42d043f445ba4b6069ff9887731f54303aaf769a98
+rendered_destinations:
+  pjsip: {path: /etc/asterisk/pjsip-codestra-synthetic-6198.conf, owner: root, group: asterisk, mode: "0640"}
+  dialplan: {path: /etc/asterisk/extensions-codestra-synthetic-6198.conf, owner: root, group: asterisk, mode: "0640"}
+secret_policy: evidence-only; supplied from protected mode-0600 reference
+repository_hashes:
+  fixture-spec.yaml: d595d270c3e0f10e90678bb14ffb78a244885fcefe542ff7203e18bc3b42a496
+  templates/pjsip-6198.conf.in: 36b62fe443798493491c44f071e955067efe49318b7b8e0c5ef3160327074602
+  templates/extensions-6198.conf: 6284f43a06dbf4908aa03bc7a374f3f520030ab5694ee677b6cae900f43ad9ef
+digest_algorithm: sha256 of sorted per-file hashes; fixture-manifest.yaml excluded to avoid recursion
