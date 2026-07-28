@@ -2,14 +2,16 @@
 import asyncio
 import os
 import uuid
+
 import asyncpg
 
 
+RUN_ID = "concurrency-" + uuid.uuid4().hex
 INSERT = """
 INSERT INTO campaign_extension_allocation
 (id,campaign_id,campaign_number,allocation_public_id,extension_start,
  extension_end,created_by,policy_hash,source_change_id)
-VALUES($1,$2,$3,$4,$5,$6,'concurrency-test',$7,'test')
+VALUES($1,$2,$3,$4,$5,$6,'concurrency-test',$7,$8)
 """
 
 
@@ -19,74 +21,93 @@ async def insert(pool, name, number, start, end, delay=0):
         await transaction.start()
         try:
             await connection.execute(
-                INSERT, uuid.uuid4(), name, number, "ALLOC-" + name,
-                start, end, "c" * 64,
+                INSERT,
+                uuid.uuid4(),
+                f"{RUN_ID}-{name}",
+                number,
+                f"ALLOC-{RUN_ID}-{name}",
+                start,
+                end,
+                "c" * 64,
+                RUN_ID,
             )
             await asyncio.sleep(delay)
             await transaction.commit()
             return "PASS"
-        except asyncpg.ExclusionViolationError:
+        except (
+            asyncpg.DeadlockDetectedError,
+            asyncpg.ExclusionViolationError,
+        ):
             await transaction.rollback()
             return "OVERLAP"
 
 
 async def main():
-    pool = await asyncpg.create_pool(os.environ["TEST_DATABASE_URL"])
-    async with pool.acquire() as connection:
-        await connection.execute("TRUNCATE campaign_extension_allocation")
+    database_url = os.environ["TEST_DATABASE_URL"]
+    assert "diag" in database_url or "rehearsal" in database_url
+    pool = await asyncpg.create_pool(database_url)
     exact = await asyncio.gather(
-        insert(pool, "EXACT1", 100, 7100, 7199, .1),
-        insert(pool, "EXACT2", 200, 7100, 7199),
+        insert(pool, "EXACT1", 9000, 9000, 9099, 0.1),
+        insert(pool, "EXACT2", 9100, 9000, 9099),
     )
     assert sorted(exact) == ["OVERLAP", "PASS"]
-    async with pool.acquire() as connection:
-        await connection.execute("TRUNCATE campaign_extension_allocation")
     partial = await asyncio.gather(
-        insert(pool, "PART1", 100, 7100, 7199, .1),
-        insert(pool, "PART2", 200, 7199, 7298),
+        insert(pool, "PART1", 9200, 9100, 9199, 0.1),
+        insert(pool, "PART2", 9300, 9199, 9298),
     )
     assert sorted(partial) == ["OVERLAP", "PASS"]
-    async with pool.acquire() as connection:
-        await connection.execute("TRUNCATE campaign_extension_allocation")
     contained = await asyncio.gather(
-        insert(pool, "OUTER", 100, 7100, 7199, .1),
-        insert(pool, "INNER", 200, 7120, 7130),
+        insert(pool, "OUTER", 9400, 9300, 9399, 0.1),
+        insert(pool, "INNER", 9500, 9320, 9330),
     )
     assert sorted(contained) == ["OVERLAP", "PASS"]
-    async with pool.acquire() as connection:
-        await connection.execute("TRUNCATE campaign_extension_allocation")
     adjacent = await asyncio.gather(
-        insert(pool, "ADJ1", 100, 7100, 7199, .1),
-        insert(pool, "ADJ2", 200, 7200, 7299),
+        insert(pool, "ADJ1", 9600, 9400, 9499, 0.1),
+        insert(pool, "ADJ2", 9700, 9500, 9599),
     )
     assert adjacent == ["PASS", "PASS"]
-    async with pool.acquire() as connection:
-        await connection.execute("TRUNCATE campaign_extension_allocation")
-    many = await asyncio.gather(*[
-        insert(pool, "BLOCK%d" % number, number, 7000 + number, 7099 + number)
-        for number in (100, 200, 300, 400, 500)
-    ])
+    many = await asyncio.gather(
+        *[
+            insert(
+                pool,
+                f"BLOCK{offset}",
+                9800 + (offset * 100),
+                9600 + (offset * 10),
+                9609 + (offset * 10),
+            )
+            for offset in range(5)
+        ]
+    )
     assert many == ["PASS"] * 5
     async with pool.acquire() as connection:
-        await connection.execute("TRUNCATE campaign_extension_allocation")
         transaction = connection.transaction()
         await transaction.start()
         await connection.execute(
-            INSERT, uuid.uuid4(), "ROLLBACK", 100, "ALLOC-ROLLBACK",
-            7100, 7199, "c" * 64,
+            INSERT,
+            uuid.uuid4(),
+            f"{RUN_ID}-ROLLBACK",
+            10300,
+            f"ALLOC-{RUN_ID}-ROLLBACK",
+            9700,
+            9799,
+            "c" * 64,
+            RUN_ID,
         )
         await transaction.rollback()
-    assert await insert(pool, "AFTERROLLBACK", 200, 7100, 7199) == "PASS"
+    assert await insert(pool, "AFTERROLLBACK", 10400, 9700, 9799) == "PASS"
     async with pool.acquire() as connection:
         await connection.execute(
             "UPDATE campaign_extension_allocation"
-            " SET allocation_status='RETIRED' WHERE campaign_id='AFTERROLLBACK'"
+            " SET allocation_status='RETIRED' WHERE campaign_id=$1",
+            f"{RUN_ID}-AFTERROLLBACK",
         )
-    assert await insert(pool, "REUSE", 300, 7100, 7199) == "OVERLAP"
+    assert await insert(pool, "REUSE", 10500, 9700, 9799) == "OVERLAP"
     async with pool.acquire() as connection:
         assert await connection.fetchval(
             "SELECT count(*) FROM campaign_extension_allocation"
-        ) == 1
+            " WHERE source_change_id=$1",
+            RUN_ID,
+        ) == 11
     await pool.close()
     print("CONCURRENT_OVERLAP_GATE=PASS")
     print("CONCURRENT_ADJACENT_GATE=PASS")
