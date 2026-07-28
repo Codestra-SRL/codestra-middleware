@@ -12,14 +12,21 @@ the ended envelope.
 Dry-run is the default. Execution additionally requires:
 
 - `--execute`;
-- an HTTPS or loopback target ending in `/api/v1/events/vicidial`;
-- a verified `/version` response from the expected RC4 service;
+- exactly one running Compose service `compose/middleware-event-gateway`;
+- the exact approved RC4 image digest and internal `codestra_backend` network;
+- strict `/healthz` and `/readyz` responses from the derived internal address;
 - a protected HMAC secret file;
 - an empty, newly created response log;
 - explicit confirmation of a four-request limit.
 
 `TEST_EVIDENCE_ID` is not accepted as an argument and is never placed in an
 HTTP request. Keep it solely in the external operator evidence manifest.
+
+The target URL is never accepted from the operator. It is derived from the
+single approved Compose container after its labels, immutable image digest,
+internal-only network, private address, health, and readiness all pass.
+Redirects, public and loopback targets, ambiguous candidates, extra health
+fields, and the legacy monolith identity are rejected.
 
 The PR14 HTTP 422 was not caused by the gateway envelope. The replay command
 ran inside the legacy `codestra-middleware-1` monolith and posted to that
