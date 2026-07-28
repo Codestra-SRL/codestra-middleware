@@ -1,4 +1,6 @@
 from datetime import UTC, datetime
+import json
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -210,6 +212,24 @@ def test_design_configuration_is_part_of_hash_and_manifest():
     manifest = build_manifest(item, 1, 91000)
     assert manifest["policies"]["calling_hour_start"] == 9.0
     assert manifest["odoo"]["design_configuration"]["team_ids"] == [9101]
+
+
+def test_published_schema_requires_design_configuration():
+    schema = json.loads(
+        Path("schemas/campaign.design.requested.v1.schema.json").read_text()
+    )
+    assert "design_configuration" in schema["required"]
+    configuration = schema["properties"]["design_configuration"]
+    assert configuration["additionalProperties"] is False
+    assert set(configuration["required"]) == {
+        "time_zone",
+        "calling_hour_start",
+        "calling_hour_end",
+        "consent_required",
+        "dnc_enforced",
+        "team_ids",
+        "supervisor_ids",
+    }
 
 
 @pytest.mark.asyncio

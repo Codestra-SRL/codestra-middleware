@@ -14,7 +14,8 @@
     "direction",
     "owner_user_id",
     "supervisor_user_id",
-    "correlation_id"
+    "correlation_id",
+    "design_configuration"
   ],
   "properties": {
     "event_id": {"type": "string", "minLength": 8, "maxLength": 128},
@@ -28,6 +29,36 @@
     "direction": {"enum": ["inbound", "outbound", "blended"]},
     "owner_user_id": {"type": "integer", "minimum": 1},
     "supervisor_user_id": {"type": "integer", "minimum": 1},
-    "correlation_id": {"type": "string", "minLength": 8, "maxLength": 128}
+    "correlation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "design_configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "time_zone",
+        "calling_hour_start",
+        "calling_hour_end",
+        "consent_required",
+        "dnc_enforced",
+        "team_ids",
+        "supervisor_ids"
+      ],
+      "properties": {
+        "time_zone": {"type": "string", "minLength": 1, "maxLength": 64},
+        "calling_hour_start": {"type": "number", "minimum": 0, "exclusiveMaximum": 24},
+        "calling_hour_end": {"type": "number", "exclusiveMinimum": 0, "maximum": 24},
+        "consent_required": {"type": "boolean"},
+        "dnc_enforced": {"type": "boolean"},
+        "team_ids": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 1},
+          "uniqueItems": true
+        },
+        "supervisor_ids": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 1},
+          "uniqueItems": true
+        }
+      }
+    }
   }
 }
