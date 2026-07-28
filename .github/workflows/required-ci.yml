@@ -210,19 +210,19 @@ jobs:
         run: |
           set -euo pipefail
           PG_IMAGE='postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193'
-          docker run --rm --network host -e PGPASSWORD \
+          docker run --rm --network host -e PGPASSWORD -v "${PWD}:/work" \
             "${PG_IMAGE}" pg_dump \
             -h 127.0.0.1 -U middleware_ci -Fc middleware_rehearsal \
-            > middleware-rehearsal.dump
+            -f /work/middleware-rehearsal.dump
           docker run --rm --network host -e PGPASSWORD \
             "${PG_IMAGE}" psql \
             -h 127.0.0.1 -U middleware_ci -d postgres \
             -v ON_ERROR_STOP=1 \
             -c 'CREATE DATABASE middleware_restore OWNER middleware_ci'
-          docker run --rm --network host -e PGPASSWORD \
+          docker run --rm --network host -e PGPASSWORD -v "${PWD}:/work:ro" \
             "${PG_IMAGE}" pg_restore \
             -h 127.0.0.1 -U middleware_ci -d middleware_restore \
-            --exit-on-error < middleware-rehearsal.dump
+            --exit-on-error /work/middleware-rehearsal.dump
           restored_head="$(
             docker run --rm --network host -e PGPASSWORD \
               "${PG_IMAGE}" psql \
