@@ -7,6 +7,9 @@ from app.core.campaign_search import normalize_alias
     "value,expected",
     [
         ("cmp-100-rlp", "CMP-100-RLP"),
+        ("100", "100"),
+        ("rlp", "RLP"),
+        ("rlp100", "RLP100"),
         ("100-l-00000001", "100-L-00000001"),
         ("RLP-100-L-00000001", "RLP-100-L-00000001"),
         ("300-C-20260728-000001", "300-C-20260728-000001"),

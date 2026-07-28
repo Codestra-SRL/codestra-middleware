@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 ALIAS = re.compile(
-    r"^(?:CMP-\d{3,}-[A-Z]{3}|[A-Z]{3}-\d{3,}-(?:L|CB|XF|LST|ACT|IMP)-[A-Z0-9-]+|\d{3,}-(?:L|A|C|CB|XF|LST|ACT|IMP)-[A-Z0-9-]+)$"
+    r"^(?:\d{3,6}|[A-Z]{3}|[A-Z]{3}\d{3}|CMP-\d{3,}-[A-Z]{3}|[A-Z]{3}-\d{3,}-(?:L|CB|XF|LST|ACT|IMP)-[A-Z0-9-]+|\d{3,}-(?:L|A|C|CB|XF|LST|ACT|IMP)-[A-Z0-9-]+)$"
 )
 
 
