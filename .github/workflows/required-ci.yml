@@ -116,7 +116,7 @@ jobs:
         shell: bash
         env:
           DATABASE_URL: postgresql+asyncpg://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal
-          TEST_DATABASE_URL: postgresql://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal
+          TEST_DATABASE_URL: postgresql+asyncpg://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal
           REDIS_URL: redis://127.0.0.1:6379/15
           LIVE_WRITES_ENABLED: "false"
           N8N_PRODUCTION_WORKFLOWS_ENABLED: "false"
@@ -129,7 +129,7 @@ jobs:
           test "${DATABASE_URL}" = \
             "postgresql+asyncpg://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal"
           test "${TEST_DATABASE_URL}" = \
-            "postgresql://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal"
+            "postgresql+asyncpg://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal"
           for value in \
             "${LIVE_WRITES_ENABLED}" \
             "${N8N_PRODUCTION_WORKFLOWS_ENABLED}" \
@@ -182,7 +182,7 @@ jobs:
         shell: bash
         env:
           DATABASE_URL: postgresql+asyncpg://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal
-          TEST_DATABASE_URL: postgresql://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal
+          TEST_DATABASE_URL: postgresql+asyncpg://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal
           MIDDLEWARE_SECRET: synthetic-ci-middleware-secret
           INGESTION_HMAC_SECRET: synthetic-ci-ingestion-secret
           LIVE_WRITES_ENABLED: "false"
@@ -206,9 +206,11 @@ jobs:
           PY
           )" = "0018_campaign_search_aliases"
           python -m pytest -q tests | tee pytest-full.txt
-          python tests/integration/campaign_extension_concurrency.py \
+          TEST_DATABASE_URL='postgresql://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal' \
+            python tests/integration/campaign_extension_concurrency.py \
             | tee campaign-extension-concurrency.txt
-          python tests/integration/campaign_identity_concurrency.py \
+          TEST_DATABASE_URL='postgresql://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal' \
+            python tests/integration/campaign_identity_concurrency.py \
             | tee campaign-identity-concurrency.txt
 
       - name: Verify rollback by isolated restoration
