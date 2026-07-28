@@ -1,0 +1,158 @@
+name: Middleware source gate
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - "migrations/**"
+      - "tests/**"
+      - "schemas/**"
+      - "pyproject.toml"
+      - "requirements*.in"
+      - "requirements*.lock"
+      - "alembic.ini"
+      - ".github/workflows/**"
+      - "deploy/compose.runtime.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: codestra_ci
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: codestra_ci_rehearsal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U codestra_ci -d codestra_ci_rehearsal"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: postgresql+asyncpg://codestra_ci:synthetic_ci_only@127.0.0.1:5432/codestra_ci_rehearsal
+      TEST_DATABASE_URL: postgresql+asyncpg://codestra_ci:synthetic_ci_only@127.0.0.1:5432/codestra_ci_rehearsal
+
+    steps:
+      - name: Check out complete PR history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up supported Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-test.lock
+
+      - name: Install locked dependencies
+        run: python -m pip install -r requirements.lock -r requirements-test.lock
+
+      - name: Record PostgreSQL version
+        run: |
+          psql "${DATABASE_URL/postgresql+asyncpg/postgresql}" \
+            --tuples-only --command "SHOW server_version;"
+
+      - name: Apply migrations and verify head
+        run: |
+          alembic upgrade head
+          test "$(alembic current | awk '{print $1}')" = "0015_campaign_design"
+
+      - name: Test supported downgrade boundary and re-upgrade
+        run: |
+          alembic downgrade -1
+          test "$(alembic current | awk '{print $1}')" = "0014_telephony_call_lifecycle"
+          alembic upgrade head
+          test "$(alembic current | awk '{print $1}')" = "0015_campaign_design"
+
+      - name: Ruff
+        run: ruff check app tests migrations
+
+      - name: mypy
+        run: mypy app
+
+      - name: Python compilation
+        run: python -m compileall -q -f app tests migrations
+
+      - name: Complete test suite including PostgreSQL gates
+        run: python -m pytest -q tests
+
+      - name: Validate defaults remain fail closed
+        run: |
+          python - <<'PY'
+          from app.core.config import Settings
+
+          settings = Settings()
+          flags = {
+              name: value
+              for name, value in vars(settings).items()
+              if name.endswith("_enabled")
+          }
+          assert flags, "no feature flags discovered"
+          assert all(value is False for value in flags.values()), flags
+          assert settings.vicidial_write_enabled is False
+          assert settings.vicidial_provisioning_enabled is False
+          assert settings.telephony_provisioning_enabled is False
+          assert settings.n8n_production_workflows_enabled is False
+          assert settings.odoo_delivery_enabled is False
+          assert settings.n8n_delivery_enabled is False
+          PY
+
+      - name: Reject forbidden or runtime artifacts
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only "${BASE_SHA}..HEAD")"
+          if grep -E '(^|/)(secrets?|backups?|logs?|runtime|dumps?|volumes?|data)/|[.](pem|key|p12|pfx|dump|backup|sql|sqlite3|db|log)$' \
+            <<<"${changed}"
+          then
+            echo "Forbidden artifact present in pull request."
+            exit 1
+          fi
+          if grep -Fx 'deploy/compose.runtime.yaml' <<<"${changed}"
+          then
+            echo "Runtime compose modification is forbidden."
+            exit 1
+          fi
+
+      - name: Validate Git whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "${BASE_SHA}..HEAD"
+
+      - name: Install checksum-verified Gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          archive="${RUNNER_TEMP}/gitleaks.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            --output "${archive}"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum --check -
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}" gitleaks
+          install -m 0755 "${RUNNER_TEMP}/gitleaks" "${RUNNER_TEMP}/gitleaks-bin"
+
+      - name: Gitleaks candidate tree
+        run: |
+          "${RUNNER_TEMP}/gitleaks-bin" dir --no-banner --redact --exit-code 1 .
+
+      - name: Gitleaks pull-request commit range
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          "${RUNNER_TEMP}/gitleaks-bin" git --no-banner --redact --exit-code 1 \
+            --log-opts="${BASE_SHA}..HEAD"
