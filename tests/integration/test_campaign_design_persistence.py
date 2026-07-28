@@ -1,87 +1,458 @@
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.campaign_design import (
-    CampaignDesignInput, CampaignDesignService, PostgresDesignStore,
+    CampaignDesignInput,
+    CampaignDesignService,
+    DesignConflict,
+    PostgresDesignStore,
 )
 
 
-def test_transactional_event_and_concurrent_list_allocation():
-    database_url = os.environ.get("TEST_DATABASE_URL")
+def _database_url() -> str:
+    database_url = os.environ.get("TEST_DATABASE_URL", "")
     if not database_url:
         pytest.skip("requires an explicitly provisioned disposable database")
     assert "diag" in database_url or "rehearsal" in database_url
     if database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    asyncio.run(_scenario(database_url))
+        database_url = database_url.replace(
+            "postgresql://", "postgresql+asyncpg://", 1
+        )
+    return database_url
 
 
-def _request(index: int) -> CampaignDesignInput:
-    return CampaignDesignInput(
-        event_id=f"diag-odoo-event-{uuid4()}",
-        integration_uuid=str(uuid4()),
-        odoo_campaign_id=910000 + index,
-        environment="staging",
-        business_unit="TEST",
-        purpose=f"E{index:02d}",
-        direction="outbound",
-        owner_user_id=9101,
-        supervisor_user_id=9102,
-        correlation_id=f"diag-correlation-{uuid4()}",
-    )
-
-
-async def _scenario(database_url: str):
-    engine = create_async_engine(database_url)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    try:
-        async with factory() as session:
-            await session.execute(text(
-                "TRUNCATE campaign_design_event,campaign_list_reservation,"
-                "campaign_design_revision"
-            ))
-            await session.commit()
-
-        # An Odoo transaction that rolls back cannot leave an outbox receipt.
-        rolled_back = _request(99)
-        async with factory() as session:
-            await session.execute(text(
-                "INSERT INTO campaign_design_event"
-                "(event_id,integration_uuid,payload_hash,status,attempts,correlation_id) "
-                "VALUES(:event,:uuid,:hash,'retry',0,:correlation)"
-            ), {"event": rolled_back.event_id,
-                "uuid": rolled_back.integration_uuid,
-                "hash": rolled_back.payload_hash(),
-                "correlation": rolled_back.correlation_id})
-            await session.rollback()
-        async with factory() as session:
-            assert await session.scalar(text(
-                "SELECT count(*) FROM campaign_design_event WHERE event_id=:event"
-            ), {"event": rolled_back.event_id}) == 0
-
-        requests = [_request(index) for index in range(10)]
-
-        async def create(item):
+def _run(scenario: Callable[[AsyncEngine, async_sessionmaker[AsyncSession]], Awaitable[None]]):
+    async def execute():
+        engine = create_async_engine(_database_url())
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        try:
             async with factory() as session:
-                return await CampaignDesignService(
-                    PostgresDesignStore(session)
-                ).consume(item)
+                await session.execute(
+                    text(
+                        "TRUNCATE campaign_design_approval,"
+                        "campaign_design_failure,campaign_event_inbox,"
+                        "campaign_resource_allocation,campaign_design_current,"
+                        "campaign_design_revision"
+                    )
+                )
+                await session.commit()
+            await scenario(engine, factory)
+        finally:
+            await engine.dispose()
 
-        manifests = await asyncio.gather(*(create(item) for item in requests))
-        list_ids = [item["vicidial"]["default_list_id"] for item in manifests]
-        assert len(list_ids) == len(set(list_ids)) == 10
-        assert all(91000 <= item <= 91999 for item in list_ids)
+    asyncio.run(execute())
+
+
+def _request(index: int = 1, **changes) -> CampaignDesignInput:
+    values = {
+        "event_id": f"diag-odoo-event-{uuid4()}",
+        "integration_uuid": str(uuid4()),
+        "odoo_campaign_id": 910000 + index,
+        "environment": "staging",
+        "business_unit": "TEST",
+        "purpose": f"E{index:02d}",
+        "direction": "outbound",
+        "owner_user_id": 9101,
+        "supervisor_user_id": 9102,
+        "correlation_id": f"diag-correlation-{uuid4()}",
+    }
+    values.update(changes)
+    return CampaignDesignInput(**values)
+
+
+async def _consume(
+    factory: async_sessionmaker[AsyncSession],
+    item: CampaignDesignInput,
+    *,
+    fault: str | None = None,
+    max_attempts: int = 3,
+):
+    def fault_hook(point: str):
+        if point == fault:
+            raise RuntimeError(f"fault:{point}")
+
+    async with factory() as session:
+        return await CampaignDesignService(
+            PostgresDesignStore(session, fault_hook=fault_hook if fault else None)
+        ).consume(item, max_attempts=max_attempts)
+
+
+async def _counts(
+    factory: async_sessionmaker[AsyncSession], item: CampaignDesignInput
+) -> dict[str, int]:
+    async with factory() as session:
+        result = {}
+        for key, table, predicate in (
+            ("receipts", "campaign_event_inbox", "event_id=:event"),
+            (
+                "revisions",
+                "campaign_design_revision",
+                "integration_uuid=:uuid",
+            ),
+            (
+                "allocations",
+                "campaign_resource_allocation",
+                "integration_uuid=:uuid",
+            ),
+            (
+                "audits",
+                "audit_event",
+                "subject=:uuid AND action='campaign.design.consumed'",
+            ),
+        ):
+            result[key] = int(
+                await session.scalar(
+                    text(f"SELECT count(*) FROM {table} WHERE {predicate}"),
+                    {"event": item.event_id, "uuid": item.integration_uuid},
+                )
+            )
+        return result
+
+
+def test_successful_consumption_commits_receipt_design_allocation_and_audit():
+    async def scenario(_engine, factory):
+        item = _request()
+        result = await _consume(factory, item)
+        assert result["idempotent_replay"] is False
+        assert await _counts(factory, item) == {
+            "receipts": 1,
+            "revisions": 1,
+            "allocations": 1,
+            "audits": 1,
+        }
         async with factory() as session:
-            assert await session.scalar(text(
-                "SELECT count(*) FROM campaign_design_event"
-            )) == 10
-            assert await session.scalar(text(
-                "SELECT count(*) FROM campaign_design_revision"
-            )) == 10
-    finally:
-        await engine.dispose()
+            receipt = (
+                await session.execute(
+                    text(
+                        "SELECT processing_state,result_revision,committed_at "
+                        "FROM campaign_event_inbox WHERE event_id=:event"
+                    ),
+                    {"event": item.event_id},
+                )
+            ).mappings().one()
+            assert receipt["processing_state"] == "completed"
+            assert receipt["result_revision"] == 1
+            assert receipt["committed_at"] is not None
+
+    _run(scenario)
+
+
+@pytest.mark.parametrize(
+    "fault", ["after_receipt", "after_allocation", "after_revision", "before_commit"]
+)
+def test_failure_before_commit_rolls_back_every_business_record(fault):
+    async def scenario(_engine, factory):
+        item = _request()
+        with pytest.raises(RuntimeError, match=f"fault:{fault}"):
+            await _consume(factory, item, fault=fault)
+        assert await _counts(factory, item) == {
+            "receipts": 0,
+            "revisions": 0,
+            "allocations": 0,
+            "audits": 0,
+        }
+        async with factory() as session:
+            failure = (
+                await session.execute(
+                    text(
+                        "SELECT attempts,status FROM campaign_design_failure "
+                        "WHERE event_id=:event"
+                    ),
+                    {"event": item.event_id},
+                )
+            ).one()
+            assert tuple(failure) == (1, "retry")
+        recovered = await _consume(factory, item)
+        assert recovered["idempotent_replay"] is False
+        assert await _counts(factory, item) == {
+            "receipts": 1,
+            "revisions": 1,
+            "allocations": 1,
+            "audits": 1,
+        }
+
+    _run(scenario)
+
+
+def test_failure_after_commit_before_ack_replays_saved_result():
+    async def scenario(_engine, factory):
+        item = _request()
+        committed = await _consume(factory, item)
+        with pytest.raises(RuntimeError, match="synthetic ACK crash"):
+            raise RuntimeError("synthetic ACK crash")
+        replay = await _consume(factory, item)
+        assert replay["idempotent_replay"] is True
+        assert replay["vicidial"] == committed["vicidial"]
+        assert await _counts(factory, item) == {
+            "receipts": 1,
+            "revisions": 1,
+            "allocations": 1,
+            "audits": 1,
+        }
+
+    _run(scenario)
+
+
+def test_concurrent_duplicate_delivery_has_one_committed_outcome():
+    async def scenario(_engine, factory):
+        item = _request()
+        first, second = await asyncio.gather(
+            _consume(factory, item), _consume(factory, item)
+        )
+        assert {first["idempotent_replay"], second["idempotent_replay"]} == {
+            False,
+            True,
+        }
+        assert first["vicidial"] == second["vicidial"]
+        assert await _counts(factory, item) == {
+            "receipts": 1,
+            "revisions": 1,
+            "allocations": 1,
+            "audits": 1,
+        }
+
+    _run(scenario)
+
+
+def test_changed_payload_for_committed_event_is_a_conflict():
+    async def scenario(_engine, factory):
+        item = _request()
+        await _consume(factory, item)
+        with pytest.raises(DesignConflict, match="event replay payload conflict"):
+            await _consume(
+                factory, item.model_copy(update={"purpose": "CHANGED"})
+            )
+        assert await _counts(factory, item) == {
+            "receipts": 1,
+            "revisions": 1,
+            "allocations": 1,
+            "audits": 1,
+        }
+
+    _run(scenario)
+
+
+def test_dead_letter_occurs_only_at_configured_retry_limit():
+    async def scenario(_engine, factory):
+        item = _request()
+        for attempt in range(1, 4):
+            with pytest.raises(RuntimeError):
+                await _consume(
+                    factory, item, fault="after_receipt", max_attempts=3
+                )
+            async with factory() as session:
+                row = (
+                    await session.execute(
+                        text(
+                            "SELECT attempts,status FROM campaign_design_failure "
+                            "WHERE event_id=:event"
+                        ),
+                        {"event": item.event_id},
+                    )
+                ).one()
+                assert row.attempts == attempt
+                assert row.status == (
+                    "dead_letter" if attempt == 3 else "retry"
+                )
+        assert await _counts(factory, item) == {
+            "receipts": 0,
+            "revisions": 0,
+            "allocations": 0,
+            "audits": 0,
+        }
+
+    _run(scenario)
+
+
+async def _approve(
+    factory: async_sessionmaker[AsyncSession],
+    item: CampaignDesignInput,
+    preview: dict,
+    *,
+    actor: str = "staging-supervisor",
+    reason: str = "approved for staging source validation",
+    idempotency_key: str = "approval-idempotency-0001",
+    correlation_id: str | None = None,
+    revision: int | None = None,
+    manifest_hash: str | None = None,
+):
+    async with factory() as session:
+        return await CampaignDesignService(PostgresDesignStore(session)).approve(
+            item.integration_uuid,
+            revision or preview["design_revision"],
+            manifest_hash or preview["manifest_hash"],
+            actor,
+            reason,
+            idempotency_key,
+            correlation_id or item.correlation_id,
+        )
+
+
+def test_first_approval_and_identical_replay_preserve_provenance():
+    async def scenario(_engine, factory):
+        item = _request()
+        preview = await _consume(factory, item)
+        first = await _approve(factory, item, preview)
+        second = await _approve(factory, item, preview)
+        assert first["approval"] == second["approval"]
+        async with factory() as session:
+            assert (
+                await session.scalar(
+                    text(
+                        "SELECT count(*) FROM campaign_design_approval "
+                        "WHERE integration_uuid=:uuid"
+                    ),
+                    {"uuid": item.integration_uuid},
+                )
+                == 1
+            )
+
+    _run(scenario)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"actor": "another-supervisor"},
+        {"reason": "a materially different approval reason"},
+        {"revision": 2},
+        {"manifest_hash": "0" * 64},
+    ],
+)
+def test_approval_provenance_conflicts_cannot_overwrite(change):
+    async def scenario(_engine, factory):
+        item = _request()
+        preview = await _consume(factory, item)
+        original = await _approve(factory, item, preview)
+        with pytest.raises(DesignConflict):
+            await _approve(
+                factory,
+                item,
+                preview,
+                idempotency_key="approval-idempotency-conflict",
+                **change,
+            )
+        replay = await _approve(factory, item, preview)
+        assert replay["approval"] == original["approval"]
+
+    _run(scenario)
+
+
+def test_concurrent_approvals_allow_exactly_one_winner():
+    async def scenario(_engine, factory):
+        item = _request()
+        preview = await _consume(factory, item)
+        outcomes = await asyncio.gather(
+            _approve(
+                factory,
+                item,
+                preview,
+                actor="supervisor-one",
+                idempotency_key="approval-concurrent-one",
+            ),
+            _approve(
+                factory,
+                item,
+                preview,
+                actor="supervisor-two",
+                idempotency_key="approval-concurrent-two",
+            ),
+            return_exceptions=True,
+        )
+        assert sum(isinstance(value, dict) for value in outcomes) == 1
+        assert sum(isinstance(value, DesignConflict) for value in outcomes) == 1
+
+    _run(scenario)
+
+
+def test_concurrent_identical_approval_replays_the_committed_record():
+    async def scenario(_engine, factory):
+        item = _request()
+        preview = await _consume(factory, item)
+        first, second = await asyncio.gather(
+            _approve(factory, item, preview),
+            _approve(factory, item, preview),
+        )
+        assert first["approval"] == second["approval"]
+        async with factory() as session:
+            assert (
+                await session.scalar(
+                    text(
+                        "SELECT count(*) FROM campaign_design_approval "
+                        "WHERE integration_uuid=:uuid"
+                    ),
+                    {"uuid": item.integration_uuid},
+                )
+                == 1
+            )
+
+    _run(scenario)
+
+
+def test_approved_manifest_is_immutable_and_new_revision_needs_approval():
+    async def scenario(_engine, factory):
+        item = _request()
+        first_preview = await _consume(factory, item)
+        await _approve(factory, item, first_preview)
+        async with factory() as session:
+            with pytest.raises(Exception, match="immutable"):
+                await session.execute(
+                    text(
+                        "UPDATE campaign_design_revision "
+                        "SET manifest=CAST(:manifest AS jsonb) "
+                        "WHERE integration_uuid=:uuid AND revision=1"
+                    ),
+                    {"manifest": "{}", "uuid": item.integration_uuid},
+                )
+            await session.rollback()
+
+        revised = item.model_copy(
+            update={
+                "event_id": f"diag-odoo-event-{uuid4()}",
+                "purpose": "REV2",
+            }
+        )
+        second_preview = await _consume(factory, revised)
+        assert second_preview["design_revision"] == 2
+        assert second_preview["approval"]["state"] == "preview"
+        await _approve(
+            factory,
+            revised,
+            second_preview,
+            idempotency_key="approval-revision-two",
+        )
+        async with factory() as session:
+            approvals = (
+                await session.execute(
+                    text(
+                        "SELECT design_revision FROM campaign_design_approval "
+                        "WHERE integration_uuid=:uuid ORDER BY design_revision"
+                    ),
+                    {"uuid": item.integration_uuid},
+                )
+            ).scalars().all()
+            assert approvals == [1, 2]
+            assert (
+                await session.scalar(
+                    text(
+                        "SELECT count(*) FROM audit_event "
+                        "WHERE subject=:uuid "
+                        "AND action='campaign.design.approved'"
+                    ),
+                    {"uuid": item.integration_uuid},
+                )
+                == 2
+            )
+
+    _run(scenario)

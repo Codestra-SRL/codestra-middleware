@@ -1,11 +1,16 @@
-from dataclasses import replace
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 
 from app.core.campaign_design import (
-    CampaignDesignInput, CampaignDesignService, DesignConflict, StoredDesign,
+    CampaignDesignInput,
+    CampaignDesignService,
+    DesignConflict,
+    StoredApproval,
+    StoredDesign,
     build_manifest,
+    manifest_hash,
 )
 from app.core.config import settings
 from app.main import app
@@ -18,19 +23,25 @@ class MemoryStore:
         self.allocations = {}
         self.attempts = {}
         self.fail_create = False
+        self.approvals = {}
+        self.revisions = {}
 
-    async def rollback(self):
-        return None
-
-    async def event(self, event_id):
-        return self.events.get(event_id)
-
-    async def design(self, integration_uuid):
-        return self.designs.get(integration_uuid)
-
-    async def create(self, request):
+    async def consume_atomic(self, request):
+        prior = self.events.get(request.event_id)
+        if prior:
+            if prior[0] != request.payload_hash():
+                raise DesignConflict("event replay payload conflict")
+            return prior[1], True
         if self.fail_create:
             raise RuntimeError("synthetic dependency failure")
+        existing = self.designs.get(request.integration_uuid)
+        if existing:
+            if existing.payload_hash == request.payload_hash():
+                self.events[request.event_id] = (request.payload_hash(), existing)
+                return existing, True
+            if existing.approval_state != "approved":
+                raise DesignConflict("integration UUID payload conflict")
+        revision = existing.revision + 1 if existing else 1
         low = 91000 if request.business_unit == "TEST" else {
             "MOY": 11000, "COD": 21000,
         }.get(request.business_unit, 31000)
@@ -39,28 +50,86 @@ class MemoryStore:
         )
         list_id = next(item for item in range(low, low + 1000) if item not in used)
         used.add(list_id)
-        manifest = build_manifest(request, 1, list_id)
-        stored = StoredDesign(1, manifest, request.payload_hash(), "preview")
+        manifest = build_manifest(request, revision, list_id)
+        stored = StoredDesign(
+            revision,
+            manifest,
+            request.payload_hash(),
+            manifest_hash(manifest),
+            "preview",
+        )
         self.designs[request.integration_uuid] = stored
-        return stored
+        self.revisions[(request.integration_uuid, revision)] = stored
+        self.events[request.event_id] = (request.payload_hash(), stored)
+        return stored, False
 
-    async def mark_event(self, request, status):
-        self.events[request.event_id] = (request.payload_hash(), status)
-
-    async def fail_event(self, request, error, max_attempts):
+    async def record_failure(self, request, error, max_attempts):
         attempts = self.attempts.get(request.event_id, 0) + 1
         self.attempts[request.event_id] = attempts
-        status = "dead_letter" if attempts >= max_attempts else "retry"
-        self.events[request.event_id] = (request.payload_hash(), status)
-        return status
+        return "dead_letter" if attempts >= max_attempts else "retry"
 
-    async def approve(self, integration_uuid, actor, correlation_id):
+    async def approve(
+        self,
+        integration_uuid,
+        revision,
+        expected_manifest_hash,
+        actor,
+        reason,
+        idempotency_key,
+        correlation_id,
+    ):
+        replay = self.approvals.get(idempotency_key)
+        if replay:
+            expected = (
+                integration_uuid,
+                revision,
+                expected_manifest_hash,
+                actor,
+                reason,
+                correlation_id,
+            )
+            actual = (
+                replay.integration_uuid,
+                replay.design_revision,
+                replay.manifest_hash,
+                replay.approver_subject,
+                replay.reason,
+                replay.correlation_id,
+            )
+            if actual != expected:
+                raise DesignConflict("approval idempotency payload conflict")
+            return self.revisions[(integration_uuid, revision)], replay
         design = self.designs.get(integration_uuid)
-        if not design:
+        if (
+            not design
+            or design.revision != revision
+            or design.manifest_hash != expected_manifest_hash
+        ):
             raise DesignConflict("design revision missing or immutable")
-        approved = replace(design, approval_state="approved")
+        if design.approval_state != "preview":
+            raise DesignConflict("design revision already approved")
+        approved = StoredDesign(
+            design.revision,
+            design.manifest,
+            design.payload_hash,
+            design.manifest_hash,
+            "approved",
+        )
+        approval = StoredApproval(
+            str(uuid4()),
+            integration_uuid,
+            revision,
+            expected_manifest_hash,
+            actor,
+            reason,
+            datetime.now(UTC),
+            idempotency_key,
+            correlation_id,
+        )
         self.designs[integration_uuid] = approved
-        return approved
+        self.revisions[(integration_uuid, revision)] = approved
+        self.approvals[idempotency_key] = approval
+        return approved, approval
 
 
 def request(**changes):
@@ -124,10 +193,11 @@ async def test_failed_event_retries_then_dead_letters():
     store.fail_create = True
     item = request()
     service = CampaignDesignService(store)
-    for expected in ("retry", "retry", "dead_letter"):
+    for expected_attempts in (1, 2, 3):
         with pytest.raises(RuntimeError):
             await service.consume(item, max_attempts=3)
-        assert store.events[item.event_id][1] == expected
+        assert store.attempts[item.event_id] == expected_attempts
+    assert item.event_id not in store.events
 
 
 @pytest.mark.asyncio
@@ -149,13 +219,77 @@ async def test_approval_is_separate_and_never_authorizes_provisioning():
     preview = await CampaignDesignService(store).consume(item)
     assert preview["approval"]["state"] == "preview"
     approved = await CampaignDesignService(store).approve(
-        item.integration_uuid, "staging-supervisor", item.correlation_id
+        item.integration_uuid,
+        preview["design_revision"],
+        store.designs[item.integration_uuid].manifest_hash,
+        "staging-supervisor",
+        "approved for staging design verification",
+        "approval-key-0001",
+        item.correlation_id,
     )
     assert approved["approval"]["state"] == "approved"
     assert approved["approval"]["provisioning_authorized"] is False
     assert approved["lifecycle"]["state"] == "approved"
     assert approved["lifecycle"]["next_state"] == "provisioning_pending"
     assert approved["lifecycle"]["adapter_delivery_enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_approval_replay_preserves_original_provenance():
+    store = MemoryStore()
+    item = request()
+    preview = await CampaignDesignService(store).consume(item)
+    digest = store.designs[item.integration_uuid].manifest_hash
+    service = CampaignDesignService(store)
+    first = await service.approve(
+        item.integration_uuid,
+        1,
+        digest,
+        "staging-supervisor",
+        "approved for staging design verification",
+        "approval-key-replay",
+        item.correlation_id,
+    )
+    second = await service.approve(
+        item.integration_uuid,
+        1,
+        digest,
+        "staging-supervisor",
+        "approved for staging design verification",
+        "approval-key-replay",
+        item.correlation_id,
+    )
+    assert first["approval"] == second["approval"]
+    assert len(store.approvals) == 1
+    assert preview["approval"]["state"] == "preview"
+
+
+@pytest.mark.asyncio
+async def test_approval_cannot_replace_actor_reason_or_manifest():
+    store = MemoryStore()
+    item = request()
+    await CampaignDesignService(store).consume(item)
+    digest = store.designs[item.integration_uuid].manifest_hash
+    service = CampaignDesignService(store)
+    await service.approve(
+        item.integration_uuid,
+        1,
+        digest,
+        "staging-supervisor",
+        "approved for staging design verification",
+        "approval-key-conflict",
+        item.correlation_id,
+    )
+    with pytest.raises(DesignConflict):
+        await service.approve(
+            item.integration_uuid,
+            1,
+            digest,
+            "another-supervisor",
+            "different approval reason",
+            "approval-key-conflict",
+            item.correlation_id,
+        )
 
 
 def test_authenticated_api_contract_and_production_flags_fail_closed():
