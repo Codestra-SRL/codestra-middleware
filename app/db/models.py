@@ -543,6 +543,119 @@ class CampaignExtensionAllocation(Base):
     )
 
 
+class CampaignRegistry(Base):
+    __tablename__ = "campaign_registry"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    campaign_number: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    campaign_code: Mapped[str] = mapped_column(String(3), nullable=False, unique=True)
+    campaign_public_id: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    vicidial_campaign_id: Mapped[str] = mapped_column(String(8), nullable=False, unique=True)
+    agent_group: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    dialplan_context: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    parent_campaign_number: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number")
+    )
+    extension_allocation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("campaign_extension_allocation.id"),
+        nullable=False,
+        unique=True,
+    )
+    registry_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="PROPOSED_DISABLED"
+    )
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_change_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CampaignObjectIdentity(Base):
+    __tablename__ = "campaign_object_identity"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    campaign_number: Mapped[int] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number"), nullable=False
+    )
+    identity_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    sequence_value: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    public_id: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    full_alias: Mapped[str | None] = mapped_column(String(112), unique=True)
+    source_system: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_object_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    identity_state: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default="ID_ASSIGNED"
+    )
+    dialing_state: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default="NOT_ELIGIBLE"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "campaign_number", "identity_type", "sequence_value",
+            name="uq_campaign_object_identity_sequence",
+        ),
+        UniqueConstraint(
+            "source_system", "source_object_id", "identity_type",
+            name="uq_campaign_object_identity_source",
+        ),
+    )
+
+
+class CampaignSearchAlias(Base):
+    __tablename__ = "campaign_search_alias"
+    alias: Mapped[str] = mapped_column(String(160), primary_key=True)
+    campaign_number: Mapped[int] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number"), nullable=False
+    )
+    object_identity_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("campaign_object_identity.id")
+    )
+    alias_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CampaignFeatureGate(Base):
+    __tablename__ = "campaign_feature_gate"
+    campaign_number: Mapped[int] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number"), primary_key=True
+    )
+    feature_name: Mapped[str] = mapped_column(String(48), primary_key=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="DISABLED"
+    )
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CampaignActivationAudit(Base):
+    __tablename__ = "campaign_activation_audit"
+    activation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    campaign_number: Mapped[int] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number"), nullable=False
+    )
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class TelephonyExtensionReservation(Base):
     __tablename__ = "telephony_extension_reservation"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
