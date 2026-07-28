@@ -66,9 +66,7 @@ def test_issue_returns_bounded_memory_only_contract(monkeypatch):
             "status": "issued",
             "endpoint": "6197",
             "turn": {
-                "urls": [
-                    "turns:vicidial-staging.codestra.agency:5349?transport=tcp"
-                ],
+                "urls": ["turns:vicidial-staging.codestra.agency:5349?transport=tcp"],
                 "username": "temporary",
                 "credential": "memory-only",
             },
@@ -107,9 +105,12 @@ def test_invalid_scope_and_browser_session_are_rejected(monkeypatch):
     client = TestClient(app)
     invalid = payload()
     invalid["campaign_id"] = "PRODUCTION"
-    assert client.post(
-        "/webphone-api/v1/provision", headers=HEADERS, json=invalid
-    ).status_code == 410
+    assert (
+        client.post(
+            "/webphone-api/v1/provision", headers=HEADERS, json=invalid
+        ).status_code
+        == 410
+    )
 
 
 def test_keycloak_gateway_proxies_only_validated_identity(monkeypatch):
@@ -134,15 +135,15 @@ def test_keycloak_gateway_proxies_only_validated_identity(monkeypatch):
                 "enabled": True,
                 "username": "agent-6102",
                 "attributes": {
-                        "employee_id": ["EMP-1"],
-                        "odoo_employee_id": ["ODOO-1"],
-                        "vicidial_username": ["agent-6102"],
-                        "company_id": ["COMP-1"],
-                        "business_unit_id": ["BU-1"],
-                        "department_id": ["DEPT-1"],
-                        "team_id": ["TEAM-1"],
-                        "supervisor_id": ["SUP-1"],
-                        "agent_desktop_roles": ["agent"],
+                    "employee_id": ["EMP-1"],
+                    "odoo_employee_id": ["ODOO-1"],
+                    "vicidial_username": ["agent-6102"],
+                    "company_id": ["COMP-1"],
+                    "business_unit_id": ["BU-1"],
+                    "department_id": ["DEPT-1"],
+                    "team_id": ["TEAM-1"],
+                    "supervisor_id": ["SUP-1"],
+                    "agent_desktop_roles": ["agent"],
                     "lifecycle_state": ["active"],
                     "role_template": ["AGENT"],
                     "campaign_ids": ["TRANSFER_TEST"],
@@ -153,7 +154,9 @@ def test_keycloak_gateway_proxies_only_validated_identity(monkeypatch):
     monkeypatch.setattr(
         webphone,
         "_odoo_identity",
-        lambda employee_id, campaign_id=None, endpoint=None: __import__("asyncio").sleep(
+        lambda employee_id, campaign_id=None, endpoint=None: __import__(
+            "asyncio"
+        ).sleep(
             0,
             result={
                 "employee_id": "EMP-1",
@@ -191,7 +194,11 @@ def test_keycloak_gateway_proxies_only_validated_identity(monkeypatch):
     response = TestClient(app).post(
         "/webphone-api/v1/session",
         headers=MODERN_HEADERS,
-        json={"campaign_id": "TRANSFER_TEST", "endpoint": "6101", "browser_session_id": str(uuid4())},
+        json={
+            "campaign_id": "TRANSFER_TEST",
+            "endpoint": "6101",
+            "browser_session_id": str(uuid4()),
+        },
     )
     assert response.status_code == 200
     assert response.json()["ephemeral_password"] == "short-lived"
@@ -203,16 +210,83 @@ def test_keycloak_gateway_proxies_only_validated_identity(monkeypatch):
 def test_keycloak_gateway_denies_wrong_campaign_and_missing_origin(monkeypatch):
     monkeypatch.setattr(settings, "webphone_staging_provisioning_enabled", True)
     monkeypatch.setattr(settings, "webphone_keycloak_enabled", True)
-    monkeypatch.setattr(webphone.KeycloakValidator, "validate", lambda self, token: {"sub": "subject", "typ": "ID", "azp": "codestra-agent-desktop", "realm_access": {"roles": ["codestra_agent"]}})
-    monkeypatch.setattr(webphone, "_keycloak_user", lambda subject: __import__("asyncio").sleep(0, result={"enabled": True, "username": "agent", "attributes": {"employee_id": ["EMP-1"], "company_id": ["COMP-1"], "business_unit_id": ["BU-1"], "department_id": ["DEPT-1"], "team_id": ["TEAM-1"], "supervisor_id": ["SUP-1"], "agent_desktop_roles": ["agent"], "lifecycle_state": ["active"], "role_template": ["AGENT"], "campaign_ids": ["TRANSFER_TEST"]}}))
-    monkeypatch.setattr(webphone, "_odoo_identity", lambda employee_id, campaign_id=None, endpoint=None: __import__("asyncio").sleep(0, result={"employee_id": "EMP-1", "odoo_employee_id": "EMP-1", "keycloak_subject": "subject", "endpoint": "6101", "vicidial_username": "agent", "campaign_ids": ["TRANSFER_TEST"], "role_template": "AGENT"}))
+    monkeypatch.setattr(
+        webphone.KeycloakValidator,
+        "validate",
+        lambda self, token: {
+            "sub": "subject",
+            "typ": "ID",
+            "azp": "codestra-agent-desktop",
+            "realm_access": {"roles": ["codestra_agent"]},
+        },
+    )
+    monkeypatch.setattr(
+        webphone,
+        "_keycloak_user",
+        lambda subject: __import__("asyncio").sleep(
+            0,
+            result={
+                "enabled": True,
+                "username": "agent",
+                "attributes": {
+                    "employee_id": ["EMP-1"],
+                    "company_id": ["COMP-1"],
+                    "business_unit_id": ["BU-1"],
+                    "department_id": ["DEPT-1"],
+                    "team_id": ["TEAM-1"],
+                    "supervisor_id": ["SUP-1"],
+                    "agent_desktop_roles": ["agent"],
+                    "lifecycle_state": ["active"],
+                    "role_template": ["AGENT"],
+                    "campaign_ids": ["TRANSFER_TEST"],
+                },
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        webphone,
+        "_odoo_identity",
+        lambda employee_id, campaign_id=None, endpoint=None: __import__(
+            "asyncio"
+        ).sleep(
+            0,
+            result={
+                "employee_id": "EMP-1",
+                "odoo_employee_id": "EMP-1",
+                "keycloak_subject": "subject",
+                "endpoint": "6101",
+                "vicidial_username": "agent",
+                "campaign_ids": ["TRANSFER_TEST"],
+                "role_template": "AGENT",
+            },
+        ),
+    )
     client = TestClient(app)
-    missing_origin = client.post("/webphone-api/v1/session", headers={"Authorization": "Bearer browser-token"}, json={"campaign_id": "TRANSFER_TEST", "endpoint": "6101", "browser_session_id": str(uuid4())})
+    missing_origin = client.post(
+        "/webphone-api/v1/session",
+        headers={"Authorization": "Bearer browser-token"},
+        json={
+            "campaign_id": "TRANSFER_TEST",
+            "endpoint": "6101",
+            "browser_session_id": str(uuid4()),
+        },
+    )
     assert missing_origin.status_code == 403
-    wrong_campaign = client.post("/webphone-api/v1/session", headers=MODERN_HEADERS, json={"campaign_id": "OTHER", "endpoint": "6101", "browser_session_id": str(uuid4())})
+    wrong_campaign = client.post(
+        "/webphone-api/v1/session",
+        headers=MODERN_HEADERS,
+        json={
+            "campaign_id": "OTHER",
+            "endpoint": "6101",
+            "browser_session_id": str(uuid4()),
+        },
+    )
     assert wrong_campaign.status_code == 403
     invalid = payload()
     invalid["browser_session_id"] = "not-a-uuid"
-    assert client.post(
-        "/webphone-api/v1/provision", headers=HEADERS, json=invalid
-    ).status_code == 410
+    assert (
+        client.post(
+            "/webphone-api/v1/provision", headers=HEADERS, json=invalid
+        ).status_code
+        == 410
+    )

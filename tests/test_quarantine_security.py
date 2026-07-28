@@ -34,14 +34,16 @@ def test_keyed_fingerprint_encryption_and_integrity():
 
 
 def test_preview_never_contains_raw_pii_or_secrets():
-    raw = json.dumps({
-        "event_id": "synthetic-event",
-        "event_type": "synthetic.publisher_canary",
-        "business_unit": "MOY",
-        "telephone_number": "+18095550123",
-        "authorization": "Bearer do-not-leak",
-        "payload": {"email": "customer@example.invalid"},
-    }).encode()
+    raw = json.dumps(
+        {
+            "event_id": "synthetic-event",
+            "event_type": "synthetic.publisher_canary",
+            "business_unit": "MOY",
+            "telephone_number": "+18095550123",
+            "authorization": "Bearer do-not-leak",
+            "payload": {"email": "customer@example.invalid"},
+        }
+    ).encode()
     preview = sanitized_preview(raw)
     serialized = json.dumps(preview)
     assert "synthetic.publisher_canary" in serialized

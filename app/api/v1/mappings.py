@@ -1,4 +1,5 @@
 """Authenticated, fail-closed campaign mapping projection."""
+
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +20,9 @@ ALLOWED_UNITS = frozenset({"MOY", "COD", "SCP", "MBL", "RLP", "FTP", "TRX", "CAL
 _requests: dict[str, deque[float]] = defaultdict(deque)
 
 
-def _authorize_scope(environment: str, requested_unit: str, authorized_unit: str) -> None:
+def _authorize_scope(
+    environment: str, requested_unit: str, authorized_unit: str
+) -> None:
     if environment != "staging":
         raise HTTPException(403, "only staging mappings are available")
     if requested_unit not in ALLOWED_UNITS or authorized_unit not in ALLOWED_UNITS:
@@ -48,7 +51,9 @@ def _serialize(row) -> dict:
     return item
 
 
-async def _audit(db: AsyncSession, action: str, unit: str, count: int, correlation: str) -> None:
+async def _audit(
+    db: AsyncSession, action: str, unit: str, count: int, correlation: str
+) -> None:
     db.add(
         AuditEvent(
             action=action,
@@ -85,16 +90,27 @@ async def list_campaign_mappings(
     business_unit = business_unit.upper()
     authorized_unit = authorized_unit.upper()
     _authorize_scope(environment, business_unit, authorized_unit)
-    _rate_limit(f"{request.client.host if request.client else 'unknown'}:{authorized_unit}")
+    _rate_limit(
+        f"{request.client.host if request.client else 'unknown'}:{authorized_unit}"
+    )
     if operational_action:
-        raise HTTPException(409, "inactive mappings cannot authorize operational actions")
-    rows = (
-        await db.execute(
-            text(BASE_SQL + " WHERE environment=:environment AND business_unit_code=:unit "
-                 "ORDER BY canonical_campaign_code"),
-            {"environment": environment, "unit": business_unit},
+        raise HTTPException(
+            409, "inactive mappings cannot authorize operational actions"
         )
-    ).mappings().all()
+    rows = (
+        (
+            await db.execute(
+                text(
+                    BASE_SQL
+                    + " WHERE environment=:environment AND business_unit_code=:unit "
+                    "ORDER BY canonical_campaign_code"
+                ),
+                {"environment": environment, "unit": business_unit},
+            )
+        )
+        .mappings()
+        .all()
+    )
     items = [_serialize(row) for row in rows]
     digest = hashlib.sha256(
         json.dumps(items, sort_keys=True, separators=(",", ":")).encode()
@@ -102,8 +118,11 @@ async def list_campaign_mappings(
     correlation = correlation or str(uuid4())
     await _audit(db, "campaign.mapping.listed", business_unit, len(items), correlation)
     response.headers["X-Response-SHA256"] = digest
-    return {"mapping_version": max((x["mapping_version"] for x in items), default=0),
-            "response_hash": digest, "items": items}
+    return {
+        "mapping_version": max((x["mapping_version"] for x in items), default=0),
+        "response_hash": digest,
+        "items": items,
+    }
 
 
 @router.get("/{canonical_campaign_code}")
@@ -119,19 +138,29 @@ async def get_campaign_mapping(
 ):
     code = canonical_campaign_code.upper()
     row = (
-        await db.execute(
-            text(BASE_SQL + " WHERE environment=:environment "
-                 "AND canonical_campaign_code=:code"),
-            {"environment": environment, "code": code},
+        (
+            await db.execute(
+                text(
+                    BASE_SQL + " WHERE environment=:environment "
+                    "AND canonical_campaign_code=:code"
+                ),
+                {"environment": environment, "code": code},
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if row is None:
         raise HTTPException(404, "unknown canonical campaign")
     unit = row["business_unit"]
     _authorize_scope(environment, unit, authorized_unit.upper())
-    _rate_limit(f"{request.client.host if request.client else 'unknown'}:{authorized_unit.upper()}")
+    _rate_limit(
+        f"{request.client.host if request.client else 'unknown'}:{authorized_unit.upper()}"
+    )
     if operational_action or row["active"]:
-        raise HTTPException(409, "inactive mappings cannot authorize operational actions")
+        raise HTTPException(
+            409, "inactive mappings cannot authorize operational actions"
+        )
     item = _serialize(row)
     digest = hashlib.sha256(
         json.dumps(item, sort_keys=True, separators=(",", ":")).encode()
@@ -139,4 +168,8 @@ async def get_campaign_mapping(
     correlation = correlation or str(uuid4())
     await _audit(db, "campaign.mapping.read", unit, 1, correlation)
     response.headers["X-Response-SHA256"] = digest
-    return {"mapping_version": item["mapping_version"], "response_hash": digest, "item": item}
+    return {
+        "mapping_version": item["mapping_version"],
+        "response_hash": digest,
+        "item": item,
+    }

@@ -1,4 +1,5 @@
 """Monotonic telephony lifecycle helpers."""
+
 from dataclasses import dataclass
 
 RANK = {"STARTED": 1, "CONNECTED": 2, "ENDED": 3}

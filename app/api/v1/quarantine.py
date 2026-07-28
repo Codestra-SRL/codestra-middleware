@@ -1,4 +1,5 @@
 """Privileged reviewer surface; immutable raw payloads are never returned."""
+
 from datetime import datetime, time, timezone
 import hashlib
 import hmac
@@ -13,11 +14,18 @@ from app.api.v1.publisher import QUARANTINE_OLDEST, QUARANTINE_PENDING, validate
 from app.core.config import settings
 from app.core.policy_engine import PolicyRequest, evaluate
 from app.core.quarantine import (
-    EncryptedPayload, decrypt_payload, encrypt_payload, fingerprint,
-    sanitized_preview, transition,
+    EncryptedPayload,
+    decrypt_payload,
+    encrypt_payload,
+    fingerprint,
+    sanitized_preview,
+    transition,
 )
 from app.db.models import (
-    AuditEvent, IntegrationDelivery, IntegrationEvent, InvalidEventQuarantine,
+    AuditEvent,
+    IntegrationDelivery,
+    IntegrationEvent,
+    InvalidEventQuarantine,
     QuarantineCorrection,
     PolicyDecision,
 )
@@ -26,11 +34,13 @@ from app.db.session import get_session
 
 router = APIRouter(prefix="/api/v1/quarantine", tags=["invalid-event-quarantine"])
 REPROCESSING = Counter(
-    "quarantine_reprocessing_total", "Authorized quarantine reprocessing",
+    "quarantine_reprocessing_total",
+    "Authorized quarantine reprocessing",
     ["result"],
 )
 REPROCESSING_FAILURES = Counter(
-    "quarantine_reprocessing_failures_total", "Quarantine reprocessing failures",
+    "quarantine_reprocessing_failures_total",
+    "Quarantine reprocessing failures",
     ["reason_code"],
 )
 
@@ -94,14 +104,22 @@ async def list_records(
     db: AsyncSession = Depends(get_session),
 ):
     _authorize(
-        "quarantine:read", scopes, reviewer, business_unit, authorized_units,
+        "quarantine:read",
+        scopes,
+        reviewer,
+        business_unit,
+        authorized_units,
         authorization_context,
     )
-    statement = select(InvalidEventQuarantine).order_by(
-        InvalidEventQuarantine.received_at.desc()
-    ).limit(100)
+    statement = (
+        select(InvalidEventQuarantine)
+        .order_by(InvalidEventQuarantine.received_at.desc())
+        .limit(100)
+    )
     if business_unit:
-        statement = statement.where(InvalidEventQuarantine.business_unit == business_unit)
+        statement = statement.where(
+            InvalidEventQuarantine.business_unit == business_unit
+        )
     records = (await db.scalars(statement)).all()
     pending_count, oldest = (
         await db.execute(
@@ -115,9 +133,7 @@ async def list_records(
     QUARANTINE_OLDEST.set(
         max(
             0,
-            (
-                datetime.now(timezone.utc) - oldest
-            ).total_seconds() if oldest else 0,
+            (datetime.now(timezone.utc) - oldest).total_seconds() if oldest else 0,
         )
     )
     return {"items": [_view(record) for record in records]}
@@ -136,8 +152,12 @@ async def detail(
     if not record:
         raise HTTPException(404, "quarantine record not found")
     _authorize(
-        "quarantine:read", scopes, reviewer, record.business_unit,
-        authorized_units, authorization_context,
+        "quarantine:read",
+        scopes,
+        reviewer,
+        record.business_unit,
+        authorized_units,
+        authorization_context,
     )
     return _view(record)
 
@@ -161,8 +181,12 @@ async def review(
     if not record:
         raise HTTPException(404, "quarantine record not found")
     _authorize(
-        "quarantine:review", scopes, reviewer, record.business_unit,
-        authorized_units, authorization_context,
+        "quarantine:review",
+        scopes,
+        reviewer,
+        record.business_unit,
+        authorized_units,
+        authorization_context,
     )
     if record.record_version != record_version:
         raise HTTPException(409, "record version conflict")
@@ -178,11 +202,18 @@ async def review(
     if target_state in {"RESOLVED_NO_REPLAY", "REJECTED"}:
         record.resolved_by = reviewer
         record.resolved_at = now
-    db.add(AuditEvent(
-        action="quarantine.review", subject=str(record.id),
-        correlation_id=record.server_correlation_id, decision=target_state,
-        redacted_payload={"reviewer": reviewer, "record_version": record.record_version},
-    ))
+    db.add(
+        AuditEvent(
+            action="quarantine.review",
+            subject=str(record.id),
+            correlation_id=record.server_correlation_id,
+            decision=target_state,
+            redacted_payload={
+                "reviewer": reviewer,
+                "record_version": record.record_version,
+            },
+        )
+    )
     await db.commit()
     return _view(record)
 
@@ -199,6 +230,7 @@ async def create_correction(
     db: AsyncSession = Depends(get_session),
 ):
     import json
+
     record = await db.scalar(
         select(InvalidEventQuarantine)
         .where(InvalidEventQuarantine.id == record_id)
@@ -207,8 +239,12 @@ async def create_correction(
     if not record:
         raise HTTPException(404, "quarantine record not found")
     _authorize(
-        "quarantine:review", scopes, reviewer, record.business_unit,
-        authorized_units, authorization_context,
+        "quarantine:review",
+        scopes,
+        reviewer,
+        record.business_unit,
+        authorized_units,
+        authorization_context,
     )
     if record.status != "CORRECTABLE":
         raise HTTPException(409, "record is not correctable")
@@ -219,8 +255,10 @@ async def create_correction(
         raise HTTPException(413, "corrected payload too large")
     digest = fingerprint(raw, settings.quarantine_fingerprint_secret)
     encrypted = encrypt_payload(
-        raw, settings.quarantine_encryption_key,
-        settings.quarantine_encryption_key_version, digest,
+        raw,
+        settings.quarantine_encryption_key,
+        settings.quarantine_encryption_key_version,
+        digest,
     )
     prior = await db.scalar(
         select(QuarantineCorrection)
@@ -232,24 +270,33 @@ async def create_correction(
     before = record.sanitized_preview
     after = sanitized_preview(raw)
     correction = QuarantineCorrection(
-        quarantine_id=record.id, correction_version=version,
-        correction_reason=correction_reason.strip(), reviewer=reviewer,
-        derived_correlation_id=str(uuid4()), payload_fingerprint=digest,
-        encrypted_payload=encrypted.ciphertext, encryption_nonce=encrypted.nonce,
+        quarantine_id=record.id,
+        correction_version=version,
+        correction_reason=correction_reason.strip(),
+        reviewer=reviewer,
+        derived_correlation_id=str(uuid4()),
+        payload_fingerprint=digest,
+        encrypted_payload=encrypted.ciphertext,
+        encryption_nonce=encrypted.nonce,
         encryption_key_version=encrypted.key_version,
         sanitized_diff={"before": before, "after": after},
     )
     db.add(correction)
     record.record_version += 1
-    db.add(AuditEvent(
-        action="quarantine.correction.created", subject=str(record.id),
-        correlation_id=correction.derived_correlation_id, decision="CORRECTED",
-        redacted_payload={
-            "reviewer": reviewer, "correction_version": version,
-            "correction_reason": correction_reason.strip(),
-            "sanitized_diff": correction.sanitized_diff,
-        },
-    ))
+    db.add(
+        AuditEvent(
+            action="quarantine.correction.created",
+            subject=str(record.id),
+            correlation_id=correction.derived_correlation_id,
+            decision="CORRECTED",
+            redacted_payload={
+                "reviewer": reviewer,
+                "correction_version": version,
+                "correction_reason": correction_reason.strip(),
+                "sanitized_diff": correction.sanitized_diff,
+            },
+        )
+    )
     await db.commit()
     return {
         "correction_id": str(correction.id),
@@ -277,18 +324,32 @@ async def reprocess(
     if not record:
         raise HTTPException(404, "quarantine record not found")
     _authorize(
-        "quarantine:replay", scopes, reviewer, record.business_unit,
-        authorized_units, authorization_context,
+        "quarantine:replay",
+        scopes,
+        reviewer,
+        record.business_unit,
+        authorized_units,
+        authorization_context,
     )
     if record.status == "REPLAYED":
-        return {"status": "REPLAYED", "event_id": record.replayed_event_id, "duplicate": True}
+        return {
+            "status": "REPLAYED",
+            "event_id": record.replayed_event_id,
+            "duplicate": True,
+        }
     if (
         record.status != "REPLAY_APPROVED"
         or record.authentication_state != "VERIFIED"
         or record.original_signature_verification != "VERIFIED"
     ):
         raise HTTPException(409, "record is not replay eligible")
-    if not all((record.encrypted_payload, record.encryption_nonce, record.encryption_key_version)):
+    if not all(
+        (
+            record.encrypted_payload,
+            record.encryption_nonce,
+            record.encryption_key_version,
+        )
+    ):
         raise HTTPException(409, "immutable payload unavailable")
     record.status = "REPLAYING"
     await db.flush()
@@ -302,7 +363,9 @@ async def reprocess(
         encrypted_value = EncryptedPayload(
             correction.encrypted_payload if correction else record.encrypted_payload,
             correction.encryption_nonce if correction else record.encryption_nonce,
-            correction.encryption_key_version if correction else record.encryption_key_version,
+            correction.encryption_key_version
+            if correction
+            else record.encryption_key_version,
         )
         expected_fingerprint = (
             correction.payload_fingerprint if correction else record.payload_fingerprint
@@ -314,51 +377,71 @@ async def reprocess(
             settings.quarantine_fingerprint_secret,
         )
         import json
+
         value = json.loads(raw)
         validate_event(value)
         now = datetime.now(timezone.utc)
-        policy = evaluate(PolicyRequest(
-            correlation_id=str(uuid4()), action="sync",
-            subject=str(value.get("agent_id") or "publisher"),
-            resource=str(value.get("event_id")),
-            evaluated_at=now,
-            consent_allowed=not value["privacy"]["contains_customer_data"],
-            consent_observed_at=now,
-            dnc_suppressed=False, dnc_observed_at=now,
-            customer_timezone="America/Santo_Domingo",
-            jurisdiction="DO", calling_window_start=time(0),
-            calling_window_end=time(23, 59, 59),
-            attempts=0, max_attempts=1, minimum_spacing_seconds=0,
-            channel_eligible=True, business_unit=value["business_unit"],
-            allowed_business_units=[record.business_unit],
-            campaign=value["campaign"], allowed_campaigns=["TEST_SYN"],
-            agent=value["agent_id"], allowed_agents=[value["agent_id"]],
-            callback_allowed=False, transfer_allowed=False,
-            recording_required=False, disclosure_present=True,
-            emergency_kill_switch=False, shadow_mode=False,
-        ))
-        db.add(PolicyDecision(
-            id=UUID(policy.decision_id), policy=policy.policy_version,
-            allowed=policy.allow, reason=",".join(policy.reason_codes),
-            correlation_id=policy.correlation_id,
-            context=policy.model_dump(mode="json"),
-        ))
+        policy = evaluate(
+            PolicyRequest(
+                correlation_id=str(uuid4()),
+                action="sync",
+                subject=str(value.get("agent_id") or "publisher"),
+                resource=str(value.get("event_id")),
+                evaluated_at=now,
+                consent_allowed=not value["privacy"]["contains_customer_data"],
+                consent_observed_at=now,
+                dnc_suppressed=False,
+                dnc_observed_at=now,
+                customer_timezone="America/Santo_Domingo",
+                jurisdiction="DO",
+                calling_window_start=time(0),
+                calling_window_end=time(23, 59, 59),
+                attempts=0,
+                max_attempts=1,
+                minimum_spacing_seconds=0,
+                channel_eligible=True,
+                business_unit=value["business_unit"],
+                allowed_business_units=[record.business_unit],
+                campaign=value["campaign"],
+                allowed_campaigns=["TEST_SYN"],
+                agent=value["agent_id"],
+                allowed_agents=[value["agent_id"]],
+                callback_allowed=False,
+                transfer_allowed=False,
+                recording_required=False,
+                disclosure_present=True,
+                emergency_kill_switch=False,
+                shadow_mode=False,
+            )
+        )
+        db.add(
+            PolicyDecision(
+                id=UUID(policy.decision_id),
+                policy=policy.policy_version,
+                allowed=policy.allow,
+                reason=",".join(policy.reason_codes),
+                correlation_id=policy.correlation_id,
+                context=policy.model_dump(mode="json"),
+            )
+        )
         if not policy.allow:
             record.status = "REJECTED"
             record.resolved_by = reviewer
             record.resolved_at = now
             record.record_version += 1
-            db.add(AuditEvent(
-                action="quarantine.authorized_reprocessing",
-                subject=str(record.id),
-                correlation_id=record.server_correlation_id,
-                decision="POLICY_DENIED",
-                redacted_payload={
-                    "reviewer": reviewer,
-                    "policy_decision_id": policy.decision_id,
-                    "reason_codes": policy.reason_codes,
-                },
-            ))
+            db.add(
+                AuditEvent(
+                    action="quarantine.authorized_reprocessing",
+                    subject=str(record.id),
+                    correlation_id=record.server_correlation_id,
+                    decision="POLICY_DENIED",
+                    redacted_payload={
+                        "reviewer": reviewer,
+                        "policy_decision_id": policy.decision_id,
+                        "reason_codes": policy.reason_codes,
+                    },
+                )
+            )
             await db.commit()
             REPROCESSING_FAILURES.labels("policy_denied").inc()
             raise HTTPException(403, "current policy denied reprocessing")
@@ -372,35 +455,47 @@ async def reprocess(
         else:
             incoming = IntegrationEvent(
                 idempotency_key=f"quarantine:{record.id}",
-                event_type=value["event_type"], schema_version="2.0",
+                event_type=value["event_type"],
+                schema_version="2.0",
                 original_event_id=value["event_id"],
                 entity_key="synthetic:publisher-canary",
                 source_system="authorized-reprocessing",
-                correlation_id=str(uuid4()), payload_json=value,
-                payload_hash=expected_fingerprint, state="accepted",
+                correlation_id=str(uuid4()),
+                payload_json=value,
+                payload_hash=expected_fingerprint,
+                state="accepted",
             )
             db.add(incoming)
             await db.flush()
             for target in ("odoo", "n8n"):
-                db.add(IntegrationDelivery(
-                    event_id=incoming.id, target=target, status="disabled",
-                    max_attempts=settings.outbox_max_attempts,
-                ))
+                db.add(
+                    IntegrationDelivery(
+                        event_id=incoming.id,
+                        target=target,
+                        status="disabled",
+                        max_attempts=settings.outbox_max_attempts,
+                    )
+                )
         record.status = "REPLAYED"
         record.replayed_event_id = incoming.id
         record.replay_count += 1
         record.record_version += 1
         record.resolved_by = reviewer
         record.resolved_at = now
-        db.add(AuditEvent(
-            action="quarantine.authorized_reprocessing", subject=str(record.id),
-            correlation_id=record.server_correlation_id, decision="REPLAYED",
-            redacted_payload={
-                "reviewer": reviewer, "canonical_event_id": incoming.id,
-                "original_timestamp_freshness_reused": False,
-                "correction_id": str(correction.id) if correction else None,
-            },
-        ))
+        db.add(
+            AuditEvent(
+                action="quarantine.authorized_reprocessing",
+                subject=str(record.id),
+                correlation_id=record.server_correlation_id,
+                decision="REPLAYED",
+                redacted_payload={
+                    "reviewer": reviewer,
+                    "canonical_event_id": incoming.id,
+                    "original_timestamp_freshness_reused": False,
+                    "correction_id": str(correction.id) if correction else None,
+                },
+            )
+        )
         await db.commit()
     except HTTPException:
         await db.rollback()
@@ -410,4 +505,8 @@ async def reprocess(
         REPROCESSING_FAILURES.labels("validation_or_integrity").inc()
         raise HTTPException(409, "authorized reprocessing failed") from exc
     REPROCESSING.labels("success").inc()
-    return {"status": "REPLAYED", "event_id": incoming.id, "duplicate": existing is not None}
+    return {
+        "status": "REPLAYED",
+        "event_id": incoming.id,
+        "duplicate": existing is not None,
+    }

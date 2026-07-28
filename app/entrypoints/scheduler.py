@@ -1,4 +1,5 @@
 """Lease recovery and maintenance scheduler."""
+
 from app.core.config import settings
 from app.entrypoints.runtime import run_worker
 from app.workers.scheduler import maintenance_once

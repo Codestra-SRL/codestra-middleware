@@ -7,12 +7,8 @@ def test_linked_id_primary_and_unique_id_fallback():
 
 
 def test_local_channel_pairs_collapse():
-    assert base_local("Local/6198@cs-synth-6198;1") == (
-        "Local/6198@cs-synth-6198"
-    )
-    assert base_local("Local/6198@cs-synth-6198;2") == (
-        "Local/6198@cs-synth-6198"
-    )
+    assert base_local("Local/6198@cs-synth-6198;1") == ("Local/6198@cs-synth-6198")
+    assert base_local("Local/6198@cs-synth-6198;2") == ("Local/6198@cs-synth-6198")
 
 
 def test_monotonic_lifecycle_and_terminal_immutability():

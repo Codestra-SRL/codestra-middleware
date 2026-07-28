@@ -17,11 +17,26 @@ depends_on = None
 
 def upgrade():
     command_states = (
-        "REQUESTED", "VALIDATING", "VALIDATED", "AUTHORIZING", "AUTHORIZED",
-        "SUPPRESSED", "RATE_LIMITED", "COST_LIMITED", "RESERVED", "QUEUED",
-        "DISPATCHING", "PROVIDER_ACCEPTED", "DELIVERED", "RETRY_SCHEDULED",
-        "FAILED", "DEAD_LETTER", "REPLAY_APPROVAL_REQUIRED", "CANCELLED",
-        "EXPIRED", "RECONCILIATION_REQUIRED",
+        "REQUESTED",
+        "VALIDATING",
+        "VALIDATED",
+        "AUTHORIZING",
+        "AUTHORIZED",
+        "SUPPRESSED",
+        "RATE_LIMITED",
+        "COST_LIMITED",
+        "RESERVED",
+        "QUEUED",
+        "DISPATCHING",
+        "PROVIDER_ACCEPTED",
+        "DELIVERED",
+        "RETRY_SCHEDULED",
+        "FAILED",
+        "DEAD_LETTER",
+        "REPLAY_APPROVAL_REQUIRED",
+        "CANCELLED",
+        "EXPIRED",
+        "RECONCILIATION_REQUIRED",
     )
     op.create_table(
         "notification_command",
@@ -55,18 +70,35 @@ def upgrade():
         sa.Column("policy_decision", sa.String(40)),
         sa.Column("provider_message_id", sa.String(256)),
         sa.Column("last_error_code", sa.String(64)),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.CheckConstraint("channel IN ('EMAIL','SMS')", name="ck_notification_channel"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.CheckConstraint(
+            "channel IN ('EMAIL','SMS')", name="ck_notification_channel"
+        ),
         sa.CheckConstraint(
             "status IN (" + ",".join(repr(value) for value in command_states) + ")",
             name="ck_notification_status",
         ),
-        sa.CheckConstraint("template_version > 0", name="ck_notification_template_version"),
+        sa.CheckConstraint(
+            "template_version > 0", name="ck_notification_template_version"
+        ),
         sa.CheckConstraint("attempt_count >= 0", name="ck_notification_attempt_count"),
         sa.CheckConstraint("expires_at > requested_at", name="ck_notification_expiry"),
         sa.UniqueConstraint(
-            "organization_id", "business_unit_id", "channel", "idempotency_key",
+            "organization_id",
+            "business_unit_id",
+            "channel",
+            "idempotency_key",
             name="uq_notification_idempotency_scope",
         ),
     )
@@ -94,10 +126,17 @@ def upgrade():
         sa.Column("provider", sa.String(64)),
         sa.Column("request_hash", sa.String(64), nullable=False),
         sa.Column("result_code", sa.String(64)),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "started_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.Column("finished_at", sa.DateTime(timezone=True)),
         sa.CheckConstraint("attempt_number > 0", name="ck_notification_attempt_number"),
-        sa.UniqueConstraint("command_id", "attempt_number", name="uq_notification_attempt_number"),
+        sa.UniqueConstraint(
+            "command_id", "attempt_number", name="uq_notification_attempt_number"
+        ),
     )
     op.create_table(
         "notification_replay_approval",
@@ -114,13 +153,17 @@ def upgrade():
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("consumed_at", sa.DateTime(timezone=True)),
         sa.Column("approval_hash", sa.String(64), nullable=False, unique=True),
-        sa.CheckConstraint("expires_at > approved_at", name="ck_notification_replay_expiry"),
+        sa.CheckConstraint(
+            "expires_at > approved_at", name="ck_notification_replay_expiry"
+        ),
     )
 
 
 def downgrade():
     op.drop_table("notification_replay_approval")
     op.drop_table("notification_attempt")
-    op.drop_index("ix_notification_command_correlation", table_name="notification_command")
+    op.drop_index(
+        "ix_notification_command_correlation", table_name="notification_command"
+    )
     op.drop_index("ix_notification_command_claim", table_name="notification_command")
     op.drop_table("notification_command")

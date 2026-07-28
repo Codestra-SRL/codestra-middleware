@@ -1,4 +1,5 @@
 """Strict, versioned, data-minimised VICIdial event registry."""
+
 import hashlib
 import json
 from datetime import datetime
@@ -116,9 +117,7 @@ class Envelope(StrictModel):
     source_system: str | None = Field(default=None, max_length=64)
     producer_instance_id: str | None = Field(default=None, max_length=128)
     producer_boot_id: str | None = Field(default=None, max_length=128)
-    payload_sha256: str | None = Field(
-        default=None, pattern=r"^[a-f0-9]{64}$"
-    )
+    payload_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     asterisk_unique_id: str | None = Field(default=None, max_length=119)
     asterisk_linked_id: str | None = Field(default=None, max_length=119)
     channel: str | None = Field(default=None, max_length=255)

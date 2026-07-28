@@ -1,4 +1,5 @@
 """Target retry, concurrency, ordering and backpressure primitives."""
+
 import random
 from dataclasses import dataclass
 from enum import StrEnum
@@ -10,9 +11,14 @@ class FailureCategory(StrEnum):
     AMBIGUOUS = "ambiguous"
 
 
-def classify_failure(*, status_code: int | None = None, network_before_response: bool = False,
-                     timeout_duplicate_safe: bool = False, temporary_db_lock: bool = False,
-                     ambiguous_after_transmission: bool = False) -> FailureCategory:
+def classify_failure(
+    *,
+    status_code: int | None = None,
+    network_before_response: bool = False,
+    timeout_duplicate_safe: bool = False,
+    temporary_db_lock: bool = False,
+    ambiguous_after_transmission: bool = False,
+) -> FailureCategory:
     if ambiguous_after_transmission:
         return FailureCategory.AMBIGUOUS
     if network_before_response or timeout_duplicate_safe or temporary_db_lock:

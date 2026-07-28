@@ -1,4 +1,5 @@
 """Canonical fail-closed policy evaluator used by API and workers."""
+
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta, timezone

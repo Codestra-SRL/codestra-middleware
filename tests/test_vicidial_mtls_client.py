@@ -6,7 +6,11 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from app.adapters.vicidial.mtls_client import MAX_PAYLOAD_BYTES, VicidialMtlsClient, VicidialMtlsError
+from app.adapters.vicidial.mtls_client import (
+    MAX_PAYLOAD_BYTES,
+    VicidialMtlsClient,
+    VicidialMtlsError,
+)
 from app.core.config import Settings
 
 
@@ -50,28 +54,66 @@ def _signed_server_certificate(
     server_cert = tmp_path / "server.crt"
     subprocess.run(
         [
-            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2",
-            "-subj", "/CN=non-production-test-ca", "-keyout", str(ca_key), "-out", str(ca_cert),
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "2",
+            "-subj",
+            "/CN=non-production-test-ca",
+            "-keyout",
+            str(ca_key),
+            "-out",
+            str(ca_cert),
         ],
         check=True,
         capture_output=True,
     )
     subprocess.run(
         [
-            "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes",
-            "-subj", f"/CN={hostname}", "-keyout", str(server_key), "-out", str(server_csr),
+            "openssl",
+            "req",
+            "-new",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-subj",
+            f"/CN={hostname}",
+            "-keyout",
+            str(server_key),
+            "-out",
+            str(server_csr),
         ],
         check=True,
         capture_output=True,
     )
     extension = tmp_path / "server.ext"
-    extension.write_text(f"subjectAltName=DNS:{hostname}\nextendedKeyUsage=serverAuth\n")
+    extension.write_text(
+        f"subjectAltName=DNS:{hostname}\nextendedKeyUsage=serverAuth\n"
+    )
     if not expired:
         subprocess.run(
             [
-                "openssl", "x509", "-req", "-in", str(server_csr), "-CA", str(ca_cert),
-                "-CAkey", str(ca_key), "-CAcreateserial", "-days", "1", "-sha256",
-                "-extfile", str(extension), "-out", str(server_cert),
+                "openssl",
+                "x509",
+                "-req",
+                "-in",
+                str(server_csr),
+                "-CA",
+                str(ca_cert),
+                "-CAkey",
+                str(ca_key),
+                "-CAcreateserial",
+                "-days",
+                "1",
+                "-sha256",
+                "-extfile",
+                str(extension),
+                "-out",
+                str(server_cert),
             ],
             check=True,
             capture_output=True,
@@ -92,8 +134,19 @@ def _signed_server_certificate(
     )
     subprocess.run(
         [
-            "openssl", "ca", "-batch", "-config", str(ca_config), "-in", str(server_csr),
-            "-out", str(server_cert), "-startdate", "20200101000000Z", "-enddate", "20210101000000Z",
+            "openssl",
+            "ca",
+            "-batch",
+            "-config",
+            str(ca_config),
+            "-in",
+            str(server_csr),
+            "-out",
+            str(server_cert),
+            "-startdate",
+            "20200101000000Z",
+            "-enddate",
+            "20210101000000Z",
         ],
         check=True,
         capture_output=True,
@@ -118,9 +171,7 @@ def _settings(tmp_path: Path, **overrides: object) -> Settings:
     return Settings.model_construct(**values)
 
 
-def _client(
-    settings: Settings, transport: httpx.BaseTransport
-) -> VicidialMtlsClient:
+def _client(settings: Settings, transport: httpx.BaseTransport) -> VicidialMtlsClient:
     return VicidialMtlsClient(
         settings,
         transport=transport,
@@ -172,7 +223,9 @@ def test_valid_mtls_request_has_ids_and_exact_route(tmp_path: Path):
 
 
 def test_missing_client_certificate_fails_closed(tmp_path: Path):
-    settings = _settings(tmp_path, vicidial_client_cert_file=str(tmp_path / "missing.crt"))
+    settings = _settings(
+        tmp_path, vicidial_client_cert_file=str(tmp_path / "missing.crt")
+    )
     with pytest.raises(VicidialMtlsError, match="client certificate is missing"):
         _client(settings, httpx.MockTransport(lambda _: httpx.Response(200)))
 
@@ -186,11 +239,18 @@ def test_untrusted_ca_fails_closed(tmp_path: Path):
 
 
 def test_wrong_hostname_certificate_is_rejected(tmp_path: Path):
-    ca, server = _signed_server_certificate(tmp_path, hostname="wrong.internal.codestra.agency")
+    ca, server = _signed_server_certificate(
+        tmp_path, hostname="wrong.internal.codestra.agency"
+    )
     result = subprocess.run(
         [
-            "openssl", "verify", "-CAfile", str(ca), "-verify_hostname",
-            "authorization.internal.codestra.agency", str(server),
+            "openssl",
+            "verify",
+            "-CAfile",
+            str(ca),
+            "-verify_hostname",
+            "authorization.internal.codestra.agency",
+            str(server),
         ],
         capture_output=True,
         text=True,
@@ -221,7 +281,9 @@ def test_crl_validation_is_fail_closed_when_crl_is_invalid(tmp_path: Path):
 
 
 def test_unapproved_route_and_method_are_rejected(tmp_path: Path):
-    client = _client(_settings(tmp_path), httpx.MockTransport(lambda _: httpx.Response(200)))
+    client = _client(
+        _settings(tmp_path), httpx.MockTransport(lambda _: httpx.Response(200))
+    )
     try:
         with pytest.raises(VicidialMtlsError, match="method or route"):
             client.request("GET", f"{AUTH_URL}/api/v1/transfers/authorize", {})
@@ -259,7 +321,9 @@ def test_timeout_and_connection_refusal_do_not_retry(tmp_path: Path):
 
 
 def test_payload_limit_is_enforced_before_transport(tmp_path: Path):
-    client = _client(_settings(tmp_path), httpx.MockTransport(lambda _: httpx.Response(200)))
+    client = _client(
+        _settings(tmp_path), httpx.MockTransport(lambda _: httpx.Response(200))
+    )
     try:
         with pytest.raises(VicidialMtlsError, match="payload exceeds"):
             client.authorize({"secret": "x" * MAX_PAYLOAD_BYTES})
@@ -267,10 +331,13 @@ def test_payload_limit_is_enforced_before_transport(tmp_path: Path):
         client.close()
 
 
-def test_logs_do_not_contain_payload_or_credentials(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+def test_logs_do_not_contain_payload_or_credentials(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
     marker = "DO-NOT-LOG-THIS-SECRET"
     client = _client(
-        _settings(tmp_path), httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
+        _settings(tmp_path),
+        httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True})),
     )
     try:
         with caplog.at_level(logging.INFO, logger="codestra.vicidial_mtls"):

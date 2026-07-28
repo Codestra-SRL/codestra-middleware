@@ -44,7 +44,9 @@ def upgrade():
 
 
 def downgrade():
-    op.execute("DROP TRIGGER trg_vicidial_registry_version ON vicidial_campaign_registry")
+    op.execute(
+        "DROP TRIGGER trg_vicidial_registry_version ON vicidial_campaign_registry"
+    )
     op.execute("DROP FUNCTION guard_vicidial_registry_version()")
     op.drop_constraint(
         "ck_vicidial_registry_reconciled_readback",

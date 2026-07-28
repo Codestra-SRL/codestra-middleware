@@ -24,11 +24,14 @@ def test_supported_boundaries_and_inclusive_model():
     assert table.c.allocation_status.server_default.arg == "PROPOSED"
 
 
-@pytest.mark.parametrize("start,end,code", [
-    (6099, 6199, "EXTENSION_OUT_OF_SUPPORTED_RANGE"),
-    (9900, 10000, "EXTENSION_OUT_OF_SUPPORTED_RANGE"),
-    (7200, 7199, "EXTENSION_RANGE_INVALID"),
-])
+@pytest.mark.parametrize(
+    "start,end,code",
+    [
+        (6099, 6199, "EXTENSION_OUT_OF_SUPPORTED_RANGE"),
+        (9900, 10000, "EXTENSION_OUT_OF_SUPPORTED_RANGE"),
+        (7200, 7199, "EXTENSION_RANGE_INVALID"),
+    ],
+)
 def test_precise_input_validation(start, end, code):
     with pytest.raises(CampaignAllocationError, match=code):
         validate_allocation(allocation(start, end))
@@ -40,18 +43,27 @@ def integrity_error(constraint):
     return IntegrityError("statement", {}, original)
 
 
-@pytest.mark.parametrize("constraint,code", [
-    ("ex_campaign_extension_allocation_no_overlap", "EXTENSION_RANGE_OVERLAP"),
-    ("ck_campaign_extension_allocation_start", "EXTENSION_OUT_OF_SUPPORTED_RANGE"),
-    ("ck_campaign_extension_allocation_end", "EXTENSION_OUT_OF_SUPPORTED_RANGE"),
-    ("ck_campaign_extension_allocation_order", "EXTENSION_RANGE_INVALID"),
-    ("campaign_extension_allocation_campaign_id_key",
-     "CAMPAIGN_ALLOCATION_ALREADY_EXISTS"),
-    ("tr_campaign_extension_allocation_no_delete",
-     "HISTORICAL_RANGE_REUSE_PROHIBITED"),
-    ("tr_campaign_extension_allocation_immutable",
-     "HISTORICAL_RANGE_REUSE_PROHIBITED"),
-])
+@pytest.mark.parametrize(
+    "constraint,code",
+    [
+        ("ex_campaign_extension_allocation_no_overlap", "EXTENSION_RANGE_OVERLAP"),
+        ("ck_campaign_extension_allocation_start", "EXTENSION_OUT_OF_SUPPORTED_RANGE"),
+        ("ck_campaign_extension_allocation_end", "EXTENSION_OUT_OF_SUPPORTED_RANGE"),
+        ("ck_campaign_extension_allocation_order", "EXTENSION_RANGE_INVALID"),
+        (
+            "campaign_extension_allocation_campaign_id_key",
+            "CAMPAIGN_ALLOCATION_ALREADY_EXISTS",
+        ),
+        (
+            "tr_campaign_extension_allocation_no_delete",
+            "HISTORICAL_RANGE_REUSE_PROHIBITED",
+        ),
+        (
+            "tr_campaign_extension_allocation_immutable",
+            "HISTORICAL_RANGE_REUSE_PROHIBITED",
+        ),
+    ],
+)
 def test_known_database_constraints_translate_precisely(constraint, code):
     translated = translate_integrity_error(integrity_error(constraint))
     assert isinstance(translated, CampaignAllocationError)

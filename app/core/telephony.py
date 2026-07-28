@@ -1,4 +1,5 @@
 """Fail-closed telephony allocation and provisioning domain rules."""
+
 from __future__ import annotations
 
 import hashlib
@@ -21,15 +22,33 @@ class ExtensionState(StrEnum):
     UNKNOWN_REQUIRES_REVIEW = "UNKNOWN_REQUIRES_REVIEW"
 
 
-AUTHORITATIVE_SOURCES = frozenset({
-    "pjsip_endpoint", "pjsip_auth", "pjsip_aor", "pjsip_contact",
-    "chan_sip_peer", "vicidial_phone", "vicidial_user", "vicidial_session",
-    "asterisk_channel", "registration", "voicemail", "dialplan",
-    "configuration_include", "static_queue", "historical_reservation",
-    "call_history", "odoo_assignment", "odoo_provisioning_request",
-    "middleware_reservation", "postgres_lease", "redis_lease",
-    "deprovisioning_record", "cooldown",
-})
+AUTHORITATIVE_SOURCES = frozenset(
+    {
+        "pjsip_endpoint",
+        "pjsip_auth",
+        "pjsip_aor",
+        "pjsip_contact",
+        "chan_sip_peer",
+        "vicidial_phone",
+        "vicidial_user",
+        "vicidial_session",
+        "asterisk_channel",
+        "registration",
+        "voicemail",
+        "dialplan",
+        "configuration_include",
+        "static_queue",
+        "historical_reservation",
+        "call_history",
+        "odoo_assignment",
+        "odoo_provisioning_request",
+        "middleware_reservation",
+        "postgres_lease",
+        "redis_lease",
+        "deprovisioning_record",
+        "cooldown",
+    }
+)
 ACTIVE_MARKERS = frozenset({"ACTIVE"})
 ASSIGNED_MARKERS = frozenset({"ASSIGNED", "PRESENT"})
 RESERVED_MARKERS = frozenset({"RESERVED", "LEASED"})
@@ -48,10 +67,13 @@ class AuditResult:
 def audit_extension(extension: int, evidence: Mapping[str, str]) -> AuditResult:
     normalized = {str(k): str(v).upper() for k, v in evidence.items()}
     missing = tuple(sorted(AUTHORITATIVE_SOURCES - normalized.keys()))
-    collisions = tuple(sorted(
-        key for key, value in normalized.items()
-        if value not in {"AVAILABLE", "ABSENT", "CLEAR", "NONE"}
-    ))
+    collisions = tuple(
+        sorted(
+            key
+            for key, value in normalized.items()
+            if value not in {"AVAILABLE", "ABSENT", "CLEAR", "NONE"}
+        )
+    )
     if extension in {1001, 6101}:
         state = ExtensionState.EXCLUDED
     elif missing:
@@ -101,18 +123,35 @@ def transition_allowed(current: str, target: str) -> bool:
 
 
 def canonical_event(
-    event_type: str, correlation_id: str, idempotency_key: str, source: str,
-    actor: str, employee_id: str, business_unit_id: str, campaign_id: str,
-    object_type: str, object_id: str, revision: int, payload: dict,
+    event_type: str,
+    correlation_id: str,
+    idempotency_key: str,
+    source: str,
+    actor: str,
+    employee_id: str,
+    business_unit_id: str,
+    campaign_id: str,
+    object_type: str,
+    object_id: str,
+    revision: int,
+    payload: dict,
 ) -> dict:
     return {
-        "schema_version": "1.0", "event_id": hashlib.sha256(
+        "schema_version": "1.0",
+        "event_id": hashlib.sha256(
             f"{event_type}:{idempotency_key}".encode()
-        ).hexdigest(), "correlation_id": correlation_id,
+        ).hexdigest(),
+        "correlation_id": correlation_id,
         "idempotency_key": idempotency_key,
-        "occurred_at": datetime.now(UTC).isoformat(), "source": source,
-        "actor": actor, "employee_id": employee_id,
-        "business_unit_id": business_unit_id, "campaign_id": campaign_id,
-        "object_type": object_type, "object_id": object_id,
-        "revision": revision, "event_type": event_type, "payload": payload,
+        "occurred_at": datetime.now(UTC).isoformat(),
+        "source": source,
+        "actor": actor,
+        "employee_id": employee_id,
+        "business_unit_id": business_unit_id,
+        "campaign_id": campaign_id,
+        "object_type": object_type,
+        "object_id": object_id,
+        "revision": revision,
+        "event_type": event_type,
+        "payload": payload,
     }

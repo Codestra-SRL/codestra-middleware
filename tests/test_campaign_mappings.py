@@ -10,7 +10,11 @@ def test_scope_accepts_matching_staging_unit():
 
 @pytest.mark.parametrize(
     "environment,requested,authorized",
-    [("production", "COD", "COD"), ("staging", "COD", "MOY"), ("staging", "BAD", "BAD")],
+    [
+        ("production", "COD", "COD"),
+        ("staging", "COD", "MOY"),
+        ("staging", "BAD", "BAD"),
+    ],
 )
 def test_scope_fails_closed(environment, requested, authorized):
     with pytest.raises(HTTPException) as exc:

@@ -1,4 +1,5 @@
 """Add immutable campaign extension blocks with overlap protection."""
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -48,12 +49,16 @@ def upgrade():
         sa.Column("policy_hash", sa.String(64), nullable=False),
         sa.Column("source_change_id", sa.String(128), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            nullable=False, server_default=sa.func.now(),
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            nullable=False, server_default=sa.func.now(),
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
         sa.CheckConstraint(
             "extension_start >= 6100",
@@ -115,16 +120,14 @@ def upgrade():
 
 def downgrade():
     connection = op.get_bind()
-    above_old_ceiling = connection.execute(sa.text(
-        "SELECT count(*) FROM telephony_extension_pool WHERE range_end > 6999"
-    )).scalar_one()
+    above_old_ceiling = connection.execute(
+        sa.text("SELECT count(*) FROM telephony_extension_pool WHERE range_end > 6999")
+    ).scalar_one()
     if above_old_ceiling:
-        raise RuntimeError(
-            "downgrade blocked: telephony extension pools exceed 6999"
-        )
-    allocation_rows = connection.execute(sa.text(
-        "SELECT count(*) FROM campaign_extension_allocation"
-    )).scalar_one()
+        raise RuntimeError("downgrade blocked: telephony extension pools exceed 6999")
+    allocation_rows = connection.execute(
+        sa.text("SELECT count(*) FROM campaign_extension_allocation")
+    ).scalar_one()
     if allocation_rows:
         raise RuntimeError(
             "downgrade blocked: campaign extension allocation history exists"

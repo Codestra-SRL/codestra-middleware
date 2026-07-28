@@ -1,4 +1,5 @@
 """Authenticated integration and control surface."""
+
 from fastapi import FastAPI
 
 from app.api.v1.automation import router as automation_router

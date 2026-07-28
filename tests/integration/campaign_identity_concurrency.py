@@ -9,9 +9,7 @@ import asyncpg
 async def reserve(pool, campaign: int, kind: str) -> int:
     async with pool.acquire() as conn:
         async with conn.transaction():
-            return await conn.fetchval(
-                "SELECT nextval('campaign_identity_global_seq')"
-            )
+            return await conn.fetchval("SELECT nextval('campaign_identity_global_seq')")
 
 
 async def main() -> None:
@@ -20,14 +18,10 @@ async def main() -> None:
     )
     pool = await asyncpg.create_pool(dsn, min_size=2, max_size=20)
     try:
-        values = await asyncio.gather(
-            *(reserve(pool, 100, "LEAD") for _ in range(50))
-        )
+        values = await asyncio.gather(*(reserve(pool, 100, "LEAD") for _ in range(50)))
         assert len(values) == len(set(values)) == 50
         assert max(values) - min(values) == 49
-        other = await asyncio.gather(
-            *(reserve(pool, 200, "LEAD") for _ in range(10))
-        )
+        other = await asyncio.gather(*(reserve(pool, 200, "LEAD") for _ in range(10)))
         assert len(other) == len(set(other)) == 10
         assert not set(values).intersection(other)
         async with pool.acquire() as conn:

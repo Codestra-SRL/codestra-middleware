@@ -1,4 +1,5 @@
 """Audited external policy decision boundary."""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends

@@ -1,4 +1,5 @@
 """durable publisher authentication replay and acknowledgements"""
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -20,15 +21,21 @@ def upgrade():
     )
     op.create_table(
         "publisher_acknowledgement",
-        sa.Column("acknowledgement_id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "acknowledgement_id", postgresql.UUID(as_uuid=True), primary_key=True
+        ),
         sa.Column("event_id", sa.String(128), nullable=False, unique=True),
         sa.Column("status", sa.String(24), nullable=False),
         sa.Column("duplicate", sa.Boolean(), nullable=False),
         sa.Column("retryable", sa.Boolean(), nullable=False),
         sa.Column("reason_code", sa.String(64), nullable=False),
         sa.Column("acknowledgement", postgresql.JSONB(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
 
 
