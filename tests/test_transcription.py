@@ -3,7 +3,6 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from app.core.transcription import (
-    AudioSession,
     FeaturePolicy,
     IdempotencyConflict,
     IdempotencyLedger,

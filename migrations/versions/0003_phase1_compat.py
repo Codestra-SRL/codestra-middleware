@@ -2,7 +2,6 @@
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 revision = "0003_phase1_compat"
 down_revision = "0002_control_plane"
@@ -11,8 +10,6 @@ depends_on = None
 
 
 def upgrade():
-    u = postgresql.UUID(as_uuid=True)
-    j = postgresql.JSONB(astext_type=sa.Text())
     op.execute(
         sa.text(
             "CREATE TABLE IF NOT EXISTS integration_delivery (id UUID PRIMARY KEY, event_id BIGINT NOT NULL REFERENCES integration_event(id) ON DELETE CASCADE, target VARCHAR(32) NOT NULL, status VARCHAR(24) NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, next_attempt_at TIMESTAMPTZ, locked_at TIMESTAMPTZ, CONSTRAINT uq_delivery_event_target UNIQUE(event_id,target))"
