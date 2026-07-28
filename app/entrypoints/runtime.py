@@ -191,7 +191,7 @@ Cycle = Callable[[], Awaitable[dict[str, object]]]
 
 
 def worker_app(service: str, queue: str, cycle: Cycle) -> FastAPI:
-    state = {
+    state: dict[str, bool | str | None] = {
         "ready": False,
         "stopping": False,
         "last_success": None,

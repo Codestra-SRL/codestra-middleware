@@ -1,12 +1,21 @@
-import statistics
 import time
 
 import pytest
 
 from app.core.realtime import (
-    FEATURE_FLAGS, LAZY_CONTEXT_ORDER, REDIS_KEY_TTLS, ConversationState,
-    FeaturePolicy, ReplayBuffer, RealtimeDenied, ScreenPop, SocketScope,
-    TraceRecorder, VAD_THRESHOLDS_MS, authorize_socket, failure_degradation,
+    FEATURE_FLAGS,
+    LAZY_CONTEXT_ORDER,
+    REDIS_KEY_TTLS,
+    VAD_THRESHOLDS_MS,
+    ConversationState,
+    FeaturePolicy,
+    RealtimeDenied,
+    ReplayBuffer,
+    ScreenPop,
+    SocketScope,
+    TraceRecorder,
+    authorize_socket,
+    failure_degradation,
     webrtc_ready,
 )
 
@@ -95,7 +104,9 @@ def test_synthetic_server_processing_latency():
         recorder.measure("campaign_resolved", lambda: "TL-TEST")
         recorder.measure("agent_resolved", lambda: "agent-1")
         recorder.measure("websocket_authorized",
-                         lambda: authorize_socket(scope_value, event(sequence)))
+                         lambda sequence=sequence: authorize_socket(
+                             scope_value, event(sequence)
+                         ))
         durations.append((time.perf_counter_ns() - start) / 1_000_000)
     durations.sort()
     assert durations[int(len(durations) * .95)] < 50

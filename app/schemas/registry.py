@@ -181,6 +181,6 @@ def parse_event(raw: bytes, enabled: frozenset[str]) -> tuple[Envelope, StrictMo
             "vicidial.call.connected": "CONNECTED",
             "vicidial.call.ended": "ENDED",
         }[envelope.event_type]
-        if payload.lifecycle_status != expected_status:
+        if getattr(payload, "lifecycle_status", None) != expected_status:
             raise ValueError("event type and lifecycle status mismatch")
     return envelope, payload

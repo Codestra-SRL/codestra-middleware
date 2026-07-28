@@ -11,6 +11,7 @@ from app.api.v1.publisher import router as publisher_router
 from app.api.v1.webphone import router as webphone_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.telephony import router as telephony_router
+from app.api.v1.campaign_design import router as campaign_design_router
 from app.core.config import settings
 from app.core.auth import BearerAuthError, verify_bearer
 from fastapi import Request
@@ -30,6 +31,7 @@ app.include_router(publisher_router)
 app.include_router(webphone_router)
 app.include_router(n8n_staging_router)
 app.include_router(telephony_router)
+app.include_router(campaign_design_router)
 app.mount("/metrics", make_asgi_app())
 
 SIGNED_WEBHOOK_PATHS = frozenset(

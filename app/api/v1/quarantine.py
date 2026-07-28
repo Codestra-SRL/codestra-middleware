@@ -288,7 +288,11 @@ async def reprocess(
         or record.original_signature_verification != "VERIFIED"
     ):
         raise HTTPException(409, "record is not replay eligible")
-    if not all((record.encrypted_payload, record.encryption_nonce, record.encryption_key_version)):
+    if (
+        record.encrypted_payload is None
+        or record.encryption_nonce is None
+        or record.encryption_key_version is None
+    ):
         raise HTTPException(409, "immutable payload unavailable")
     record.status = "REPLAYING"
     await db.flush()
@@ -299,11 +303,17 @@ async def reprocess(
             .order_by(QuarantineCorrection.correction_version.desc())
             .limit(1)
         )
-        encrypted_value = EncryptedPayload(
-            correction.encrypted_payload if correction else record.encrypted_payload,
-            correction.encryption_nonce if correction else record.encryption_nonce,
-            correction.encryption_key_version if correction else record.encryption_key_version,
+        ciphertext = (
+            correction.encrypted_payload if correction else record.encrypted_payload
         )
+        nonce = correction.encryption_nonce if correction else record.encryption_nonce
+        key_version = (
+            correction.encryption_key_version
+            if correction
+            else record.encryption_key_version
+        )
+        assert ciphertext is not None and nonce is not None and key_version is not None
+        encrypted_value = EncryptedPayload(ciphertext, nonce, key_version)
         expected_fingerprint = (
             correction.payload_fingerprint if correction else record.payload_fingerprint
         )
@@ -330,9 +340,14 @@ async def reprocess(
             calling_window_end=time(23, 59, 59),
             attempts=0, max_attempts=1, minimum_spacing_seconds=0,
             channel_eligible=True, business_unit=value["business_unit"],
-            allowed_business_units=[record.business_unit],
+            allowed_business_units=(
+                [record.business_unit] if record.business_unit is not None else []
+            ),
             campaign=value["campaign"], allowed_campaigns=["TEST_SYN"],
-            agent=value["agent_id"], allowed_agents=[value["agent_id"]],
+            agent=value["agent_id"],
+            allowed_agents=(
+                [value["agent_id"]] if value["agent_id"] is not None else []
+            ),
             callback_allowed=False, transfer_allowed=False,
             recording_required=False, disclosure_present=True,
             emergency_kill_switch=False, shadow_mode=False,
