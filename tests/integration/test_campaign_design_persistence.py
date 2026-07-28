@@ -225,6 +225,38 @@ def test_concurrent_duplicate_delivery_has_one_committed_outcome():
     _run(scenario)
 
 
+def test_concurrent_distinct_events_serialize_on_new_integration():
+    async def scenario(_engine, factory):
+        first = _request(purpose="FIRST")
+        second = first.model_copy(
+            update={
+                "event_id": f"diag-odoo-event-{uuid4()}",
+                "purpose": "SECOND",
+                "correlation_id": f"diag-correlation-{uuid4()}",
+            }
+        )
+        outcomes = await asyncio.gather(
+            _consume(factory, first),
+            _consume(factory, second),
+            return_exceptions=True,
+        )
+        assert sum(isinstance(value, dict) for value in outcomes) == 1
+        assert sum(isinstance(value, DesignConflict) for value in outcomes) == 1
+        async with factory() as session:
+            assert (
+                await session.scalar(
+                    text(
+                        "SELECT count(*) FROM campaign_design_revision "
+                        "WHERE integration_uuid=:uuid"
+                    ),
+                    {"uuid": first.integration_uuid},
+                )
+                == 1
+            )
+
+    _run(scenario)
+
+
 def test_changed_payload_for_committed_event_is_a_conflict():
     async def scenario(_engine, factory):
         item = _request()
@@ -271,6 +303,17 @@ def test_dead_letter_occurs_only_at_configured_retry_limit():
             "allocations": 0,
             "audits": 0,
         }
+        with pytest.raises(DesignConflict, match="dead-lettered"):
+            await _consume(factory, item)
+        async with factory() as session:
+            attempts = await session.scalar(
+                text(
+                    "SELECT attempts FROM campaign_design_failure "
+                    "WHERE event_id=:event"
+                ),
+                {"event": item.event_id},
+            )
+            assert attempts == 3
 
     _run(scenario)
 

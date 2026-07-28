@@ -259,6 +259,23 @@ class PostgresDesignStore:
         payload_hash = request.payload_hash()
         try:
             async with self.db.begin():
+                failure = (
+                    await self.db.execute(
+                        text(
+                            "SELECT payload_hash,status FROM campaign_design_failure "
+                            "WHERE event_id=:event FOR UPDATE"
+                        ),
+                        {"event": request.event_id},
+                    )
+                ).mappings().one_or_none()
+                if failure:
+                    if failure["payload_hash"] != payload_hash:
+                        raise DesignConflict("failed event replay payload conflict")
+                    if failure["status"] == "dead_letter":
+                        raise DesignConflict(
+                            "event is dead-lettered; explicit reset required"
+                        )
+
                 inserted = await self.db.scalar(
                     text(
                         "INSERT INTO campaign_event_inbox"
@@ -305,6 +322,10 @@ class PostgresDesignStore:
                     return self._stored(row), True
 
                 self._fault("after_receipt")
+                await self.db.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
+                    {"scope": f"campaign-design:{request.integration_uuid}"},
+                )
                 current = (
                     await self.db.execute(
                         text(
