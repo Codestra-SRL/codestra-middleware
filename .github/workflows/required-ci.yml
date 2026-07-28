@@ -222,7 +222,7 @@ jobs:
           docker run --rm --network host -e PGPASSWORD \
             "${PG_IMAGE}" pg_restore \
             -h 127.0.0.1 -U middleware_ci -d middleware_restore \
-            --exit-on-error middleware-rehearsal.dump
+            --exit-on-error < middleware-rehearsal.dump
           restored_head="$(
             docker run --rm --network host -e PGPASSWORD \
               "${PG_IMAGE}" psql \
