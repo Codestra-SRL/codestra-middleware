@@ -5,6 +5,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -16,7 +17,12 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import (
+    ExcludeConstraint,
+    INT4RANGE,
+    JSONB,
+    UUID as PGUUID,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -462,8 +468,78 @@ class TelephonyExtensionPool(Base):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     __table_args__ = (
         CheckConstraint("range_start >= 6100", name="ck_telephony_pool_start"),
-        CheckConstraint("range_end <= 6999", name="ck_telephony_pool_end"),
+        CheckConstraint("range_end <= 9999", name="ck_telephony_pool_end"),
         CheckConstraint("range_start <= range_end", name="ck_telephony_pool_order"),
+    )
+
+
+class CampaignExtensionAllocation(Base):
+    """Authoritative immutable campaign extension-block ledger."""
+    __tablename__ = "campaign_extension_allocation"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
+    campaign_number: Mapped[int] = mapped_column(
+        Integer, nullable=False, unique=True
+    )
+    allocation_public_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
+    extension_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    extension_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    extension_range: Mapped[Any] = mapped_column(
+        INT4RANGE,
+        Computed(
+            "int4range(extension_start, extension_end, '[]')",
+            persisted=True,
+        ),
+        nullable=False,
+    )
+    allocation_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default="PROPOSED"
+    )
+    allocated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_change_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "extension_start >= 6100",
+            name="ck_campaign_extension_allocation_start",
+        ),
+        CheckConstraint(
+            "extension_end <= 9999",
+            name="ck_campaign_extension_allocation_end",
+        ),
+        CheckConstraint(
+            "extension_start <= extension_end",
+            name="ck_campaign_extension_allocation_order",
+        ),
+        CheckConstraint(
+            "campaign_number > 0 AND campaign_number % 100 = 0",
+            name="ck_campaign_extension_allocation_number",
+        ),
+        CheckConstraint(
+            "allocation_status IN "
+            "('PROPOSED','RESERVED_DISABLED','ACTIVE','PAUSED','RETIRED')",
+            name="ck_campaign_extension_allocation_status",
+        ),
+        ExcludeConstraint(
+            ("extension_range", "&&"),
+            using="gist",
+            name="ex_campaign_extension_allocation_no_overlap",
+        ),
     )
 
 
