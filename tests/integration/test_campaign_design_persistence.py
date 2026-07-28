@@ -120,6 +120,20 @@ async def _counts(
         return result
 
 
+async def _make_retry_due(
+    factory: async_sessionmaker[AsyncSession], event_id: str
+) -> None:
+    async with factory() as session:
+        await session.execute(
+            text(
+                "UPDATE campaign_design_failure SET next_attempt_at=now() "
+                "WHERE event_id=:event AND status='retry'"
+            ),
+            {"event": event_id},
+        )
+        await session.commit()
+
+
 def test_successful_consumption_commits_receipt_design_allocation_and_audit():
     async def scenario(_engine, factory):
         item = _request()
@@ -173,6 +187,7 @@ def test_failure_before_commit_rolls_back_every_business_record(fault):
                 )
             ).one()
             assert tuple(failure) == (1, "retry")
+        await _make_retry_due(factory, item.event_id)
         recovered = await _consume(factory, item)
         assert recovered["idempotent_replay"] is False
         assert await _counts(factory, item) == {
@@ -279,6 +294,8 @@ def test_dead_letter_occurs_only_at_configured_retry_limit():
     async def scenario(_engine, factory):
         item = _request()
         for attempt in range(1, 4):
+            if attempt > 1:
+                await _make_retry_due(factory, item.event_id)
             with pytest.raises(RuntimeError):
                 await _consume(
                     factory, item, fault="after_receipt", max_attempts=3
@@ -314,6 +331,26 @@ def test_dead_letter_occurs_only_at_configured_retry_limit():
                 {"event": item.event_id},
             )
             assert attempts == 3
+
+    _run(scenario)
+
+
+def test_retry_before_persisted_backoff_expires_is_rejected():
+    async def scenario(_engine, factory):
+        item = _request()
+        with pytest.raises(RuntimeError):
+            await _consume(factory, item, fault="after_receipt")
+        with pytest.raises(DesignConflict, match="retry is deferred"):
+            await _consume(factory, item)
+        async with factory() as session:
+            attempts = await session.scalar(
+                text(
+                    "SELECT attempts FROM campaign_design_failure "
+                    "WHERE event_id=:event"
+                ),
+                {"event": item.event_id},
+            )
+            assert attempts == 1
 
     _run(scenario)
 
@@ -439,6 +476,33 @@ def test_concurrent_identical_approval_replays_the_committed_record():
                 )
                 == 1
             )
+
+    _run(scenario)
+
+
+def test_concurrent_global_approval_idempotency_key_conflicts_cleanly():
+    async def scenario(_engine, factory):
+        first_item = _request(index=1)
+        second_item = _request(index=2)
+        first_preview = await _consume(factory, first_item)
+        second_preview = await _consume(factory, second_item)
+        outcomes = await asyncio.gather(
+            _approve(
+                factory,
+                first_item,
+                first_preview,
+                idempotency_key="approval-global-concurrent-key",
+            ),
+            _approve(
+                factory,
+                second_item,
+                second_preview,
+                idempotency_key="approval-global-concurrent-key",
+            ),
+            return_exceptions=True,
+        )
+        assert sum(isinstance(value, dict) for value in outcomes) == 1
+        assert sum(isinstance(value, DesignConflict) for value in outcomes) == 1
 
     _run(scenario)
 

@@ -262,7 +262,9 @@ class PostgresDesignStore:
                 failure = (
                     await self.db.execute(
                         text(
-                            "SELECT payload_hash,status FROM campaign_design_failure "
+                            "SELECT payload_hash,status,"
+                            "(next_attempt_at IS NULL OR next_attempt_at <= now()) "
+                            "AS retry_due FROM campaign_design_failure "
                             "WHERE event_id=:event FOR UPDATE"
                         ),
                         {"event": request.event_id},
@@ -275,6 +277,8 @@ class PostgresDesignStore:
                         raise DesignConflict(
                             "event is dead-lettered; explicit reset required"
                         )
+                    if not failure["retry_due"]:
+                        raise DesignConflict("event retry is deferred")
 
                 inserted = await self.db.scalar(
                     text(
@@ -554,6 +558,10 @@ class PostgresDesignStore:
     ) -> tuple[StoredDesign, StoredApproval]:
         try:
             async with self.db.begin():
+                await self.db.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
+                    {"scope": f"campaign-approval-key:{idempotency_key}"},
+                )
                 current = (
                     await self.db.execute(
                         text(
