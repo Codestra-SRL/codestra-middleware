@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     vicidial_crl_file: str = ""
     callback_dispatch_enabled: bool = False
     messaging_enabled: bool = False
+    broad_event_delivery_enabled: bool = False
+    production_n8n_enabled: bool = False
+    email_dispatch_enabled: bool = False
+    sms_dispatch_enabled: bool = False
+    allow_live_email: bool = False
+    allow_live_sms: bool = False
     ai_enrichment_enabled: bool = False
     report_delivery_enabled: bool = False
     outbox_worker_enabled: bool = False
@@ -116,6 +122,12 @@ class Settings(BaseSettings):
             self.n8n_production_workflows_enabled,
             self.vicidial_write_enabled,
             self.messaging_enabled,
+            self.broad_event_delivery_enabled,
+            self.production_n8n_enabled,
+            self.email_dispatch_enabled,
+            self.sms_dispatch_enabled,
+            self.allow_live_email,
+            self.allow_live_sms,
             self.outbox_worker_enabled,
             self.telephony_provisioning_enabled,
             self.vicidial_provisioning_enabled,
