@@ -30,6 +30,30 @@ class DesignConflict(RuntimeError):
     pass
 
 
+class CampaignDesignConfiguration(BaseModel):
+    """Canonical Odoo fields that materially define a campaign design."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    time_zone: str = Field(min_length=1, max_length=64)
+    calling_hour_start: float = Field(ge=0, lt=24)
+    calling_hour_end: float = Field(gt=0, le=24)
+    consent_required: bool
+    dnc_enforced: bool
+    team_ids: tuple[int, ...]
+    supervisor_ids: tuple[int, ...]
+
+    @field_validator("team_ids", "supervisor_ids")
+    @classmethod
+    def identifiers_are_positive_and_canonical(
+        cls, values: tuple[int, ...]
+    ) -> tuple[int, ...]:
+        if any(value <= 0 for value in values):
+            raise ValueError("design identifiers must be positive")
+        if len(set(values)) != len(values):
+            raise ValueError("design identifiers must be unique")
+        return tuple(sorted(values))
+
+
 class CampaignDesignInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     event_id: str = Field(min_length=8, max_length=128)
@@ -42,6 +66,7 @@ class CampaignDesignInput(BaseModel):
     owner_user_id: int = Field(gt=0)
     supervisor_user_id: int = Field(gt=0)
     correlation_id: str = Field(min_length=8, max_length=128)
+    design_configuration: CampaignDesignConfiguration | None = None
 
     @field_validator("environment")
     @classmethod
@@ -66,7 +91,9 @@ class CampaignDesignInput(BaseModel):
         return value
 
     def payload_hash(self) -> str:
-        body = self.model_dump(exclude={"event_id", "correlation_id"})
+        body = self.model_dump(
+            exclude={"event_id", "correlation_id"}, exclude_none=True
+        )
         return hashlib.sha256(canonical(body).encode()).hexdigest()
 
 
@@ -144,7 +171,29 @@ def build_manifest(request: CampaignDesignInput, revision: int, list_id: int) ->
             "campaign_code": campaign_code,
             "owner_user_id": request.owner_user_id,
             "supervisor_user_id": request.supervisor_user_id,
+            **(
+                {
+                    "design_configuration": request.design_configuration.model_dump(
+                        mode="json"
+                    )
+                }
+                if request.design_configuration
+                else {}
+            ),
         },
+        **(
+            {
+                "policies": {
+                    "time_zone": request.design_configuration.time_zone,
+                    "calling_hour_start": request.design_configuration.calling_hour_start,
+                    "calling_hour_end": request.design_configuration.calling_hour_end,
+                    "consent_required": request.design_configuration.consent_required,
+                    "dnc_enforced": request.design_configuration.dnc_enforced,
+                }
+            }
+            if request.design_configuration
+            else {}
+        ),
         "vicidial": {
             "active": False,
             "default_list_id": list_id,
