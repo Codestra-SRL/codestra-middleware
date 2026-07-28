@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.registry import REGISTRY, parse_event
+from app.schemas.registry import LifecyclePayload, REGISTRY, parse_event
 
 
 def event(event_type="vicidial.call.ended", payload=None):
@@ -88,6 +88,7 @@ def test_lifecycle_schema_and_payload_integrity():
             json.dumps(value).encode(), frozenset({event_type})
         )
         assert envelope.event_type == event_type
+        assert isinstance(payload, LifecyclePayload)
         assert payload.lifecycle_status == state
     value = lifecycle_event("vicidial.call.started", "STARTED")
     value["payload"]["hangup_cause"] = "changed"
