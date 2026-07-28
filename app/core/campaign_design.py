@@ -79,6 +79,7 @@ class StoredDesign:
 
 
 class DesignStore(Protocol):
+    async def rollback(self) -> None: ...
     async def event(self, event_id: str) -> tuple[str, str] | None: ...
     async def design(self, integration_uuid: str) -> StoredDesign | None: ...
     async def create(self, request: CampaignDesignInput) -> StoredDesign: ...
@@ -163,9 +164,11 @@ class CampaignDesignService:
             await self.store.mark_event(request, "completed")
             return created.manifest | {"idempotent_replay": False}
         except DesignConflict:
+            await self.store.rollback()
             await self.store.fail_event(request, "design conflict", 1)
             raise
         except Exception as exc:
+            await self.store.rollback()
             await self.store.fail_event(request, type(exc).__name__, max_attempts)
             raise
 
@@ -194,6 +197,9 @@ class PostgresDesignStore:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def rollback(self) -> None:
+        await self.db.rollback()
+
     async def event(self, event_id: str) -> tuple[str, str] | None:
         row = (await self.db.execute(text(
             "SELECT payload_hash,status FROM campaign_design_event WHERE event_id=:id"
@@ -215,7 +221,8 @@ class PostgresDesignStore:
             {"scope": f"campaign-list:{request.environment}:{request.business_unit}"},
         )
         list_id = (await self.db.execute(text(
-            "SELECT candidate FROM generate_series(:low,:high) candidate "
+            "SELECT candidate FROM generate_series("
+            "CAST(:low AS integer),CAST(:high AS integer)) candidate "
             "WHERE NOT EXISTS (SELECT 1 FROM campaign_list_reservation "
             "WHERE environment=:environment AND list_id=candidate) "
             "ORDER BY candidate LIMIT 1"

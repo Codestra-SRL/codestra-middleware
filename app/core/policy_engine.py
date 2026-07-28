@@ -104,7 +104,7 @@ def evaluate(request: PolicyRequest) -> PolicyResult:
         ("consent", request.consent_observed_at),
         ("dnc", request.dnc_observed_at),
     ):
-        if _aware(observed):
+        if observed is not None and _aware(observed):
             age = now - observed
             freshness[name] = f"{max(0, int(age.total_seconds()))}s"
             if age < timedelta(0) or age > MAX_FRESHNESS:

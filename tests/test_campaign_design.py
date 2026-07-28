@@ -19,6 +19,9 @@ class MemoryStore:
         self.attempts = {}
         self.fail_create = False
 
+    async def rollback(self):
+        return None
+
     async def event(self, event_id):
         return self.events.get(event_id)
 

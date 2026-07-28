@@ -387,8 +387,13 @@ def _desktop_response(payload: dict) -> dict:
     turn_username = payload.get("temporary_turn_username")
     turn_credential = payload.get("temporary_turn_credential")
     approved_turn_url = payload.get("approved_turn_url")
-    role = {"AGENT": "SETTER", "CLOSER": "CLOSER", "SUPERVISOR": "SUPERVISOR"}.get(
-        payload.get("role"), payload.get("role")
+    raw_role = payload.get("role")
+    role = (
+        {"AGENT": "SETTER", "CLOSER": "CLOSER", "SUPERVISOR": "SUPERVISOR"}.get(
+            raw_role, raw_role
+        )
+        if isinstance(raw_role, str)
+        else None
     )
     if not all(isinstance(value, str) and value for value in (
         payload.get("session_id"), payload.get("temporary_sip_credential"),

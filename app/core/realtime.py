@@ -170,7 +170,7 @@ def webrtc_ready(*, registered: bool, audio_device: bool, websocket: bool,
 
 
 def failure_degradation(dependency: str) -> dict[str, Any]:
-    policies = {
+    policies: dict[str, dict[str, Any]] = {
         "stt": {"telephony_continues": True, "live_transcript": False, "queue_post_call": True},
         "llm": {"telephony_continues": True, "fallback": "deterministic_human_transfer"},
         "tts": {"telephony_continues": True, "fallback": "cached_announcement_human_transfer"},

@@ -3,19 +3,31 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from app.core.transcription import (
-    AudioSession, FeaturePolicy, IdempotencyConflict, IdempotencyLedger,
-    TranscriptSegment, TranscriptionDenied, channel_identity,
-    create_audio_session, finalize_audio_session, redact, structured_analysis,
+    FeaturePolicy,
+    IdempotencyConflict,
+    IdempotencyLedger,
+    TranscriptionDenied,
+    TranscriptSegment,
+    channel_identity,
+    create_audio_session,
+    finalize_audio_session,
+    redact,
+    structured_analysis,
     validate_segment,
 )
 
 
 def make_session(**overrides):
-    data = dict(
-        call_reference="SYNTH-CALL-1", business_unit="TL", campaign="TL-TEST",
-        media_checksum="a" * 64, consent=True, classification="synthetic",
-        retention_policy="test-24h", correlation_id="corr-1",
-    )
+    data = {
+        "call_reference": "SYNTH-CALL-1",
+        "business_unit": "TL",
+        "campaign": "TL-TEST",
+        "media_checksum": "a" * 64,
+        "consent": True,
+        "classification": "synthetic",
+        "retention_policy": "test-24h",
+        "correlation_id": "corr-1",
+    }
     data.update(overrides)
     return create_audio_session(**data)
 

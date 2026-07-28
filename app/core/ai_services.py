@@ -11,16 +11,34 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 BUSINESS_UNITS = {"TL", "DEV", "SCP"}
 TASK_TYPES = {
-    "lead_prequalification", "lead_fit_scoring", "urgency_classification",
-    "campaign_recommendation", "language_detection", "call_transcription",
-    "call_summary", "sentiment_analysis", "objection_detection",
-    "disclosure_detection", "forbidden_phrase_detection", "compliance_review",
-    "qa_review", "next_best_action", "retention_risk", "upsell_recommendation",
-    "failed_payment_recommendation", "supervisor_escalation",
+    "lead_prequalification",
+    "lead_fit_scoring",
+    "urgency_classification",
+    "campaign_recommendation",
+    "language_detection",
+    "call_transcription",
+    "call_summary",
+    "sentiment_analysis",
+    "objection_detection",
+    "disclosure_detection",
+    "forbidden_phrase_detection",
+    "compliance_review",
+    "qa_review",
+    "next_best_action",
+    "retention_risk",
+    "upsell_recommendation",
+    "failed_payment_recommendation",
+    "supervisor_escalation",
 }
 SENSITIVE_KEYS = {
-    "card_number", "cvv", "password", "secret", "sip_password", "private_key",
-    "authorization", "medical_diagnosis",
+    "card_number",
+    "cvv",
+    "password",
+    "secret",
+    "sip_password",
+    "private_key",
+    "authorization",
+    "medical_diagnosis",
 }
 
 
@@ -105,7 +123,9 @@ def request_hash(request: AIRequest) -> str:
 
 def redact_text(text: str) -> str:
     text = re.sub(r"\b(?:\d[ -]*?){13,19}\b", "[REDACTED_PAYMENT]", text)
-    text = re.sub(r"(?i)(password|secret|api[_ -]?key)\s*[:=]\s*\S+", r"\1=[REDACTED]", text)
+    text = re.sub(
+        r"(?i)(password|secret|api[_ -]?key)\s*[:=]\s*\S+", r"\1=[REDACTED]", text
+    )
     return text
 
 
@@ -113,30 +133,60 @@ def qualify(unit: str, factors: dict[str, Any]) -> Qualification:
     if unit not in BUSINESS_UNITS:
         raise ValueError("unsupported business unit")
     if not factors.get("consent", False) or factors.get("dnc", False):
-        return Qualification(0, "blocked_or_ineligible", "deferred", "suppressed",
-                             1.0, True, ("deterministic compliance override",))
+        return Qualification(
+            0,
+            "blocked_or_ineligible",
+            "deferred",
+            "suppressed",
+            1.0,
+            True,
+            ("deterministic compliance override",),
+        )
     if unit == "SCP" and factors.get("medical_claim", False):
-        return Qualification(0, "blocked_or_ineligible", "critical",
-                             "compliance_review", 1.0, True,
-                             ("medical claims require human review",))
+        return Qualification(
+            0,
+            "blocked_or_ineligible",
+            "critical",
+            "compliance_review",
+            1.0,
+            True,
+            ("medical claims require human review",),
+        )
     score = max(0, min(100, int(factors.get("base_score", 50))))
-    if score >= 90: fit = "exceptional_fit"
-    elif score >= 75: fit = "strong_fit"
-    elif score >= 60: fit = "moderate_fit"
-    elif score >= 40: fit = "weak_fit"
-    elif score > 0: fit = "very_low_fit"
-    else: fit = "blocked_or_ineligible"
+    if score >= 90:
+        fit = "exceptional_fit"
+    elif score >= 75:
+        fit = "strong_fit"
+    elif score >= 60:
+        fit = "moderate_fit"
+    elif score >= 40:
+        fit = "weak_fit"
+    elif score > 0:
+        fit = "very_low_fit"
+    else:
+        fit = "blocked_or_ineligible"
     confidence = float(factors.get("confidence", 0.8))
     review = confidence < 0.7
-    category = "needs_human_review" if review else ("qualified" if score >= 60 else "nurture")
+    category = (
+        "needs_human_review" if review else ("qualified" if score >= 60 else "nurture")
+    )
     urgency = str(factors.get("urgency", "medium"))
     if urgency not in {"critical", "high", "medium", "low", "deferred"}:
         raise ValueError("invalid urgency")
-    return Qualification(score, fit, urgency, category, confidence, review,
-                         ("deterministic score", f"business_unit={unit}"))
+    return Qualification(
+        score,
+        fit,
+        urgency,
+        category,
+        confidence,
+        review,
+        ("deterministic score", f"business_unit={unit}"),
+    )
 
 
-def knowledge_allowed(item: dict[str, Any], unit: str, campaign: str, language: str) -> bool:
+def knowledge_allowed(
+    item: dict[str, Any], unit: str, campaign: str, language: str
+) -> bool:
     return (
         item.get("business_unit") == unit
         and item.get("campaign_id") == campaign
@@ -148,9 +198,12 @@ def knowledge_allowed(item: dict[str, Any], unit: str, campaign: str, language: 
 
 class FeatureFlags:
     """AI features default false and cannot bypass the global provider kill switch."""
+
     def __init__(self, values: dict[str, bool] | None = None):
         self.values = values or {}
 
     def enabled(self, feature: str) -> bool:
-        return bool(self.values.get("ENABLE_AI_PROVIDERS", False)
-                    and self.values.get(feature, False))
+        return bool(
+            self.values.get("ENABLE_AI_PROVIDERS", False)
+            and self.values.get(feature, False)
+        )
