@@ -1,0 +1,75 @@
+schema_version: production-lifecycle-scope-v1
+status: BUSINESS_APPROVAL_REQUIRED
+campaign_ids:
+  - P3TST001
+business_units: []
+source_extensions: []
+agent_groups:
+  - P3TEST
+dialplan_contexts: []
+call_directions:
+  - OBSERVATION_ONLY
+destination_classifications: []
+event_types:
+  - vicidial.call.started
+  - vicidial.call.connected
+  - vicidial.call.ended
+excluded_campaigns:
+  - P3SIP01
+  - TEST_SYN
+excluded_source_extensions:
+  - "1101"
+  - "6198"
+excluded_contexts:
+  - cs-synth-6198
+  - default
+  - sales-open
+  - supervisor-control
+  - vicidial-auto
+  - vicidial-auto-external
+  - vicidial-auto-internal
+excluded_destination_classes:
+  - CALLBACK
+  - CONFERENCE
+  - EMERGENCY
+  - INTERNAL_EXTENSION
+  - QUEUE
+  - SERVICE_CODE
+  - TRANSFER_TARGET
+  - UNKNOWN
+  - VOICEMAIL
+payload_fields:
+  - lifecycle_status
+  - disposition
+  - hangup_cause
+envelope_fields:
+  - schema_version
+  - event_id
+  - event_type
+  - occurred_at
+  - correlation_id
+  - client_instance
+  - business_unit
+  - source_system
+  - producer_instance_id
+  - producer_boot_id
+  - payload_sha256
+  - asterisk_unique_id
+  - asterisk_linked_id
+  - channel
+  - source_extension
+  - destination
+  - dialplan_context
+  - payload
+retention:
+  status: BUSINESS_APPROVAL_REQUIRED
+  raw_response_days_proposed: 30
+  detailed_evidence_days_proposed: 180
+  release_acceptance: RELEASE_LIFETIME_PLUS_ONE_YEAR
+observation_limits:
+  window_minutes: 30
+  maximum_submissions: 25
+  maximum_attempts_per_event: 1
+  automatic_retry: false
+  stop_on_first_unexpected_failure: true
+activation_allowed: false
