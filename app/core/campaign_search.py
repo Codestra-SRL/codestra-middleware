@@ -34,17 +34,21 @@ async def scoped_exact_search(
     if not allowed_campaigns:
         return None
     row = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT alias,campaign_number,alias_type,object_identity_id
                 FROM campaign_search_alias
                 WHERE alias=:alias AND campaign_number = ANY(:campaigns)
                 """
-            ),
-            {"alias": normalized, "campaigns": list(sorted(allowed_campaigns))},
+                ),
+                {"alias": normalized, "campaigns": list(sorted(allowed_campaigns))},
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if row is None:
         return None
     return SearchResult(

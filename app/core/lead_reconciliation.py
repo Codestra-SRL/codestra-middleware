@@ -77,7 +77,9 @@ class SuppressionActive(PermissionError):
     pass
 
 
-def normalize_phone(raw: str | None, default_country_code: str | None = None) -> str | None:
+def normalize_phone(
+    raw: str | None, default_country_code: str | None = None
+) -> str | None:
     """Return conservative E.164 or None; extensions are deliberately excluded."""
     if not raw:
         return None
@@ -112,7 +114,9 @@ def normalize_email(raw: str | None) -> str | None:
 
 
 def payload_checksum(payload: dict[str, object]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 

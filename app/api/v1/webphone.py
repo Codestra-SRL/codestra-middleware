@@ -1,4 +1,5 @@
 """Fail-closed browser facade for the isolated endpoint-6101 staging gate."""
+
 from __future__ import annotations
 
 import asyncio
@@ -99,8 +100,7 @@ class SessionRegistry:
     def purge(self) -> None:
         now = datetime.now(timezone.utc)
         expired = [
-            key for key, value in self._sessions.items()
-            if value.expires_at <= now
+            key for key, value in self._sessions.items() if value.expires_at <= now
         ]
         for key in expired:
             value = self._sessions.pop(key)
@@ -123,7 +123,9 @@ async def _keycloak_user(subject: str) -> dict:
         secret = secret_path.read_text().strip()
     except OSError as exc:
         raise HTTPException(503, "identity service unavailable") from exc
-    async with httpx.AsyncClient(verify=settings.provisioning_service_ca_file, timeout=8) as client:
+    async with httpx.AsyncClient(
+        verify=settings.provisioning_service_ca_file, timeout=8
+    ) as client:
         try:
             token_response = await client.post(
                 settings.provisioning_service_token_url,
@@ -148,18 +150,29 @@ async def _keycloak_user(subject: str) -> dict:
     return user
 
 
-async def _odoo_identity(employee_id: str, campaign_id: str | None = None,
-                         endpoint: int | None = None) -> dict:
-    if not settings.odoo_identity_lookup_url or not settings.odoo_identity_lookup_hmac_file:
+async def _odoo_identity(
+    employee_id: str, campaign_id: str | None = None, endpoint: int | None = None
+) -> dict:
+    if (
+        not settings.odoo_identity_lookup_url
+        or not settings.odoo_identity_lookup_hmac_file
+    ):
         raise HTTPException(503, "identity service unavailable")
     try:
         secret = Path(settings.odoo_identity_lookup_hmac_file).read_text().strip()
     except OSError as exc:
         raise HTTPException(503, "identity service unavailable") from exc
-    query = {key: value for key, value in {
-        "campaign_id": campaign_id, "endpoint": str(endpoint) if endpoint is not None else None
-    }.items() if value is not None}
-    url = f"{settings.odoo_identity_lookup_url.rstrip('/')}/{quote(employee_id, safe='')}"
+    query = {
+        key: value
+        for key, value in {
+            "campaign_id": campaign_id,
+            "endpoint": str(endpoint) if endpoint is not None else None,
+        }.items()
+        if value is not None
+    }
+    url = (
+        f"{settings.odoo_identity_lookup_url.rstrip('/')}/{quote(employee_id, safe='')}"
+    )
     if query:
         url += "?" + urlencode(query)
     parts = urlsplit(url)
@@ -167,16 +180,23 @@ async def _odoo_identity(employee_id: str, campaign_id: str | None = None,
     if parts.query:
         canonical += "?" + parts.query
     timestamp = canonical.split(".", 1)[0]
-    signature = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+    signature = hmac.new(
+        secret.encode(), canonical.encode(), hashlib.sha256
+    ).hexdigest()
     try:
         async with httpx.AsyncClient(timeout=8) as client:
-            response = await client.get(url, headers={
-                "X-Codestra-Identity-Timestamp": timestamp,
-                "X-Codestra-Identity-Signature": f"sha256={signature}",
-            })
+            response = await client.get(
+                url,
+                headers={
+                    "X-Codestra-Identity-Timestamp": timestamp,
+                    "X-Codestra-Identity-Signature": f"sha256={signature}",
+                },
+            )
             if response.status_code >= 400:
-                raise HTTPException(response.status_code if response.status_code in {401, 403} else 503,
-                                    "employee identity not authorized")
+                raise HTTPException(
+                    response.status_code if response.status_code in {401, 403} else 503,
+                    "employee identity not authorized",
+                )
             payload = response.json()
     except HTTPException:
         raise
@@ -187,8 +207,11 @@ async def _odoo_identity(employee_id: str, campaign_id: str | None = None,
     return payload
 
 
-async def browser_identity(request: Request, campaign_id: str | None = None,
-                           requested_endpoint: int | None = None) -> BrowserIdentity:
+async def browser_identity(
+    request: Request,
+    campaign_id: str | None = None,
+    requested_endpoint: int | None = None,
+) -> BrowserIdentity:
     if not settings.webphone_staging_provisioning_enabled:
         raise HTTPException(503, "staging provisioning disabled")
     if settings.webphone_keycloak_enabled:
@@ -196,14 +219,11 @@ async def browser_identity(request: Request, campaign_id: str | None = None,
         if request.method == "GET" and not origin_ok:
             referer = request.headers.get("referer", "")
             referer_parts = urlsplit(referer)
-            origin_ok = (
-                request.headers.get("sec-fetch-site") == "same-origin"
-                and (
-                    not referer
-                    or (
-                        referer_parts.scheme == "https"
-                        and referer_parts.netloc == urlsplit(EXPECTED_ORIGIN).netloc
-                    )
+            origin_ok = request.headers.get("sec-fetch-site") == "same-origin" and (
+                not referer
+                or (
+                    referer_parts.scheme == "https"
+                    and referer_parts.netloc == urlsplit(EXPECTED_ORIGIN).netloc
                 )
             )
         if (
@@ -214,10 +234,9 @@ async def browser_identity(request: Request, campaign_id: str | None = None,
             raise HTTPException(403, "webphone origin rejected")
         authorization = request.headers.get("authorization", "")
         forwarded_id_token = request.headers.get("x-forwarded-id-token", "")
-        forwarded_access_token = (
-            request.headers.get("x-forwarded-access-token", "")
-            or request.headers.get("x-auth-request-access-token", "")
-        )
+        forwarded_access_token = request.headers.get(
+            "x-forwarded-access-token", ""
+        ) or request.headers.get("x-auth-request-access-token", "")
         try:
             if forwarded_id_token.strip():
                 scheme, separator, token = "Bearer", " ", forwarded_id_token
@@ -255,13 +274,19 @@ async def browser_identity(request: Request, campaign_id: str | None = None,
                 sorted(str(key) for key in claims.keys()),
                 type(claims.get("sub")).__name__,
                 bool(claims.get("sub")),
-                "id-forwarded" if forwarded_id_token.strip() else ("forwarded" if forwarded_access_token.strip() else "authorization"),
+                "id-forwarded"
+                if forwarded_id_token.strip()
+                else (
+                    "forwarded" if forwarded_access_token.strip() else "authorization"
+                ),
             )
         except JWTAuthError as exc:
             raise HTTPException(401, "identity token rejected") from exc
         roles = set(claims.get("realm_access", {}).get("roles", []))
         roles.update(claims.get("roles", []))
-        if not roles.intersection({"codestra_agent", "codestra_closer", "codestra_supervisor"}):
+        if not roles.intersection(
+            {"codestra_agent", "codestra_closer", "codestra_supervisor"}
+        ):
             raise HTTPException(403, "agent role required")
         subject = claims.get("sub")
         if not isinstance(subject, str) or not subject:
@@ -281,8 +306,12 @@ async def browser_identity(request: Request, campaign_id: str | None = None,
         if lifecycle != "active":
             raise HTTPException(403, "active employment required")
         required_attributes = (
-            "company_id", "business_unit_id", "department_id", "team_id",
-            "supervisor_id", "agent_desktop_roles",
+            "company_id",
+            "business_unit_id",
+            "department_id",
+            "team_id",
+            "supervisor_id",
+            "agent_desktop_roles",
         )
         if any(not _attribute(attributes, name) for name in required_attributes):
             raise HTTPException(403, "identity claims incomplete")
@@ -291,16 +320,28 @@ async def browser_identity(request: Request, campaign_id: str | None = None,
         odoo_employee_id = _attribute(attributes, "odoo_employee_id") or employee_id
         username = _attribute(attributes, "vicidial_username") or user.get("username")
         campaigns = attributes.get("campaign_ids")
-        if not employee_id or not role or not odoo_employee_id or not isinstance(username, str) or not username:
+        if (
+            not employee_id
+            or not role
+            or not odoo_employee_id
+            or not isinstance(username, str)
+            or not username
+        ):
             raise HTTPException(403, "employee identity incomplete")
-        if not isinstance(campaigns, list) or not all(isinstance(item, str) for item in campaigns):
+        if not isinstance(campaigns, list) or not all(
+            isinstance(item, str) for item in campaigns
+        ):
             raise HTTPException(403, "campaign authorization incomplete")
         endpoint_value = _attribute(attributes, "endpoint")
-        endpoint = int(endpoint_value) if endpoint_value and endpoint_value.isdigit() else None
+        endpoint = (
+            int(endpoint_value) if endpoint_value and endpoint_value.isdigit() else None
+        )
         authoritative = await _odoo_identity(
             employee_id,
             campaign_id or (campaigns[0] if campaigns else None),
-            requested_endpoint if requested_endpoint is not None else (endpoint or int(ENDPOINT)),
+            requested_endpoint
+            if requested_endpoint is not None
+            else (endpoint or int(ENDPOINT)),
         )
         if authoritative.get("keycloak_subject") != subject:
             raise HTTPException(403, "identity subject mismatch")
@@ -317,13 +358,18 @@ async def browser_identity(request: Request, campaign_id: str | None = None,
             or not authoritative_endpoint.isdigit()
         ):
             raise HTTPException(403, "authoritative identity incomplete")
-        if authoritative_role != role or not set(campaigns).issubset(set(authoritative_campaigns)):
+        if authoritative_role != role or not set(campaigns).issubset(
+            set(authoritative_campaigns)
+        ):
             raise HTTPException(403, "identity privilege mismatch")
         return BrowserIdentity(
-            subject, employee_id,
+            subject,
+            employee_id,
             authoritative.get("odoo_employee_id") or odoo_employee_id,
             authoritative.get("vicidial_username") or username,
-            authoritative_role, frozenset(authoritative_campaigns), int(authoritative_endpoint),
+            authoritative_role,
+            frozenset(authoritative_campaigns),
+            int(authoritative_endpoint),
         )
     if (
         request.headers.get("x-webphone-gateway") != "caddy-basic-auth"
@@ -333,7 +379,15 @@ async def browser_identity(request: Request, campaign_id: str | None = None,
         or request.headers.get("sec-fetch-site") != "same-origin"
     ):
         raise HTTPException(403, "webphone identity rejected")
-    return BrowserIdentity(EXPECTED_USER, EXPECTED_USER, EXPECTED_USER, EXPECTED_USER, "AGENT", frozenset({CAMPAIGN}), int(ENDPOINT))
+    return BrowserIdentity(
+        EXPECTED_USER,
+        EXPECTED_USER,
+        EXPECTED_USER,
+        EXPECTED_USER,
+        "AGENT",
+        frozenset({CAMPAIGN}),
+        int(ENDPOINT),
+    )
 
 
 async def _provisioning_call(
@@ -343,7 +397,9 @@ async def _provisioning_call(
     query: dict[str, str] | None = None,
 ) -> dict:
     secret = Path(settings.provisioning_service_client_secret_file).read_text().strip()
-    async with httpx.AsyncClient(verify=settings.provisioning_service_ca_file, timeout=12) as client:
+    async with httpx.AsyncClient(
+        verify=settings.provisioning_service_ca_file, timeout=12
+    ) as client:
         try:
             token_response = await client.post(
                 settings.provisioning_service_token_url,
@@ -387,14 +443,28 @@ def _desktop_response(payload: dict) -> dict:
     turn_username = payload.get("temporary_turn_username")
     turn_credential = payload.get("temporary_turn_credential")
     approved_turn_url = payload.get("approved_turn_url")
-    role = {"AGENT": "SETTER", "CLOSER": "CLOSER", "SUPERVISOR": "SUPERVISOR"}.get(
-        payload.get("role"), payload.get("role")
+    raw_role = payload.get("role")
+    role = (
+        {"AGENT": "SETTER", "CLOSER": "CLOSER", "SUPERVISOR": "SUPERVISOR"}.get(
+            raw_role, raw_role
+        )
+        if isinstance(raw_role, str)
+        else None
     )
-    if not all(isinstance(value, str) and value for value in (
-        payload.get("session_id"), payload.get("temporary_sip_credential"),
-        payload.get("sip_uri"), payload.get("approved_wss_url"), expiration,
-        turn_username, turn_credential, approved_turn_url, role,
-    )):
+    if not all(
+        isinstance(value, str) and value
+        for value in (
+            payload.get("session_id"),
+            payload.get("temporary_sip_credential"),
+            payload.get("sip_uri"),
+            payload.get("approved_wss_url"),
+            expiration,
+            turn_username,
+            turn_credential,
+            approved_turn_url,
+            role,
+        )
+    ):
         raise HTTPException(503, "invalid provisioning response")
     return {
         "session_id": payload["session_id"],
@@ -403,7 +473,13 @@ def _desktop_response(payload: dict) -> dict:
         "authorization_username": payload["temporary_sip_authorization_username"],
         "ephemeral_password": payload["temporary_sip_credential"],
         "websocket_url": payload["approved_wss_url"],
-        "ice_servers": [{"urls": [approved_turn_url], "username": turn_username, "credential": turn_credential}],
+        "ice_servers": [
+            {
+                "urls": [approved_turn_url],
+                "username": turn_username,
+                "credential": turn_credential,
+            }
+        ],
         "expires_at": expiration,
         "role": role,
         "campaign_id": payload["campaign"],
@@ -444,7 +520,8 @@ def _endpoint_request(
         raise RuntimeError("endpoint adapter unavailable")
     encoded = (
         json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
-        if body is not None else None
+        if body is not None
+        else None
     )
     headers = {
         "Content-Type": "application/json",
@@ -474,9 +551,7 @@ async def endpoint_request(*args, **kwargs) -> dict:
     return await asyncio.to_thread(_endpoint_request, *args, **kwargs)
 
 
-def response_document(
-    session: Session, password: str, turn: dict
-) -> dict:
+def response_document(session: Session, password: str, turn: dict) -> dict:
     return {
         "session_id": session.session_id,
         "binding_id": session.binding_id,
@@ -525,12 +600,9 @@ async def issue(user: str, browser_session_id: str) -> dict:
             },
         )
         turn = result["turn"]
-        if (
-            set(turn) != {"urls", "username", "credential"}
-            or turn["urls"] != [
-                "turns:vicidial-staging.codestra.agency:5349?transport=tcp"
-            ]
-        ):
+        if set(turn) != {"urls", "username", "credential"} or turn["urls"] != [
+            "turns:vicidial-staging.codestra.agency:5349?transport=tcp"
+        ]:
             raise RuntimeError("invalid endpoint adapter response")
         return response_document(session, password, turn)
     except Exception as exc:
@@ -622,7 +694,9 @@ async def create_session(value: ProvisionRequest, request: Request) -> dict:
             "endpoint": int(value.endpoint),
             "campaign": value.campaign_id,
             "role": identity.role,
-            "browser_session_binding": validate_browser_session(value.browser_session_id),
+            "browser_session_binding": validate_browser_session(
+                value.browser_session_id
+            ),
         },
     )
     return _desktop_response(payload)
@@ -636,12 +710,17 @@ async def renew_session(value: SessionAction, request: Request) -> dict:
 
 
 @router.get("/config")
-async def session_config(request: Request, session_id: str, browser_session_binding: str) -> dict:
+async def session_config(
+    request: Request, session_id: str, browser_session_binding: str
+) -> dict:
     await browser_identity(request)
     return await _provisioning_call(
         "GET",
         "/config",
-        query={"session_id": session_id, "browser_session_binding": browser_session_binding},
+        query={
+            "session_id": session_id,
+            "browser_session_binding": browser_session_binding,
+        },
     )
 
 

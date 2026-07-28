@@ -1,4 +1,5 @@
 """Narrow provisioning saga API; production mutations are kill-switched."""
+
 from fastapi import FastAPI
 
 from app.api.v1.telephony import router
@@ -8,7 +9,8 @@ SERVICE = "codestra-telephony-provisioning"
 app = FastAPI(
     title=SERVICE,
     routes=[
-        route for route in router.routes
+        route
+        for route in router.routes
         if "/v1/telephony/provisioning" in getattr(route, "path", "")
     ],
 )

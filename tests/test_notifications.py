@@ -68,19 +68,26 @@ def test_policy_allows_only_complete_scope():
 
 
 def test_quiet_hours_cross_midnight():
-    assert evaluate_policy(
-        policy(
-            requested_at=datetime(2026, 7, 28, 23, tzinfo=timezone.utc),
-            expires_at=datetime(2026, 7, 29, 0, tzinfo=timezone.utc),
-            quiet_hours_start=time(22),
-            quiet_hours_end=time(8),
+    assert (
+        evaluate_policy(
+            policy(
+                requested_at=datetime(2026, 7, 28, 23, tzinfo=timezone.utc),
+                expires_at=datetime(2026, 7, 29, 0, tzinfo=timezone.utc),
+                quiet_hours_start=time(22),
+                quiet_hours_end=time(8),
+            )
         )
-    ) is Decision.QUIET_HOURS
+        is Decision.QUIET_HOURS
+    )
 
 
 def test_dispatch_requires_both_switches():
-    assert not can_dispatch(channel=Channel.EMAIL, allow_live=False, dispatcher_enabled=True)
-    assert not can_dispatch(channel=Channel.EMAIL, allow_live=True, dispatcher_enabled=False)
+    assert not can_dispatch(
+        channel=Channel.EMAIL, allow_live=False, dispatcher_enabled=True
+    )
+    assert not can_dispatch(
+        channel=Channel.EMAIL, allow_live=True, dispatcher_enabled=False
+    )
     assert can_dispatch(channel=Channel.EMAIL, allow_live=True, dispatcher_enabled=True)
 
 
@@ -103,4 +110,7 @@ def test_reviewed_path_reaches_reservation():
 
 
 def test_payload_hash_is_exact_bytes():
-    assert payload_digest(b"{}") == "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    assert (
+        payload_digest(b"{}")
+        == "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    )

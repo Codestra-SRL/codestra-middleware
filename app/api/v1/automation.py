@@ -99,9 +99,7 @@ async def reserve_idempotency(
     if existing:
         if existing.request_hash != request_hash:
             await db.rollback()
-            raise HTTPException(
-                status.HTTP_409_CONFLICT, "idempotency key conflict"
-            )
+            raise HTTPException(status.HTTP_409_CONFLICT, "idempotency key conflict")
         await db.commit()
         return {
             "allowed": False,

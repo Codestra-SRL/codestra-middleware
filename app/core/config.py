@@ -205,7 +205,9 @@ class Settings(BaseSettings):
             return value
         path = Path(value)
         if not path.is_absolute() or path.parent != VICIDIAL_SECRET_ROOT:
-            raise ValueError("VICIdial mTLS files must be direct children of the secret mount")
+            raise ValueError(
+                "VICIdial mTLS files must be direct children of the secret mount"
+            )
         return value
 
     @property
@@ -260,8 +262,10 @@ class Settings(BaseSettings):
         values = json.loads(path.read_text())
         if not isinstance(values, dict) or not values:
             raise ValueError("publisher key file invalid")
-        return {key_id: base64.urlsafe_b64decode(value + "===")
-                for key_id, value in values.items()}
+        return {
+            key_id: base64.urlsafe_b64decode(value + "===")
+            for key_id, value in values.items()
+        }
 
     @staticmethod
     def _load_binary_secret(filename: str, label: str) -> bytes:
@@ -301,11 +305,15 @@ class Settings(BaseSettings):
 
     @property
     def enabled_events(self) -> frozenset[str]:
-        return frozenset(x.strip() for x in self.enabled_event_types.split(",") if x.strip())
+        return frozenset(
+            x.strip() for x in self.enabled_event_types.split(",") if x.strip()
+        )
 
     @property
     def ingestion_clients(self) -> frozenset[str]:
-        return frozenset(x.strip() for x in self.allowed_client_instances.split(",") if x.strip())
+        return frozenset(
+            x.strip() for x in self.allowed_client_instances.split(",") if x.strip()
+        )
 
 
 settings = Settings()

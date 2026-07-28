@@ -1,4 +1,5 @@
 """External event ingestion surface."""
+
 from fastapi import FastAPI
 
 from app.api.v1.events import router as events_router

@@ -1,4 +1,5 @@
 """Strict, versioned, data-minimised VICIdial event registry."""
+
 import hashlib
 import json
 from datetime import datetime
@@ -116,9 +117,7 @@ class Envelope(StrictModel):
     source_system: str | None = Field(default=None, max_length=64)
     producer_instance_id: str | None = Field(default=None, max_length=128)
     producer_boot_id: str | None = Field(default=None, max_length=128)
-    payload_sha256: str | None = Field(
-        default=None, pattern=r"^[a-f0-9]{64}$"
-    )
+    payload_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     asterisk_unique_id: str | None = Field(default=None, max_length=119)
     asterisk_linked_id: str | None = Field(default=None, max_length=119)
     channel: str | None = Field(default=None, max_length=255)
@@ -144,20 +143,19 @@ def parse_event(raw: bytes, enabled: frozenset[str]) -> tuple[Envelope, StrictMo
     definition = REGISTRY.get(envelope.event_type)
     if definition is None or envelope.event_type not in enabled:
         raise ValueError("event type is not enabled")
-    payload_model = cast(type[StrictModel], definition["model"])
-    if (
-        envelope.event_type == "vicidial.call.ended"
-        and "lifecycle_status" in envelope.payload
-    ):
-        payload_model = LifecyclePayload
-    payload = payload_model.model_validate(envelope.payload)
-    if envelope.event_type in {
+    lifecycle_event = envelope.event_type in {
         "vicidial.call.started",
         "vicidial.call.connected",
     } or (
         envelope.event_type == "vicidial.call.ended"
         and "lifecycle_status" in envelope.payload
-    ):
+    )
+    if lifecycle_event:
+        payload: StrictModel = LifecyclePayload.model_validate(envelope.payload)
+    else:
+        payload_model = cast(type[StrictModel], definition["model"])
+        payload = payload_model.model_validate(envelope.payload)
+    if lifecycle_event:
         required = (
             envelope.source_system,
             envelope.producer_instance_id,
@@ -181,6 +179,8 @@ def parse_event(raw: bytes, enabled: frozenset[str]) -> tuple[Envelope, StrictMo
             "vicidial.call.connected": "CONNECTED",
             "vicidial.call.ended": "ENDED",
         }[envelope.event_type]
+        if not isinstance(payload, LifecyclePayload):
+            raise ValueError("lifecycle payload model mismatch")
         if payload.lifecycle_status != expected_status:
             raise ValueError("event type and lifecycle status mismatch")
     return envelope, payload

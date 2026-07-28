@@ -46,12 +46,16 @@ def format_identity(
         if extension is None:
             raise ValueError("AGENT_EXTENSION_REQUIRED")
         value = f"{campaign_number}-A-{extension}"
-        return IssuedIdentity(campaign_number, identity_type, sequence_value, value, None)
+        return IssuedIdentity(
+            campaign_number, identity_type, sequence_value, value, None
+        )
     if identity_type == "CALL":
         if not date_yyyymmdd or not re.fullmatch(r"\d{8}", date_yyyymmdd):
             raise ValueError("CALL_DATE_REQUIRED")
         value = f"{campaign_number}-C-{date_yyyymmdd}-{sequence_value:06d}"
-        return IssuedIdentity(campaign_number, identity_type, sequence_value, value, None)
+        return IssuedIdentity(
+            campaign_number, identity_type, sequence_value, value, None
+        )
     try:
         token, width = FORMATS[identity_type]
     except KeyError as exc:

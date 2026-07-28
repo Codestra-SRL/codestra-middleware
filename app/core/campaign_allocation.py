@@ -1,4 +1,5 @@
 """Precise campaign extension-allocation validation and database errors."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -31,24 +32,15 @@ def validate_allocation(value: AllocationInput) -> AllocationInput:
 
 
 CONSTRAINT_ERRORS = {
-    "ex_campaign_extension_allocation_no_overlap":
-        "EXTENSION_RANGE_OVERLAP",
-    "ck_campaign_extension_allocation_start":
-        "EXTENSION_OUT_OF_SUPPORTED_RANGE",
-    "ck_campaign_extension_allocation_end":
-        "EXTENSION_OUT_OF_SUPPORTED_RANGE",
-    "ck_campaign_extension_allocation_order":
-        "EXTENSION_RANGE_INVALID",
-    "campaign_extension_allocation_campaign_id_key":
-        "CAMPAIGN_ALLOCATION_ALREADY_EXISTS",
-    "campaign_extension_allocation_campaign_number_key":
-        "CAMPAIGN_ALLOCATION_ALREADY_EXISTS",
-    "campaign_extension_allocation_allocation_public_id_key":
-        "CAMPAIGN_ALLOCATION_ALREADY_EXISTS",
-    "tr_campaign_extension_allocation_no_delete":
-        "HISTORICAL_RANGE_REUSE_PROHIBITED",
-    "tr_campaign_extension_allocation_immutable":
-        "HISTORICAL_RANGE_REUSE_PROHIBITED",
+    "ex_campaign_extension_allocation_no_overlap": "EXTENSION_RANGE_OVERLAP",
+    "ck_campaign_extension_allocation_start": "EXTENSION_OUT_OF_SUPPORTED_RANGE",
+    "ck_campaign_extension_allocation_end": "EXTENSION_OUT_OF_SUPPORTED_RANGE",
+    "ck_campaign_extension_allocation_order": "EXTENSION_RANGE_INVALID",
+    "campaign_extension_allocation_campaign_id_key": "CAMPAIGN_ALLOCATION_ALREADY_EXISTS",
+    "campaign_extension_allocation_campaign_number_key": "CAMPAIGN_ALLOCATION_ALREADY_EXISTS",
+    "campaign_extension_allocation_allocation_public_id_key": "CAMPAIGN_ALLOCATION_ALREADY_EXISTS",
+    "tr_campaign_extension_allocation_no_delete": "HISTORICAL_RANGE_REUSE_PROHIBITED",
+    "tr_campaign_extension_allocation_immutable": "HISTORICAL_RANGE_REUSE_PROHIBITED",
 }
 
 
@@ -56,6 +48,8 @@ def translate_integrity_error(exc: IntegrityError) -> CampaignAllocationError:
     original = getattr(exc, "orig", None)
     diagnostic = getattr(original, "diag", None)
     name = getattr(diagnostic, "constraint_name", None)
+    if not isinstance(name, str):
+        raise exc
     code = CONSTRAINT_ERRORS.get(name)
     if code is None:
         raise exc

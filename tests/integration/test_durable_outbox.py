@@ -40,25 +40,49 @@ async def _scenario(database_url: str):
     now = datetime.now(timezone.utc)
     try:
         async with factory() as session:
-            await session.execute(text("TRUNCATE outbox_event, event_inbox, reconciliation_checkpoint"))
+            await session.execute(
+                text("TRUNCATE outbox_event, event_inbox, reconciliation_checkpoint")
+            )
             await session.execute(
                 text("""INSERT INTO outbox_event
                     (id, topic, payload, correlation_id, status, attempts, replay_count, created_at)
                     VALUES (:id, 'test.synthetic', CAST(:payload AS jsonb), :correlation, 'pending', 0, 0, :now)"""),
-                {"id": item_id, "payload": '{"event_id":"%s"}' % event_id, "correlation": correlation_id, "now": now},
+                {
+                    "id": item_id,
+                    "payload": '{"event_id":"%s"}' % event_id,
+                    "correlation": correlation_id,
+                    "now": now,
+                },
             )
             await session.commit()
 
             claimed = await claim_batch(session, limit=10, lease_seconds=30)
             assert [row["id"] for row in claimed] == [item_id]
             policy = RetryPolicy(max_attempts=2, base_seconds=1, max_seconds=2)
-            assert await record_failure(session, item_id, 0, "token=do-not-store", policy) == "retry"
-            await session.execute(text("UPDATE outbox_event SET next_attempt_at=:now WHERE id=:id"), {"now": now, "id": item_id})
+            assert (
+                await record_failure(session, item_id, 0, "token=do-not-store", policy)
+                == "retry"
+            )
+            await session.execute(
+                text("UPDATE outbox_event SET next_attempt_at=:now WHERE id=:id"),
+                {"now": now, "id": item_id},
+            )
             await session.commit()
             claimed = await claim_batch(session, limit=10, lease_seconds=30)
-            assert await record_failure(session, item_id, claimed[0]["attempts"], "dependency unavailable", policy) == "dead_letter"
+            assert (
+                await record_failure(
+                    session,
+                    item_id,
+                    claimed[0]["attempts"],
+                    "dependency unavailable",
+                    policy,
+                )
+                == "dead_letter"
+            )
             dead = await list_dead_letters(session)
-            assert dead[0]["id"] == item_id and "do-not-store" not in (dead[0]["last_error"] or "")
+            assert dead[0]["id"] == item_id and "do-not-store" not in (
+                dead[0]["last_error"] or ""
+            )
             assert await replay_dead_letter(session, item_id)
             claimed = await claim_batch(session, limit=10, lease_seconds=30)
             assert claimed[0]["id"] == item_id
@@ -68,13 +92,23 @@ async def _scenario(database_url: str):
                 text("""INSERT INTO outbox_event
                     (id, topic, payload, correlation_id, status, attempts, next_attempt_at, locked_at, replay_count, created_at)
                     VALUES (:id, 'test.recovery', '{}'::jsonb, :correlation, 'processing', 0, :expired, :expired, 0, :now)"""),
-                {"id": recovery_id, "correlation": correlation_id, "expired": now - timedelta(seconds=120), "now": now},
+                {
+                    "id": recovery_id,
+                    "correlation": correlation_id,
+                    "expired": now - timedelta(seconds=120),
+                    "now": now,
+                },
             )
             await session.execute(
                 text("""INSERT INTO event_inbox
                     (id, event_id, source, event_type, payload, correlation_id, status, created_at)
                     VALUES (:id, :event_id, 'test', 'test.synthetic', '{}'::jsonb, :correlation, 'accepted', :now)"""),
-                {"id": uuid4(), "event_id": event_id + "-missing", "correlation": correlation_id, "now": now},
+                {
+                    "id": uuid4(),
+                    "event_id": event_id + "-missing",
+                    "correlation": correlation_id,
+                    "now": now,
+                },
             )
             await session.commit()
             assert await recover_expired_leases(session) == 1

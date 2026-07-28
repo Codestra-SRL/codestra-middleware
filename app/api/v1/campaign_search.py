@@ -1,4 +1,5 @@
 """Permission-controlled exact global identity search."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -69,9 +70,10 @@ async def exact_campaign_identity_search(
     except (JWTAuthError, ValueError) as exc:
         raise HTTPException(404, "identity not found") from exc
     row = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT a.alias,a.alias_type,r.campaign_number,r.campaign_code,
                        r.campaign_public_id,r.name,r.vicidial_campaign_id,
                        r.registry_status,o.public_id AS object_public_id,
@@ -82,10 +84,13 @@ async def exact_campaign_identity_search(
                   ON o.id=a.object_identity_id
                 WHERE a.alias=:alias AND a.campaign_number=ANY(:campaigns)
                 """
-            ),
-            {"alias": alias, "campaigns": list(sorted(allowed))},
+                ),
+                {"alias": alias, "campaigns": list(sorted(allowed))},
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if row is None:
         # Unauthorized and nonexistent objects are deliberately indistinguishable.
         raise HTTPException(404, "identity not found")

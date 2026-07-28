@@ -1,4 +1,5 @@
 """Real PostgreSQL concurrency proof for inclusive campaign ranges."""
+
 import asyncio
 import os
 import uuid
@@ -103,11 +104,14 @@ async def main():
         )
     assert await insert(pool, "REUSE", 10500, 9700, 9799) == "OVERLAP"
     async with pool.acquire() as connection:
-        assert await connection.fetchval(
-            "SELECT count(*) FROM campaign_extension_allocation"
-            " WHERE source_change_id=$1",
-            RUN_ID,
-        ) == 11
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM campaign_extension_allocation"
+                " WHERE source_change_id=$1",
+                RUN_ID,
+            )
+            == 11
+        )
     await pool.close()
     print("CONCURRENT_OVERLAP_GATE=PASS")
     print("CONCURRENT_ADJACENT_GATE=PASS")

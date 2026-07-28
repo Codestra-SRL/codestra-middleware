@@ -1,4 +1,5 @@
 """Shared runtime controls for API and worker entrypoints."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,7 +12,7 @@ import time
 from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, TypedDict
 from uuid import uuid4
 
 import uvicorn
@@ -28,9 +29,7 @@ logger = logging.getLogger("codestra.runtime")
 WORKER_CYCLES = Counter(
     "codestra_worker_cycles_total", "Worker cycles", ["service", "result"]
 )
-WORKER_READY = Gauge(
-    "codestra_worker_ready", "Worker readiness", ["service"]
-)
+WORKER_READY = Gauge("codestra_worker_ready", "Worker readiness", ["service"])
 CORRELATION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _RATE_WINDOWS: OrderedDict[str, deque[float]] = OrderedDict()
 MAX_RATE_IDENTITIES = 4096
@@ -78,7 +77,10 @@ def validate_runtime(service: str, queue: str | None = None) -> None:
     if service == "middleware-event-gateway":
         settings.quarantine_fingerprint_secret
         settings.quarantine_encryption_key
-    if service in {"middleware-integration-api", "middleware-policy-engine"} and not settings.middleware_secret:
+    if (
+        service in {"middleware-integration-api", "middleware-policy-engine"}
+        and not settings.middleware_secret
+    ):
         raise RuntimeError(f"{service} authorization configuration is incomplete")
     if service == "middleware-integration-api":
         settings.quarantine_fingerprint_secret
@@ -124,9 +126,8 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "/api/v2/telephony/canary",
         }
         if (
-            (request.url.path.startswith("/api/") or request.url.path.startswith("/v1/"))
-            and request.url.path not in signed_paths
-        ):
+            request.url.path.startswith("/api/") or request.url.path.startswith("/v1/")
+        ) and request.url.path not in signed_paths:
             try:
                 verify_bearer(
                     request.headers.get("Authorization", ""),
@@ -190,8 +191,15 @@ def run_api(app: FastAPI, service: str) -> None:
 Cycle = Callable[[], Awaitable[dict[str, object]]]
 
 
+class WorkerState(TypedDict):
+    ready: bool
+    stopping: bool
+    last_success: str | None
+    last_error: str | None
+
+
 def worker_app(service: str, queue: str, cycle: Cycle) -> FastAPI:
-    state = {
+    state: WorkerState = {
         "ready": False,
         "stopping": False,
         "last_success": None,

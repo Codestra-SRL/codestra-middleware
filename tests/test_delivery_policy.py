@@ -1,6 +1,9 @@
 import random
 from app.core.delivery import (
-    CircuitBreaker, FailureCategory, classify_failure, retry_delay,
+    CircuitBreaker,
+    FailureCategory,
+    classify_failure,
+    retry_delay,
 )
 
 
@@ -9,7 +12,9 @@ def test_retry_classification_is_narrow():
         assert classify_failure(status_code=code) is FailureCategory.TRANSIENT
     for code in (400, 401, 403, 404, 409, 422):
         assert classify_failure(status_code=code) is FailureCategory.PERMANENT
-    assert classify_failure(ambiguous_after_transmission=True) is FailureCategory.AMBIGUOUS
+    assert (
+        classify_failure(ambiguous_after_transmission=True) is FailureCategory.AMBIGUOUS
+    )
 
 
 def test_full_jitter_and_circuit_breaker():

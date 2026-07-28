@@ -66,7 +66,9 @@ TERMINAL_STATES = frozenset(
 )
 
 ALLOWED_TRANSITIONS: Mapping[CommandState, frozenset[CommandState]] = {
-    CommandState.REQUESTED: frozenset({CommandState.VALIDATING, CommandState.CANCELLED}),
+    CommandState.REQUESTED: frozenset(
+        {CommandState.VALIDATING, CommandState.CANCELLED}
+    ),
     CommandState.VALIDATING: frozenset(
         {CommandState.VALIDATED, CommandState.FAILED, CommandState.EXPIRED}
     ),
@@ -172,9 +174,16 @@ def evaluate_policy(value: PolicyInput) -> Decision:
         return Decision.DESTINATION_PROHIBITED
     if value.rate_remaining < 1:
         return Decision.RATE_LIMITED
-    if value.estimated_cost_minor < 0 or value.estimated_cost_minor > value.cost_remaining_minor:
+    if (
+        value.estimated_cost_minor < 0
+        or value.estimated_cost_minor > value.cost_remaining_minor
+    ):
         return Decision.COST_LIMITED
-    if _inside_quiet_hours(now.timetz().replace(tzinfo=None), value.quiet_hours_start, value.quiet_hours_end):
+    if _inside_quiet_hours(
+        now.timetz().replace(tzinfo=None),
+        value.quiet_hours_start,
+        value.quiet_hours_end,
+    ):
         return Decision.QUIET_HOURS
     return Decision.ALLOW
 
@@ -193,6 +202,8 @@ def payload_digest(payload: bytes) -> str:
     return sha256(payload).hexdigest()
 
 
-def can_dispatch(*, channel: Channel, allow_live: bool, dispatcher_enabled: bool) -> bool:
+def can_dispatch(
+    *, channel: Channel, allow_live: bool, dispatcher_enabled: bool
+) -> bool:
     """Both channel switches are mandatory; absence/false remains fail-closed."""
     return channel in {Channel.EMAIL, Channel.SMS} and allow_live and dispatcher_enabled

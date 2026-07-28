@@ -3,6 +3,7 @@
 Revision ID: 0008_orchestration
 Revises: 0006_lead_reconciliation, 0007_fast_ack_outbox
 """
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -30,14 +31,32 @@ def upgrade():
         sa.Column("idempotency_hash", sa.String(64), nullable=False, unique=True),
         sa.Column("state", sa.String(32), nullable=False, server_default="disabled"),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
-    op.create_index("ix_orchestration_request_business_unit", "orchestration_request", ["business_unit"])
-    op.create_index("ix_orchestration_request_correlation_id", "orchestration_request", ["correlation_id"])
+    op.create_index(
+        "ix_orchestration_request_business_unit",
+        "orchestration_request",
+        ["business_unit"],
+    )
+    op.create_index(
+        "ix_orchestration_request_correlation_id",
+        "orchestration_request",
+        ["correlation_id"],
+    )
     op.create_table(
         "credential_grant",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("orchestration_request_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("orchestration_request.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "orchestration_request_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("orchestration_request.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("credential_type", sa.String(32), nullable=False),
         sa.Column("vault_reference", sa.String(255), nullable=False),
         sa.Column("secret_fingerprint", sa.String(128), nullable=False),
@@ -59,10 +78,19 @@ def upgrade():
         sa.Column("idempotency_hash", sa.String(64), nullable=False, unique=True),
         sa.Column("correlation_id", sa.String(128), nullable=False),
         sa.Column("state", sa.String(24), nullable=False, server_default="disabled"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
-    op.create_index("ix_lead_sync_request_business_unit", "lead_sync_request", ["business_unit"])
-    op.create_index("ix_lead_sync_request_correlation_id", "lead_sync_request", ["correlation_id"])
+    op.create_index(
+        "ix_lead_sync_request_business_unit", "lead_sync_request", ["business_unit"]
+    )
+    op.create_index(
+        "ix_lead_sync_request_correlation_id", "lead_sync_request", ["correlation_id"]
+    )
 
 
 def downgrade():

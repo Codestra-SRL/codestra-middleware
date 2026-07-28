@@ -59,26 +59,25 @@ def test_complete_fresh_policy_allows_in_shadow_and_enforcement():
 def test_missing_and_stale_data_deny():
     missing = evaluate(request(consent_allowed=None))
     assert not missing.allow and "missing_consent_data" in missing.reason_codes
-    stale = evaluate(
-        request(consent_observed_at=NOW - timedelta(hours=25))
-    )
+    missing_observation = evaluate(request(consent_observed_at=None))
+    assert not missing_observation.allow
+    assert missing_observation.data_freshness["consent"] == "missing"
+    stale = evaluate(request(consent_observed_at=NOW - timedelta(hours=25)))
     assert not stale.allow and "stale_consent_data" in stale.reason_codes
 
 
 def test_dnc_kill_switch_access_and_attempt_controls_deny():
     assert "dnc_suppressed" in evaluate(request(dnc_suppressed=True)).reason_codes
-    assert "emergency_kill_switch" in evaluate(
-        request(emergency_kill_switch=True)
-    ).reason_codes
-    assert "campaign_denied" in evaluate(
-        request(campaign="OTHER")
-    ).reason_codes
-    assert "attempt_limit_reached" in evaluate(
-        request(attempts=3)
-    ).reason_codes
-    assert "minimum_attempt_spacing" in evaluate(
-        request(last_attempt_at=NOW - timedelta(seconds=30))
-    ).reason_codes
+    assert (
+        "emergency_kill_switch"
+        in evaluate(request(emergency_kill_switch=True)).reason_codes
+    )
+    assert "campaign_denied" in evaluate(request(campaign="OTHER")).reason_codes
+    assert "attempt_limit_reached" in evaluate(request(attempts=3)).reason_codes
+    assert (
+        "minimum_attempt_spacing"
+        in evaluate(request(last_attempt_at=NOW - timedelta(seconds=30))).reason_codes
+    )
 
 
 def test_timezone_midnight_dst_and_jurisdiction_boundaries():
@@ -107,9 +106,10 @@ def test_timezone_midnight_dst_and_jurisdiction_boundaries():
 
 
 def test_callback_transfer_and_recording_disclosure_are_explicit():
-    assert "callback_denied" in evaluate(
-        request(action="callback", callback_allowed=False)
-    ).reason_codes
+    assert (
+        "callback_denied"
+        in evaluate(request(action="callback", callback_allowed=False)).reason_codes
+    )
 
 
 def test_policy_api_requires_auth_and_audits_decision(monkeypatch):
@@ -136,13 +136,17 @@ def test_policy_api_requires_auth_and_audits_decision(monkeypatch):
         session.commit.assert_awaited_once()
     finally:
         app.dependency_overrides.clear()
-    assert "transfer_denied" in evaluate(
-        request(action="transfer", transfer_allowed=False)
-    ).reason_codes
-    assert "recording_disclosure_missing" in evaluate(
-        request(
-            action="recording",
-            recording_required=True,
-            disclosure_present=False,
-        )
-    ).reason_codes
+    assert (
+        "transfer_denied"
+        in evaluate(request(action="transfer", transfer_allowed=False)).reason_codes
+    )
+    assert (
+        "recording_disclosure_missing"
+        in evaluate(
+            request(
+                action="recording",
+                recording_required=True,
+                disclosure_present=False,
+            )
+        ).reason_codes
+    )

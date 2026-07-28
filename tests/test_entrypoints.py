@@ -107,3 +107,9 @@ def test_worker_has_internal_operational_endpoints():
     app = worker_app("test-worker", "test.queue.v1", sync_worker.cycle)
     paths = route_paths(app)
     assert {"/healthz", "/readyz", "/dependencies"} <= paths
+    with TestClient(app) as client:
+        health = client.get("/healthz")
+        readiness = client.get("/readyz")
+        assert health.json()["stopping"] is False
+        assert readiness.json()["status"] == "ready"
+        assert readiness.json()["queue"] == "test.queue.v1"
