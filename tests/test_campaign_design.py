@@ -214,11 +214,11 @@ def test_design_configuration_is_part_of_hash_and_manifest():
     assert manifest["odoo"]["design_configuration"]["team_ids"] == [9101]
 
 
-def test_published_schema_requires_design_configuration():
+def test_published_schema_defines_compatible_design_configuration():
     schema = json.loads(
         Path("schemas/campaign.design.requested.v1.schema.json").read_text()
     )
-    assert "design_configuration" in schema["required"]
+    assert "design_configuration" not in schema["required"]
     configuration = schema["properties"]["design_configuration"]
     assert configuration["additionalProperties"] is False
     assert set(configuration["required"]) == {
@@ -230,6 +230,15 @@ def test_published_schema_requires_design_configuration():
         "team_ids",
         "supervisor_ids",
     }
+
+
+def test_v1_request_without_configuration_remains_compatible():
+    item = request(design_configuration=None)
+    dumped = item.model_dump(exclude_none=True)
+    assert "design_configuration" not in dumped
+    manifest = build_manifest(item, 1, 91000)
+    assert "design_configuration" not in manifest["odoo"]
+    assert "policies" not in manifest
 
 
 @pytest.mark.asyncio

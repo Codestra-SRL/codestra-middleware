@@ -14,8 +14,7 @@
     "direction",
     "owner_user_id",
     "supervisor_user_id",
-    "correlation_id",
-    "design_configuration"
+    "correlation_id"
   ],
   "properties": {
     "event_id": {"type": "string", "minLength": 8, "maxLength": 128},
