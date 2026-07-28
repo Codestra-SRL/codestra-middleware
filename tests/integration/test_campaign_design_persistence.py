@@ -66,6 +66,15 @@ def _request(index: int = 1, **changes) -> CampaignDesignInput:
         "owner_user_id": 9101,
         "supervisor_user_id": 9102,
         "correlation_id": f"diag-correlation-{uuid4()}",
+        "design_configuration": {
+            "time_zone": "America/Santo_Domingo",
+            "calling_hour_start": 9.0,
+            "calling_hour_end": 17.0,
+            "consent_required": True,
+            "dnc_enforced": True,
+            "team_ids": [9101],
+            "supervisor_ids": [9102],
+        },
     }
     values.update(changes)
     return CampaignDesignInput(**values)

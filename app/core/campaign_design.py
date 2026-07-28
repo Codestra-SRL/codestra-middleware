@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +30,36 @@ class DesignConflict(RuntimeError):
     pass
 
 
+class CampaignDesignConfiguration(BaseModel):
+    """Canonical Odoo fields that materially define a campaign design."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    time_zone: str = Field(min_length=1, max_length=64)
+    calling_hour_start: float = Field(ge=0, lt=24)
+    calling_hour_end: float = Field(gt=0, le=24)
+    consent_required: bool
+    dnc_enforced: bool
+    team_ids: tuple[int, ...] = ()
+    supervisor_ids: tuple[int, ...] = ()
+
+    @field_validator("team_ids", "supervisor_ids")
+    @classmethod
+    def identifiers_are_positive_and_canonical(
+        cls, values: tuple[int, ...]
+    ) -> tuple[int, ...]:
+        if any(value <= 0 for value in values):
+            raise ValueError("design identifiers must be positive")
+        if tuple(sorted(set(values))) != values:
+            raise ValueError("design identifiers must be sorted and unique")
+        return values
+
+    @model_validator(mode="after")
+    def calling_window_is_nonempty(self) -> "CampaignDesignConfiguration":
+        if self.calling_hour_start >= self.calling_hour_end:
+            raise ValueError("calling-hour start must precede end")
+        return self
+
+
 class CampaignDesignInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     event_id: str = Field(min_length=8, max_length=128)
@@ -42,6 +72,7 @@ class CampaignDesignInput(BaseModel):
     owner_user_id: int = Field(gt=0)
     supervisor_user_id: int = Field(gt=0)
     correlation_id: str = Field(min_length=8, max_length=128)
+    design_configuration: CampaignDesignConfiguration
 
     @field_validator("environment")
     @classmethod
@@ -144,6 +175,16 @@ def build_manifest(request: CampaignDesignInput, revision: int, list_id: int) ->
             "campaign_code": campaign_code,
             "owner_user_id": request.owner_user_id,
             "supervisor_user_id": request.supervisor_user_id,
+            "design_configuration": request.design_configuration.model_dump(
+                mode="json"
+            ),
+        },
+        "policies": {
+            "time_zone": request.design_configuration.time_zone,
+            "calling_hour_start": request.design_configuration.calling_hour_start,
+            "calling_hour_end": request.design_configuration.calling_hour_end,
+            "consent_required": request.design_configuration.consent_required,
+            "dnc_enforced": request.design_configuration.dnc_enforced,
         },
         "vicidial": {
             "active": False,

@@ -144,6 +144,15 @@ def request(**changes):
         "owner_user_id": 9101,
         "supervisor_user_id": 9102,
         "correlation_id": f"correlation-{uuid4()}",
+        "design_configuration": {
+            "time_zone": "America/Santo_Domingo",
+            "calling_hour_start": 9.0,
+            "calling_hour_end": 17.0,
+            "consent_required": True,
+            "dnc_enforced": True,
+            "team_ids": [9101],
+            "supervisor_ids": [9102],
+        },
     }
     values.update(changes)
     return CampaignDesignInput(**values)
@@ -185,6 +194,22 @@ async def test_changed_payload_conflicts_for_event_and_integration_identity():
         await CampaignDesignService(store).consume(
             item.model_copy(update={"event_id": "odoo-event-replacement", "purpose": "OTHER"})
         )
+
+
+def test_design_configuration_is_part_of_hash_and_manifest():
+    item = request()
+    changed = request(
+        event_id=item.event_id,
+        integration_uuid=item.integration_uuid,
+        design_configuration={
+            **item.design_configuration.model_dump(),
+            "calling_hour_start": 10.0,
+        },
+    )
+    assert item.payload_hash() != changed.payload_hash()
+    manifest = build_manifest(item, 1, 91000)
+    assert manifest["policies"]["calling_hour_start"] == 9.0
+    assert manifest["odoo"]["design_configuration"]["team_ids"] == [9101]
 
 
 @pytest.mark.asyncio
