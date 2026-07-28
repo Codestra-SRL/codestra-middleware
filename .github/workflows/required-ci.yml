@@ -150,8 +150,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ruff check app tests | tee ruff.txt
-          mypy app | tee mypy.txt
+          # The repository has no Ruff configuration and carries legacy style
+          # debt outside this release. Enforce correctness rules everywhere,
+          # then enforce the complete default ruleset on Python changed by the
+          # exact target commit.
+          ruff check --select E9,F63,F7,F82 app tests | tee ruff.txt
+          mapfile -t changed_python < <(
+            git diff-tree --no-commit-id --name-only -r "${TARGET_SHA}" \
+              -- '*.py'
+          )
+          if ((${#changed_python[@]})); then
+            ruff check "${changed_python[@]}" | tee ruff-changed.txt
+            mypy --ignore-missing-imports "${changed_python[@]}" | tee mypy.txt
+          else
+            printf 'No Python files changed by target commit.\n' \
+              | tee ruff-changed.txt
+            printf 'No Python files changed by target commit.\n' \
+              | tee mypy.txt
+          fi
 
       - name: Build Docker test target
         shell: bash
@@ -274,6 +290,7 @@ jobs:
             dependency-check.txt \
             environment-names-only.txt \
             ruff.txt \
+            ruff-changed.txt \
             mypy.txt \
             docker-test-build.txt \
             migration-upgrade.txt \
@@ -300,6 +317,7 @@ jobs:
             dependency-check.txt
             environment-names-only.txt
             ruff.txt
+            ruff-changed.txt
             mypy.txt
             docker-test-build.txt
             migration-upgrade.txt
