@@ -84,9 +84,9 @@ jobs:
           test "$(jq -r '.critical.identity["docker-reference"]' \
             gateway-canary-rc1-image.payload.json)" = \
             "index.docker.io/codestra1980/telephony-event-gateway"
-          "${RUNNER_TEMP}/bin-cosign" sign --yes --upload=false \
-            --payload gateway-canary-rc1-image.payload.json \
-            --bundle gateway-canary-rc1-image.sigstore.json "${IMAGE}"
+          "${RUNNER_TEMP}/bin-cosign" sign-blob --yes \
+            --bundle gateway-canary-rc1-image.sigstore.json \
+            gateway-canary-rc1-image.payload.json
           cp security/vex/gateway-canary-rc1/openvex.json \
             gateway-canary-rc1-openvex.unsigned.json
           "${RUNNER_TEMP}/bin-cosign" sign-blob --yes \
