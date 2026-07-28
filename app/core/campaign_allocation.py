@@ -48,6 +48,8 @@ def translate_integrity_error(exc: IntegrityError) -> CampaignAllocationError:
     original = getattr(exc, "orig", None)
     diagnostic = getattr(original, "diag", None)
     name = getattr(diagnostic, "constraint_name", None)
+    if not isinstance(name, str):
+        raise exc
     code = CONSTRAINT_ERRORS.get(name)
     if code is None:
         raise exc

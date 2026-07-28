@@ -323,14 +323,17 @@ async def reprocess(
     )
     if not record:
         raise HTTPException(404, "quarantine record not found")
+    business_unit = record.business_unit
     _authorize(
         "quarantine:replay",
         scopes,
         reviewer,
-        record.business_unit,
+        business_unit,
         authorized_units,
         authorization_context,
     )
+    if business_unit is None:
+        raise HTTPException(409, "quarantine business unit unavailable")
     if record.status == "REPLAYED":
         return {
             "status": "REPLAYED",
@@ -360,13 +363,18 @@ async def reprocess(
             .order_by(QuarantineCorrection.correction_version.desc())
             .limit(1)
         )
-        encrypted_value = EncryptedPayload(
-            correction.encrypted_payload if correction else record.encrypted_payload,
-            correction.encryption_nonce if correction else record.encryption_nonce,
+        ciphertext = (
+            correction.encrypted_payload if correction else record.encrypted_payload
+        )
+        nonce = correction.encryption_nonce if correction else record.encryption_nonce
+        key_version = (
             correction.encryption_key_version
             if correction
-            else record.encryption_key_version,
+            else record.encryption_key_version
         )
+        if ciphertext is None or nonce is None or key_version is None:
+            raise HTTPException(409, "immutable payload unavailable")
+        encrypted_value = EncryptedPayload(ciphertext, nonce, key_version)
         expected_fingerprint = (
             correction.payload_fingerprint if correction else record.payload_fingerprint
         )
@@ -401,7 +409,7 @@ async def reprocess(
                 minimum_spacing_seconds=0,
                 channel_eligible=True,
                 business_unit=value["business_unit"],
-                allowed_business_units=[record.business_unit],
+                allowed_business_units=[business_unit],
                 campaign=value["campaign"],
                 allowed_campaigns=["TEST_SYN"],
                 agent=value["agent_id"],

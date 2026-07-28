@@ -59,6 +59,9 @@ def test_complete_fresh_policy_allows_in_shadow_and_enforcement():
 def test_missing_and_stale_data_deny():
     missing = evaluate(request(consent_allowed=None))
     assert not missing.allow and "missing_consent_data" in missing.reason_codes
+    missing_observation = evaluate(request(consent_observed_at=None))
+    assert not missing_observation.allow
+    assert missing_observation.data_freshness["consent"] == "missing"
     stale = evaluate(request(consent_observed_at=NOW - timedelta(hours=25)))
     assert not stale.allow and "stale_consent_data" in stale.reason_codes
 

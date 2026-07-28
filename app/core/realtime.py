@@ -197,7 +197,7 @@ def webrtc_ready(
 
 
 def failure_degradation(dependency: str) -> dict[str, Any]:
-    policies = {
+    policies: dict[str, dict[str, Any]] = {
         "stt": {
             "telephony_continues": True,
             "live_transcript": False,

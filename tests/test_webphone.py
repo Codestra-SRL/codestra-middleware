@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1 import webphone
@@ -30,6 +31,27 @@ def payload():
         "endpoint": "6197",
         "browser_session_id": str(uuid4()),
     }
+
+
+def test_desktop_response_rejects_non_string_role():
+    value = {
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "browser_session_binding": "00000000-0000-4000-8000-000000000002",
+        "temporary_sip_authorization_username": "6101",
+        "temporary_sip_credential": "short-lived",
+        "endpoint": 6101,
+        "sip_uri": "sip:6101@vicidial-staging.codestra.agency",
+        "approved_wss_url": "wss://vicidial-staging.codestra.agency:8089/ws",
+        "temporary_turn_username": "turn-user",
+        "temporary_turn_credential": "turn-credential",
+        "approved_turn_url": "turns:vicidial-staging.codestra.agency:5349?transport=tcp",
+        "expiration": "2099-01-01T00:00:00+00:00",
+        "campaign": "TRANSFER_TEST",
+        "role": 7,
+    }
+    with pytest.raises(webphone.HTTPException) as invalid:
+        webphone._desktop_response(value)
+    assert invalid.value.status_code == 503
 
 
 def test_deployed_default_is_fail_closed(monkeypatch):

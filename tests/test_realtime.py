@@ -116,6 +116,11 @@ def test_n8n_is_not_a_realtime_dependency():
         assert "n8n" not in str(failure_degradation(dependency)).lower()
 
 
+def test_unknown_dependency_fails_closed():
+    with pytest.raises(ValueError, match="unknown dependency"):
+        failure_degradation("unknown")
+
+
 def test_all_feature_flags_default_false():
     policy = FeaturePolicy()
     assert all(

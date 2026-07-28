@@ -74,3 +74,10 @@ def test_unrelated_database_error_is_not_misclassified():
     error = integrity_error("unrelated_constraint")
     with pytest.raises(IntegrityError):
         translate_integrity_error(error)
+
+
+@pytest.mark.parametrize("constraint", [None, 123])
+def test_missing_or_non_string_constraint_is_not_misclassified(constraint):
+    error = integrity_error(constraint)
+    with pytest.raises(IntegrityError):
+        translate_integrity_error(error)

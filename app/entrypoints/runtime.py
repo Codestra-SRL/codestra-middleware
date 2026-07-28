@@ -12,7 +12,7 @@ import time
 from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, TypedDict
 from uuid import uuid4
 
 import uvicorn
@@ -191,8 +191,15 @@ def run_api(app: FastAPI, service: str) -> None:
 Cycle = Callable[[], Awaitable[dict[str, object]]]
 
 
+class WorkerState(TypedDict):
+    ready: bool
+    stopping: bool
+    last_success: str | None
+    last_error: str | None
+
+
 def worker_app(service: str, queue: str, cycle: Cycle) -> FastAPI:
-    state = {
+    state: WorkerState = {
         "ready": False,
         "stopping": False,
         "last_success": None,
