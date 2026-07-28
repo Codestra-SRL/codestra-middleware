@@ -12,10 +12,11 @@ import stat
 import sys
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+from target_identity import IdentityError, NoRedirect, discover, verify_health
 
 EVENT_ORDER = (
     "vicidial.call.started",
@@ -24,7 +25,6 @@ EVENT_ORDER = (
 )
 INGRESS_PATH = "/api/v1/events/vicidial"
 CLIENT = "vicidial-server-b"
-EXPECTED_SERVICE = "middleware-event-gateway"
 
 
 def fail(message: str) -> "NoReturn":
@@ -77,31 +77,6 @@ def protected_secret(path: Path) -> str:
     return value
 
 
-def validate_url(value: str) -> str:
-    parsed = urllib.parse.urlsplit(value)
-    if parsed.path != INGRESS_PATH or parsed.query or parsed.fragment:
-        fail("target must be the exact VICIdial ingress path")
-    if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost"}:
-        fail("non-loopback execution requires HTTPS")
-    if parsed.scheme not in {"http", "https"}:
-        fail("unsupported target scheme")
-    return value
-
-
-def verify_target(url: str) -> None:
-    parsed = urllib.parse.urlsplit(url)
-    version_url = urllib.parse.urlunsplit(
-        (parsed.scheme, parsed.netloc, "/version", "", "")
-    )
-    try:
-        with urllib.request.urlopen(version_url, timeout=5) as response:
-            value = json.loads(response.read(16384))
-    except Exception as exc:
-        fail(f"target identity check failed: {type(exc).__name__}")
-    if value.get("service") != EXPECTED_SERVICE:
-        fail("target is not the RC4 middleware event gateway")
-
-
 def request(url: str, body: bytes, secret: str, event_id: str, response_log: Path) -> int:
     timestamp = str(int(time.time()))
     nonce = secrets.token_hex(24)
@@ -122,14 +97,16 @@ def request(url: str, body: bytes, secret: str, event_id: str, response_log: Pat
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.build_opener(NoRedirect()).open(req, timeout=10) as response:
             status_code = response.status
             response_body = response.read(16384)
     except urllib.error.HTTPError as exc:
         status_code = exc.code
         response_body = exc.read(16384)
+    with response_log.open() as existing_log:
+        attempt = sum(1 for _ in existing_log) + 1
     record = {
-        "attempt": sum(1 for _ in response_log.open()) + 1,
+        "attempt": attempt,
         "event_id": event_id,
         "request_body_sha256": hashlib.sha256(body).hexdigest(),
         "status": status_code,
@@ -147,7 +124,6 @@ def main() -> int:
     parser.add_argument("--events", type=Path, required=True)
     parser.add_argument("--expected-linked-id", required=True)
     parser.add_argument("--execute", action="store_true")
-    parser.add_argument("--url")
     parser.add_argument("--secret-file", type=Path)
     parser.add_argument("--response-log", type=Path)
     parser.add_argument("--maximum-submissions", type=int, default=4)
@@ -160,13 +136,22 @@ def main() -> int:
          "body_sha256": hashlib.sha256(body).hexdigest()}
         for event, body in (*events, events[-1])
     ]
+    try:
+        target = discover()
+        verify_health(target)
+    except IdentityError as exc:
+        fail(f"target identity check failed: {exc}")
+    identity = target.redacted_evidence()
     if not args.execute:
-        print(json.dumps({"mode": "dry-run", "submission_count": 4, "plan": plan}, sort_keys=True))
+        print(json.dumps({
+            "mode": "dry-run",
+            "submission_count": 4,
+            "target": identity,
+            "plan": plan,
+        }, sort_keys=True))
         return 0
-    if not args.url or not args.secret_file or not args.response_log:
-        fail("execute requires url, secret-file, and response-log")
-    url = validate_url(args.url)
-    verify_target(url)
+    if not args.secret_file or not args.response_log:
+        fail("execute requires secret-file and response-log")
     if args.response_log.exists():
         fail("response log must not already exist")
     args.response_log.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -175,7 +160,9 @@ def main() -> int:
     attempts = 0
     for event, body in (*events, events[-1]):
         attempts += 1
-        status_code = request(url, body, secret, event["event_id"], args.response_log)
+        status_code = request(
+            target.ingress_url, body, secret, event["event_id"], args.response_log
+        )
         if status_code not in {200, 201, 202}:
             fail(f"submission {attempts} failed; automatic retry is disabled")
     if attempts != 4:

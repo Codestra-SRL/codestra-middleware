@@ -1,15 +1,18 @@
 import hashlib
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 MODULE_PATH = Path(__file__).with_name("replay_v3.py")
+sys.path.insert(0, str(MODULE_PATH.parent))
 SPEC = importlib.util.spec_from_file_location("replay_v3", MODULE_PATH)
 replay = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 SPEC.loader.exec_module(replay)
+from target_identity import Target
 
 
 def rows():
@@ -70,36 +73,57 @@ def test_selection_fails_closed(tmp_path, mutation):
         replay.load_events(write(tmp_path, value), "1785200809.1")
 
 
-def test_url_restrictions():
-    assert replay.validate_url("http://127.0.0.1/api/v1/events/vicidial")
-    with pytest.raises(SystemExit):
-        replay.validate_url("http://10.40.0.1/api/v1/events/vicidial")
-    with pytest.raises(SystemExit):
-        replay.validate_url("https://example.test/wrong")
+def fake_target():
+    return Target(
+        container_id="a" * 64,
+        container_name="compose-middleware-event-gateway-1",
+        image="codestra/middleware@sha256:" + "8" * 64,
+        image_id="sha256:" + "8" * 64,
+        project="compose",
+        service="middleware-event-gateway",
+        network="codestra_backend",
+        address="172.18.0.15",
+        ingress_url="http://172.18.0.15:8095/api/v1/events/vicidial",
+    )
 
 
-def test_target_identity_is_event_gateway(monkeypatch):
-    class Response:
-        def __enter__(self):
-            return self
-        def __exit__(self, *_args):
-            return None
-        def read(self, _limit):
-            return json.dumps({"service": replay.EXPECTED_SERVICE}).encode()
+def test_dry_run_verifies_identity_and_sends_zero_post(tmp_path, monkeypatch, capsys):
+    event_file = write(tmp_path, rows())
+    verified = []
+    posts = []
+    monkeypatch.setattr(replay, "discover", fake_target)
+    monkeypatch.setattr(replay, "verify_health", lambda target: verified.append(target))
+    monkeypatch.setattr(replay, "request", lambda *_args: posts.append(_args))
+    monkeypatch.setattr(sys, "argv", [
+        "replay_v3.py", "--events", str(event_file),
+        "--expected-linked-id", "1785200809.1",
+    ])
+    assert replay.main() == 0
+    assert len(verified) == 1
+    assert posts == []
+    assert json.loads(capsys.readouterr().out)["submission_count"] == 4
 
-    monkeypatch.setattr(replay.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
-    replay.verify_target("http://127.0.0.1:8095/api/v1/events/vicidial")
 
-
-def test_target_identity_rejects_integration_api(monkeypatch):
-    class Response:
-        def __enter__(self):
-            return self
-        def __exit__(self, *_args):
-            return None
-        def read(self, _limit):
-            return b'{"service":"middleware-integration-api"}'
-
-    monkeypatch.setattr(replay.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
-    with pytest.raises(SystemExit):
-        replay.verify_target("http://127.0.0.1:8095/api/v1/events/vicidial")
+def test_execute_has_exactly_four_posts_no_retry(tmp_path, monkeypatch, capsys):
+    event_file = write(tmp_path, rows())
+    secret = tmp_path / "secret"
+    secret.write_text("synthetic-secret")
+    secret.chmod(0o600)
+    response_log = tmp_path / "responses.jsonl"
+    posts = []
+    monkeypatch.setattr(replay, "discover", fake_target)
+    monkeypatch.setattr(replay, "verify_health", lambda _target: None)
+    monkeypatch.setattr(
+        replay, "request",
+        lambda _url, body, _secret, event_id, _log: posts.append((body, event_id)) or 202,
+    )
+    monkeypatch.setattr(sys, "argv", [
+        "replay_v3.py", "--events", str(event_file),
+        "--expected-linked-id", "1785200809.1", "--execute",
+        "--secret-file", str(secret), "--response-log", str(response_log),
+        "--maximum-submissions", "4",
+    ])
+    assert replay.main() == 0
+    assert len(posts) == 4
+    assert posts[2] == posts[3]
+    assert "HTTP_SUBMISSION_COUNT=4" in capsys.readouterr().out
