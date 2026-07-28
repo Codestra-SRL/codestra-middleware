@@ -6,7 +6,6 @@ Revises: 0017_campaign_registry_seed
 
 from alembic import op
 
-
 revision = "0018_campaign_registry_grants"
 down_revision = "0017_campaign_registry_seed"
 branch_labels = None
@@ -59,6 +58,7 @@ def upgrade() -> None:
         f"TO {RUNTIME_ROLE};"
     )
     _when_role_exists("\n".join(statements))
+
 
 def downgrade() -> None:
     tables = READ_WRITE + READ_INSERT + READ_UPDATE
