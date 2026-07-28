@@ -241,6 +241,23 @@ def test_v1_request_without_configuration_remains_compatible():
     assert "policies" not in manifest
 
 
+def test_identifier_order_is_normalized_to_contract_canonical_form():
+    item = request(
+        design_configuration={
+            "time_zone": "UTC",
+            "calling_hour_start": 9.0,
+            "calling_hour_end": 17.0,
+            "consent_required": True,
+            "dnc_enforced": True,
+            "team_ids": [3, 1, 2],
+            "supervisor_ids": [5, 4],
+        }
+    )
+    assert item.design_configuration is not None
+    assert item.design_configuration.team_ids == (1, 2, 3)
+    assert item.design_configuration.supervisor_ids == (4, 5)
+
+
 @pytest.mark.asyncio
 async def test_failed_event_retries_then_dead_letters():
     store = MemoryStore()

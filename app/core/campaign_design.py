@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,15 +49,9 @@ class CampaignDesignConfiguration(BaseModel):
     ) -> tuple[int, ...]:
         if any(value <= 0 for value in values):
             raise ValueError("design identifiers must be positive")
-        if tuple(sorted(set(values))) != values:
-            raise ValueError("design identifiers must be sorted and unique")
-        return values
-
-    @model_validator(mode="after")
-    def calling_window_is_nonempty(self) -> "CampaignDesignConfiguration":
-        if self.calling_hour_start >= self.calling_hour_end:
-            raise ValueError("calling-hour start must precede end")
-        return self
+        if len(set(values)) != len(values):
+            raise ValueError("design identifiers must be unique")
+        return tuple(sorted(values))
 
 
 class CampaignDesignInput(BaseModel):
