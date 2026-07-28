@@ -18,7 +18,7 @@ case "$*" in
  *"core show channels count"*) printf '%s\n' "${MOCK_CHANNELS:-0 active channels}" "${MOCK_CALLS:-0 active calls}";;
  *"pjsip show contacts"*) printf '%s\n' "${MOCK_CONTACTS:-No objects found.}";;
  *"pjsip show endpoint"*) { [ "${MOCK_ACTIVE:-0}" = 1 ] || grep -q 'pjsip-codestra-synthetic' "$FIXTURE_ROOT/pjsip.conf"; } && echo 'Endpoint:  endpoint-6198' || echo 'Unable to find object';;
- *"pjsip show aor"*) grep -q 'pjsip-codestra-synthetic' "$FIXTURE_ROOT/pjsip.conf" && echo 'Aor:  aor-6198' || echo 'Unable to find object';;
+ *"pjsip show aor"*) grep -q 'pjsip-codestra-synthetic' "$FIXTURE_ROOT/pjsip.conf" && echo 'Aor:  6198' || echo 'Unable to find object';;
  *"pjsip show identify"*) grep -q 'pjsip-codestra-synthetic' "$FIXTURE_ROOT/pjsip.conf" && echo 'Identify: identify-6198 10.40.0.1/32' || echo 'Unable to find object';;
  *"dialplan show"*) grep -q 'extensions-codestra-synthetic' "$FIXTURE_ROOT/extensions.conf" && echo '[ Context cs-synth-6198 ] *43' || echo 'There is no existence';;
  *"module reload"*|*"dialplan reload"*) [ "${MOCK_RELOAD_FAIL:-0}" = 0 ];;
@@ -30,6 +30,10 @@ export FIXTURE_ROOT
 export LOCK_FILE="$TMP/run/lock" STATE_ROOT="$TMP/state/activation" EXPECTED_HOST=static
 export FIXTURE_OWNER="$(id -un)" FIXTURE_GROUP="$(id -gn)" SIP_SECRET_FILE="$TMP/secret"
 sha256sum "$DIR/templates/pjsip-6198.conf.in" "$DIR/templates/extensions-6198.conf" >/dev/null; ok "recovered binding inputs readable"
+grep -q '^\[6198\]$' "$DIR/templates/pjsip-6198.conf.in"
+grep -q '^aors=6198$' "$DIR/templates/pjsip-6198.conf.in"
+! grep -q 'aor-6198' "$DIR/templates/pjsip-6198.conf.in"
+ok "registrar AOR identity matches extension"
 cp "$DIR/templates/extensions-6198.conf" "$TMP/tampered"; printf x >>"$TMP/tampered"; ! cmp -s "$TMP/tampered" "$DIR/templates/extensions-6198.conf"; ok "modified source rejected by comparison"
 "$DIR/render-fixture.py" --secret-file "$TMP/secret" --output-dir "$TMP/r1" >/dev/null
 "$DIR/render-fixture.py" --secret-file "$TMP/secret" --output-dir "$TMP/r2" >/dev/null
@@ -66,5 +70,5 @@ expect_fail env MOCK_RELOAD_FAIL=1 "$DIR/activate-6198.sh" --execute --change-id
 ! grep -REiq '(firewall-cmd|iptables|nft[[:space:]])' "$DIR" --include='*.sh'; ok "no firewall action"
 ! grep -REiq 'systemctl[[:space:]]+(restart|stop)[[:space:]]+asterisk' "$DIR" --include='*.sh'; ok "no service restart"
 forbidden_extension=$((6100+10)); ! grep -Rqs "$forbidden_extension" "$DIR"; ok "excluded extension absent"
-[[ "$pass" -eq 32 ]]
-echo "1..32"
+[[ "$pass" -eq 33 ]]
+echo "1..33"
