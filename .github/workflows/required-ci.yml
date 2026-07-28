@@ -205,7 +205,7 @@ jobs:
           asyncio.run(main())
           PY
           )" = "0018_campaign_search_aliases"
-          pytest -q tests | tee pytest-full.txt
+          python -m pytest -q tests | tee pytest-full.txt
           python tests/integration/campaign_extension_concurrency.py \
             | tee campaign-extension-concurrency.txt
           python tests/integration/campaign_identity_concurrency.py \
