@@ -78,10 +78,10 @@ jobs:
           set -euo pipefail
           "${RUNNER_TEMP}/bin-cosign" generate "${IMAGE}" \
             > gateway-canary-rc1-image.payload.json
-          test "$(jq -r '.critical.image[\"docker-manifest-digest\"]' \
+          test "$(jq -r '.critical.image["docker-manifest-digest"]' \
             gateway-canary-rc1-image.payload.json)" = \
             "sha256:bbfa5e05ce9dd33d3ebc7f5475ee1810e47e5eaecd29adac0aa24c5252958266"
-          test "$(jq -r '.critical.identity[\"docker-reference\"]' \
+          test "$(jq -r '.critical.identity["docker-reference"]' \
             gateway-canary-rc1-image.payload.json)" = \
             "index.docker.io/codestra1980/telephony-event-gateway"
           "${RUNNER_TEMP}/bin-cosign" sign --yes --upload=false \
@@ -103,10 +103,10 @@ jobs:
             --certificate-oidc-issuer "${EXPECTED_ISSUER}" \
             gateway-canary-rc1-image.payload.json \
             | tee gateway-canary-rc1-image.verification.txt
-          test "$(jq -r '.critical.image[\"docker-manifest-digest\"]' \
+          test "$(jq -r '.critical.image["docker-manifest-digest"]' \
             gateway-canary-rc1-image.payload.json)" = \
             "sha256:bbfa5e05ce9dd33d3ebc7f5475ee1810e47e5eaecd29adac0aa24c5252958266"
-          test "$(jq -r '.critical.identity[\"docker-reference\"]' \
+          test "$(jq -r '.critical.identity["docker-reference"]' \
             gateway-canary-rc1-image.payload.json)" = \
             "index.docker.io/codestra1980/telephony-event-gateway"
           "${RUNNER_TEMP}/bin-cosign" verify-blob \
