@@ -11,6 +11,7 @@ from app.api.v1.publisher import router as publisher_router
 from app.api.v1.webphone import router as webphone_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.telephony import router as telephony_router
+from app.api.v1.campaign_search import router as campaign_search_router
 from app.core.config import settings
 from app.core.auth import BearerAuthError, verify_bearer
 from fastapi import Request
@@ -30,6 +31,7 @@ app.include_router(publisher_router)
 app.include_router(webphone_router)
 app.include_router(n8n_staging_router)
 app.include_router(telephony_router)
+app.include_router(campaign_search_router)
 app.mount("/metrics", make_asgi_app())
 
 SIGNED_WEBHOOK_PATHS = frozenset(
@@ -39,6 +41,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v2/telephony/canary",
     }
 )
+SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
 
 
 @app.middleware("http")
@@ -51,6 +54,7 @@ async def control_request_guard(request: Request, call_next):
     if (
         (request.url.path.startswith("/api/") or request.url.path.startswith("/v1/"))
         and request.url.path not in SIGNED_WEBHOOK_PATHS
+        and request.url.path not in SELF_AUTHENTICATED_PATHS
     ):
         try:
             verify_bearer(
