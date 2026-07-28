@@ -20,8 +20,6 @@ def upgrade():
         sa.Column("approval_state", sa.String(24), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.PrimaryKeyConstraint("integration_uuid", "revision"),
-        sa.UniqueConstraint("integration_uuid", "payload_hash",
-                            name="uq_campaign_design_payload"),
         sa.CheckConstraint("revision >= 1", name="ck_campaign_design_revision"),
         sa.CheckConstraint("approval_state IN ('preview','approved')",
                            name="ck_campaign_design_approval"),

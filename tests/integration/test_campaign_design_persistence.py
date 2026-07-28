@@ -456,3 +456,51 @@ def test_approved_manifest_is_immutable_and_new_revision_needs_approval():
             )
 
     _run(scenario)
+
+
+def test_design_can_return_to_an_earlier_payload_as_a_new_revision():
+    async def scenario(_engine, factory):
+        original = _request(purpose="ORIGINAL")
+        first = await _consume(factory, original)
+        await _approve(factory, original, first)
+
+        changed = original.model_copy(
+            update={
+                "event_id": f"diag-odoo-event-{uuid4()}",
+                "purpose": "CHANGED",
+                "correlation_id": f"diag-correlation-{uuid4()}",
+            }
+        )
+        second = await _consume(factory, changed)
+        await _approve(
+            factory,
+            changed,
+            second,
+            idempotency_key="approval-revision-two-changed",
+        )
+
+        restored = original.model_copy(
+            update={
+                "event_id": f"diag-odoo-event-{uuid4()}",
+                "correlation_id": f"diag-correlation-{uuid4()}",
+            }
+        )
+        third = await _consume(factory, restored)
+        assert third["design_revision"] == 3
+        assert third["approval"]["state"] == "preview"
+        assert third["manifest_hash"] != first["manifest_hash"]
+
+        async with factory() as session:
+            revisions = (
+                await session.execute(
+                    text(
+                        "SELECT revision,payload_hash FROM campaign_design_revision "
+                        "WHERE integration_uuid=:uuid ORDER BY revision"
+                    ),
+                    {"uuid": original.integration_uuid},
+                )
+            ).all()
+            assert [revision for revision, _ in revisions] == [1, 2, 3]
+            assert revisions[0].payload_hash == revisions[2].payload_hash
+
+    _run(scenario)

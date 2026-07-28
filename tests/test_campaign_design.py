@@ -298,6 +298,16 @@ def test_authenticated_api_contract_and_production_flags_fail_closed():
     assert "post" in paths[
         "/api/v1/campaign-designs/{integration_uuid}/approve"
     ]
+    approval_parameters = paths[
+        "/api/v1/campaign-designs/{integration_uuid}/approve"
+    ]["post"]["parameters"]
+    header_names = {
+        parameter["name"]
+        for parameter in approval_parameters
+        if parameter["in"] == "header"
+    }
+    assert "Authorization" in header_names
+    assert "X-Approval-Actor" not in header_names
     assert settings.campaign_design_enabled is False
     assert settings.vicidial_write_enabled is False
     assert settings.vicidial_provisioning_enabled is False
