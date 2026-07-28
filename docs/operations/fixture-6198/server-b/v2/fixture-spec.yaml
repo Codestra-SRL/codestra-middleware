@@ -4,7 +4,7 @@ host: static
 extension: 6198
 endpoint: endpoint-6198
 auth: auth-6198
-aor: aor-6198
+aor: "6198"
 identify: identify-6198
 source: 10.40.0.1/32
 context: cs-synth-6198
