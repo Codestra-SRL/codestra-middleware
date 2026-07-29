@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, time, timezone
 from enum import StrEnum
 from hashlib import sha256
-from typing import Mapping
+from typing import Any, Mapping
 
 
 class Channel(StrEnum):
@@ -44,6 +44,11 @@ class CommandState(StrEnum):
     DISPATCHING = "DISPATCHING"
     PROVIDER_ACCEPTED = "PROVIDER_ACCEPTED"
     DELIVERED = "DELIVERED"
+    DEFERRED = "DEFERRED"
+    BOUNCED = "BOUNCED"
+    COMPLAINED = "COMPLAINED"
+    UNSUBSCRIBED = "UNSUBSCRIBED"
+    UNDELIVERED = "UNDELIVERED"
     RETRY_SCHEDULED = "RETRY_SCHEDULED"
     FAILED = "FAILED"
     DEAD_LETTER = "DEAD_LETTER"
@@ -59,6 +64,10 @@ TERMINAL_STATES = frozenset(
         CommandState.RATE_LIMITED,
         CommandState.COST_LIMITED,
         CommandState.DELIVERED,
+        CommandState.BOUNCED,
+        CommandState.COMPLAINED,
+        CommandState.UNSUBSCRIBED,
+        CommandState.UNDELIVERED,
         CommandState.DEAD_LETTER,
         CommandState.CANCELLED,
         CommandState.EXPIRED,
@@ -96,7 +105,19 @@ ALLOWED_TRANSITIONS: Mapping[CommandState, frozenset[CommandState]] = {
     CommandState.PROVIDER_ACCEPTED: frozenset(
         {
             CommandState.DELIVERED,
+            CommandState.DEFERRED,
+            CommandState.BOUNCED,
+            CommandState.COMPLAINED,
+            CommandState.UNSUBSCRIBED,
+            CommandState.UNDELIVERED,
             CommandState.RECONCILIATION_REQUIRED,
+            CommandState.FAILED,
+        }
+    ),
+    CommandState.DEFERRED: frozenset(
+        {
+            CommandState.RETRY_SCHEDULED,
+            CommandState.DEAD_LETTER,
             CommandState.FAILED,
         }
     ),
@@ -117,6 +138,85 @@ ALLOWED_TRANSITIONS: Mapping[CommandState, frozenset[CommandState]] = {
 
 class InvalidNotificationTransition(ValueError):
     pass
+
+
+class CommandType(StrEnum):
+    EMAIL_SEND = "email.send"
+    EMAIL_CANCEL = "email.cancel"
+    EMAIL_SUPPRESS = "email.suppress"
+    SMS_SEND = "sms.send"
+    SMS_CANCEL = "sms.cancel"
+    SMS_SUPPRESS = "sms.suppress"
+    NOTIFICATION_AUTHORIZE = "notification.authorize"
+    NOTIFICATION_REJECT = "notification.reject"
+    WORKFLOW_PUBLISH = "workflow.publish"
+    WORKFLOW_ACTIVATE = "workflow.activate"
+    WORKFLOW_DEACTIVATE = "workflow.deactivate"
+    EXTERNAL_EVENT_DELIVER = "external_event.deliver"
+    DEAD_LETTER_REPLAY = "dead_letter.replay"
+    RECONCILIATION_RUN = "reconciliation.run"
+
+
+class InvalidNotificationCommand(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class NotificationCommand:
+    schema_version: str
+    command_id: str
+    command_type: CommandType
+    idempotency_key: str
+    correlation_id: str
+    causation_id: str
+    organization_id: str
+    business_unit_id: str
+    campaign_id: str
+    lead_id: str
+    customer_id: str
+    channel: Channel
+    template_id: str
+    template_version: int
+    sender_profile_id: str
+    destination_token: str
+    destination_classification: str
+    consent_evidence_id: str
+    suppression_version: str
+    policy_version: str
+    policy_hash: str
+    requested_by: str
+    approved_by: str
+    requested_at: datetime
+    not_before: datetime
+    expires_at: datetime
+    timezone: str
+    quiet_hours_policy: str
+    rate_limit_bucket: str
+    cost_limit_bucket: str
+    pii_classification: str
+    payload_hash: str
+    template_variables: Mapping[str, Any]
+
+    def validate(self) -> None:
+        """Validate provider-neutral metadata without inspecting destinations."""
+        required_text = {
+            name: value for name, value in vars(self).items() if isinstance(value, str)
+        }
+        missing = sorted(name for name, value in required_text.items() if not value)
+        if missing:
+            raise InvalidNotificationCommand(
+                "missing required fields: " + ",".join(missing)
+            )
+        if self.template_version < 1:
+            raise InvalidNotificationCommand("template_version must be positive")
+        if len(self.policy_hash) != 64 or len(self.payload_hash) != 64:
+            raise InvalidNotificationCommand(
+                "policy and payload hashes must be SHA-256"
+            )
+        if self.not_before < self.requested_at:
+            raise InvalidNotificationCommand("not_before precedes requested_at")
+        if self.expires_at <= self.not_before:
+            raise InvalidNotificationCommand("command expiration is not future")
 
 
 def validate_transition(current: CommandState, target: CommandState) -> None:
