@@ -41,6 +41,7 @@ def upgrade() -> None:
             "attempt_count", sa.Integer(), server_default="0", nullable=False
         ),
         sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("lease_owner", sa.String(64), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("aggregate_version >= 1", name="ck_telephony_command_version"),
