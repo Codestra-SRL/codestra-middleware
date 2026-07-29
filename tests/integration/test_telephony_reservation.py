@@ -24,11 +24,21 @@ async def _scenario(database_url: str):
     try:
         async with factory() as session:
             await session.execute(text("TRUNCATE telephony_extension_reservation"))
-            pool_id = await session.scalar(
-                text(
-                    "SELECT id FROM telephony_extension_pool "
-                    "WHERE code='transportation-intro-sales'"
+            pool = (
+                await session.execute(
+                    text(
+                        "SELECT id, range_start, range_end, excluded_extensions "
+                        "FROM telephony_extension_pool "
+                        "WHERE code='transportation-intro-sales'"
+                    )
                 )
+            ).mappings().one()
+            pool_id = pool["id"]
+            excluded = set(pool["excluded_extensions"] or []) | {1001, 6101, 6000, 6110, 6197, 6198}
+            extension = next(
+                candidate
+                for candidate in range(pool["range_start"], pool["range_end"] + 1)
+                if candidate not in excluded
             )
             assert pool_id
             await session.commit()
@@ -41,11 +51,12 @@ async def _scenario(database_url: str):
                             "INSERT INTO telephony_extension_reservation "
                             "(id,extension,employee_id,request_id,pool_id,state,"
                             "idempotency_hash,evidence_hash,reserved_at,expires_at) "
-                            "VALUES (:id,6110,:employee,:request,:pool,'RESERVED',"
+                            "VALUES (:id,:extension,:employee,:request,:pool,'RESERVED',"
                             ":key,:evidence,:now,:expires)"
                         ),
                         {
                             "id": uuid4(),
+                            "extension": extension,
                             "employee": f"employee-{attempt}",
                             "request": f"request-{attempt}",
                             "pool": pool_id,
@@ -71,8 +82,8 @@ async def _scenario(database_url: str):
                 await session.scalar(
                     text(
                         "SELECT count(*) FROM telephony_extension_reservation "
-                        "WHERE extension=6110 AND state='RESERVED'"
-                    )
+                        "WHERE extension=:extension AND state='RESERVED'"
+                    ), {"extension": extension}
                 )
                 == 1
             )

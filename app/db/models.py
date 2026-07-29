@@ -459,10 +459,40 @@ class N8nExecutionTransition(Base):
     )
 
 
+class N8nResult(Base):
+    """Durable n8n result submitted before terminal acknowledgement."""
+
+    __tablename__ = "n8n_result"
+    result_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("n8n_execution_registration.registration_id"), nullable=False
+    )
+    delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("broad_event_delivery.delivery_id"), nullable=False
+    )
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    execution_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    result_classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("registration_id", name="uq_n8n_result_registration"),
+    )
+
+
 class N8nAcknowledgement(Base):
     __tablename__ = "n8n_acknowledgement"
     acknowledgement_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True
+    )
+    result_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("n8n_result.result_id")
     )
     registration_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -955,6 +985,9 @@ class TelephonyExtensionPool(Base):
     range_start: Mapped[int] = mapped_column(Integer, nullable=False)
     range_end: Mapped[int] = mapped_column(Integer, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    excluded_extensions: Mapped[list[int]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
     __table_args__ = (
         CheckConstraint("range_start >= 6100", name="ck_telephony_pool_start"),
         CheckConstraint("range_end <= 9999", name="ck_telephony_pool_end"),
@@ -1185,6 +1218,10 @@ class TelephonyExtensionReservation(Base):
         CheckConstraint("extension <> 6101", name="ck_telephony_reservation_6101"),
         CheckConstraint("extension <> 1001", name="ck_telephony_reservation_1001"),
         CheckConstraint(
+            "extension NOT IN (6000, 6110, 6197, 6198)",
+            name="ck_telephony_reserved_extensions",
+        ),
+        CheckConstraint(
             "state IN ('RESERVED','DISABLED_READY','ACTIVE','SUSPENDED','RELEASED','EXPIRED','COOLDOWN')",
             name="ck_telephony_reservation_state",
         ),
@@ -1203,6 +1240,59 @@ class TelephonyExtensionReservation(Base):
             postgresql_where=text(
                 "state IN ('RESERVED','DISABLED_READY','ACTIVE','SUSPENDED')"
             ),
+        ),
+    )
+
+
+class IntegrationAllocationReservation(Base):
+    """Central reservation ledger; external provisioning is a separate saga."""
+
+    __tablename__ = "integration_allocation_reservation"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_public_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment: Mapped[str] = mapped_column(String(24), nullable=False)
+    organization_public_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    business_unit_public_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    campaign_public_id: Mapped[str | None] = mapped_column(String(128))
+    purpose: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
+    provider_checks: Mapped[dict[str, bool]] = mapped_column(JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="RESERVED")
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "resource_type IN ('AGENT_PUBLIC_ID','LEAD_PUBLIC_ID','PHONE_PUBLIC_ID','ENDPOINT_PUBLIC_ID','INTERNAL_TEST_DESTINATION')",
+            name="ck_allocation_resource_type",
+        ),
+        CheckConstraint(
+            "state IN ('RESERVED','COMMITTED','RELEASED','EXPIRED','COMPENSATION_REQUIRED')",
+            name="ck_allocation_state",
+        ),
+        Index(
+            "uq_allocation_active_resource",
+            "resource_type",
+            "resource_public_id",
+            unique=True,
+            postgresql_where=text("state IN ('RESERVED','COMMITTED')"),
         ),
     )
 
@@ -1532,6 +1622,33 @@ class IntegrationSchemaVersion(Base):
             "endpoint_key",
             "api_version",
             name="uq_integration_schema_key",
+        ),
+    )
+
+
+class IntegrationEventType(Base):
+    __tablename__ = "integration_event_type"
+    event_type_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    producer_service: Mapped[str] = mapped_column(String(64), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    kill_switch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    effective_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "event_type",
+            "schema_version",
+            "producer_service",
+            name="uq_integration_event_binding",
         ),
     )
 
