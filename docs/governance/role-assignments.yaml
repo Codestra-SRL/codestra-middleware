@@ -1,0 +1,21 @@
+schema_version: 1
+organization: Codestra-SRL
+effective_from: BUSINESS_DECISION_REQUIRED
+approved_by: BUSINESS_DECISION_REQUIRED
+assignment_status: BUSINESS_DECISION_REQUIRED
+roles:
+  organization_owner: []
+  release_owner: []
+  security_owner: []
+  compliance_owner: []
+  operations_owner: []
+  telephony_owner: []
+  rollback_approver: []
+missing_decisions:
+  organization_owner: BUSINESS_DECISION_REQUIRED
+  release_owner: BUSINESS_DECISION_REQUIRED
+  security_owner: BUSINESS_DECISION_REQUIRED
+  compliance_owner: BUSINESS_DECISION_REQUIRED
+  operations_owner: BUSINESS_DECISION_REQUIRED
+  telephony_owner: BUSINESS_DECISION_REQUIRED
+  rollback_approver: BUSINESS_DECISION_REQUIRED
