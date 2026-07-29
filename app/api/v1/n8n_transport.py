@@ -255,7 +255,7 @@ async def register_execution(
         response.status_code = status.HTTP_201_CREATED
         idempotency_status = "NEW"
     persisted_at = registration.registered_at
-    result = {
+    result: dict[str, object] = {
         "schema_version": "1.0",
         "registration_id": str(registration.registration_id),
         "delivery_id": str(registration.delivery_id),
@@ -498,7 +498,7 @@ async def acknowledge_execution(
         )
     )
     event = await db.get(IntegrationEvent, delivery.event_id) if delivery else None
-    result = await db.get(N8nResult, body.result_id) if body.result_id else None
+    stored_result = await db.get(N8nResult, body.result_id) if body.result_id else None
     if (
         delivery is None
         or registration is None
@@ -515,17 +515,17 @@ async def acknowledge_execution(
         or registration.policy_hash != delivery.policy_hash
         or registration.correlation_id != body.correlation_id
         or (body.result_id is not None and (
-            result is None
-            or result.registration_id != body.registration_id
-            or result.delivery_id != body.delivery_id
-            or result.event_id != body.event_id
-            or result.execution_id != body.execution_id
-            or result.workflow_id != body.workflow_key
-            or result.workflow_version != body.workflow_version
-            or result.result_hash != _without_prefix(body.result_hash)
-            or result.policy_hash != _without_prefix(body.policy_hash)
-            or result.correlation_id != body.correlation_id
-            or result.attempt_number != body.attempt_number
+            stored_result is None
+            or stored_result.registration_id != body.registration_id
+            or stored_result.delivery_id != body.delivery_id
+            or stored_result.event_id != body.event_id
+            or stored_result.execution_id != body.execution_id
+            or stored_result.workflow_id != body.workflow_key
+            or stored_result.workflow_version != body.workflow_version
+            or stored_result.result_hash != _without_prefix(body.result_hash)
+            or stored_result.policy_hash != _without_prefix(body.policy_hash)
+            or stored_result.correlation_id != body.correlation_id
+            or stored_result.attempt_number != body.attempt_number
         ))
         or body.completed_at < body.started_at
     ):
@@ -620,7 +620,7 @@ async def acknowledge_execution(
         response.status_code = status.HTTP_201_CREATED
         idempotency_status = "NEW"
     await db.commit()
-    result = {
+    result: dict[str, object] = {
         "schema_version": "1.0",
         "acknowledgement_id": str(acknowledgement.acknowledgement_id),
         "result_id": acknowledgement.result_id,
