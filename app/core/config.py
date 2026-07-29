@@ -152,6 +152,8 @@ class Settings(BaseSettings):
     extension_allocator_enabled: bool = False
     telephony_provisioning_enabled: bool = False
     telephony_command_worker_enabled: bool = False
+    telephony_service_client_id: str = "codestra-middleware-telephony"
+    telephony_credential_directory: str = ""
     vicidial_provisioning_enabled: bool = False
     pjsip_provisioning_enabled: bool = False
     webphone_session_issuer_enabled: bool = False

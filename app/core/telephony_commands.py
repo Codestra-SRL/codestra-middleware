@@ -95,6 +95,7 @@ LOGICAL_ENDPOINT_KEYS = frozenset(
         "telephony.asterisk.calls.hangup",
         "telephony.reconciliation.create",
         "telephony.reconciliation.read",
+        "telephony.service.attest",
     }
 )
 

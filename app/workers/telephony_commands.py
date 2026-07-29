@@ -282,6 +282,9 @@ async def dispatch_one(
         heartbeat.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeat
+        close = getattr(client, "aclose", None)
+        if close is not None:
+            await close()
 
     state = (
         TelephonyCommandState.SUCCEEDED

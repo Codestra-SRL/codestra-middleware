@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from app.core.endpoint_registry import ResolutionRequest
+from app.core.endpoint_registry import ResolvedEndpoint
 from app.core.service_client import CommonServiceClient
 from app.core.telephony_commands import (
     MUTATION_ENDPOINTS,
@@ -22,7 +23,13 @@ class TelephonyClientError(RuntimeError):
 
 class TargetAttestor(Protocol):
     async def attest(
-        self, *, endpoint_key: str, configuration_checksum: str, correlation_id: str
+        self,
+        *,
+        route: ResolvedEndpoint,
+        environment: str,
+        endpoint_key: str,
+        configuration_checksum: str,
+        correlation_id: str,
     ) -> bool: ...
 
 
@@ -54,6 +61,8 @@ class TelephonyServiceClient:
         if not route.target_attestation_required:
             raise TelephonyClientError("telephony mutation route must require attestation")
         if not await self.attestor.attest(
+            route=route,
+            environment=command.environment,
             endpoint_key=endpoint_key,
             configuration_checksum=route.configuration_checksum,
             correlation_id=command.correlation_id,
@@ -126,3 +135,46 @@ class TelephonyServiceClient:
             "actual_hash": actual_hash,
             "readback_matches": actual_hash == operation["desired_hash"],
         }
+
+    async def aclose(self) -> None:
+        await self.common_client.aclose()
+
+
+class RegistryTargetAttestor:
+    def __init__(self, common_client: CommonServiceClient) -> None:
+        self.common_client = common_client
+
+    async def attest(
+        self,
+        *,
+        route: ResolvedEndpoint,
+        environment: str,
+        endpoint_key: str,
+        configuration_checksum: str,
+        correlation_id: str,
+    ) -> bool:
+        response = await self.common_client.request(
+            ResolutionRequest(
+                environment=environment,
+                service_key="telephony-adapter",
+                endpoint_key="telephony.service.attest",
+                mutation=False,
+            ),
+            {
+                "endpoint_key": endpoint_key,
+                "configuration_checksum": configuration_checksum,
+            },
+            idempotency_key=correlation_id,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            causation_id=endpoint_key,
+            traceparent="00-" + "1" * 32 + "-" + "2" * 16 + "-01",
+        )
+        response.raise_for_status()
+        value = response.json()
+        return bool(
+            isinstance(value, dict)
+            and value.get("service_key") == "telephony-adapter"
+            and value.get("endpoint_key") == endpoint_key
+            and value.get("configuration_checksum") == configuration_checksum
+        )
