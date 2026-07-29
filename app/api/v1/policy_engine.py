@@ -25,6 +25,14 @@ async def decide(
 ) -> PolicyResult:
     result = evaluate(request)
     payload = result.model_dump(mode="json")
+    payload["authorization_scope"] = {
+        "action": request.action,
+        "subject": request.subject,
+        "resource": request.resource,
+        "business_unit": request.business_unit or "",
+        "campaign": request.campaign or "",
+        "agent": request.agent or "",
+    }
     db.add(
         PolicyDecision(
             id=UUID(result.decision_id),

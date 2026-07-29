@@ -119,7 +119,17 @@ class CommonClient:
                 202, json={"operation_id": "OP-SYNTHETIC-001"}, request=request
             )
         return httpx.Response(
-            200, json={"state": "DISABLED", "version": 3}, request=request
+            200,
+            json={
+                "desired_state": {
+                    "endpoint_public_id": "EPT-SYNTHETIC-001",
+                    "agent_public_id": "AGT-SYNTHETIC-001",
+                    "allocation_reservation_id": "RSV-SYNTHETIC-001",
+                    "desired_state_version": 3,
+                    "state": "DISABLED",
+                }
+            },
+            request=request,
         )
 
 
@@ -158,6 +168,7 @@ async def test_dispatch_uses_registry_common_client_attestation_and_readback():
     assert common.calls[1][0].endpoint_key == "telephony.asterisk.endpoints.read"
     assert common.calls[1][0].mutation is False
     assert readback["actual_hash"]
+    assert readback["readback_matches"] is True
 
 
 @pytest.mark.asyncio

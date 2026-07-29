@@ -12,7 +12,7 @@ import json
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -133,6 +133,7 @@ class TelephonyCommandPayload(BaseModel):
     contact_id: str | None = Field(default=None, max_length=128)
     allocation_reservation_id: str = Field(min_length=4, max_length=144)
     desired_state_version: int = Field(ge=1)
+    state: Literal["DISABLED", "ENABLED"] = "DISABLED"
     maximum_duration_seconds: int | None = Field(default=None, ge=1, le=300)
     purpose: str | None = Field(default=None, max_length=128)
 
@@ -189,6 +190,38 @@ class TelephonyCommandRequest(BaseModel):
 
     def request_hash(self) -> str:
         return payload_hash(self.model_dump(mode="json"))
+
+    def policy_scope(self) -> dict[str, str]:
+        action = (
+            "voice"
+            if self.command_type
+            in {
+                TelephonyCommandType.INTERNAL_CALL_CREATE,
+                TelephonyCommandType.CALL_HANGUP,
+            }
+            else "sync"
+        )
+        return {
+            "action": action,
+            "subject": self.aggregate_public_id,
+            "resource": self.command_type.value,
+            "business_unit": self.business_unit_public_id,
+            "campaign": self.campaign_public_id,
+            "agent": self.payload.agent_public_id or "",
+        }
+
+    def desired_state(self) -> dict[str, Any]:
+        return self.payload.model_dump(mode="json", exclude_none=True)
+
+
+def normalized_actual_state(
+    command: TelephonyCommandRequest, actual: dict[str, Any]
+) -> dict[str, Any]:
+    candidate = actual.get("desired_state", actual)
+    if not isinstance(candidate, dict):
+        raise ValueError("readback desired_state must be an object")
+    expected = command.desired_state()
+    return {key: candidate.get(key) for key in expected}
 
 
 class TelephonyOperationResult(BaseModel):

@@ -6,6 +6,7 @@ worker concern; the API never writes directly to telephony systems.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -53,6 +54,17 @@ async def create_command(
         raise HTTPException(409, "policy correlation mismatch")
     if payload_hash(decision.context) != body.policy_decision_hash:
         raise HTTPException(409, "policy decision hash mismatch")
+    if decision.context.get("authorization_scope") != body.policy_scope():
+        raise HTTPException(409, "policy authorization scope mismatch")
+    expiration = decision.context.get("expiration")
+    if not isinstance(expiration, str):
+        raise HTTPException(409, "policy expiration is invalid")
+    try:
+        expires_at = datetime.fromisoformat(expiration)
+    except (TypeError, ValueError):
+        raise HTTPException(409, "policy expiration is invalid") from None
+    if expires_at.tzinfo is None or expires_at <= datetime.now(UTC):
+        raise HTTPException(409, "policy decision expired")
     values["state"] = (
         "AUTHORIZED"
         if decision.allowed and decision.context.get("enforced") is True

@@ -10,6 +10,7 @@ from app.core.telephony_commands import (
     MUTATION_ENDPOINTS,
     READBACK_ENDPOINTS,
     TelephonyCommandRequest,
+    normalized_actual_state,
     payload_hash,
 )
 
@@ -80,7 +81,7 @@ class TelephonyServiceClient:
             "target_configuration_checksum": route.configuration_checksum,
             "target_attested": True,
             "desired_hash": payload_hash(
-                command.payload.model_dump(mode="json", exclude_none=True)
+                command.desired_state()
             ),
         }
 
@@ -109,9 +110,14 @@ class TelephonyServiceClient:
         actual = response.json()
         if not isinstance(actual, dict):
             raise TelephonyClientError("invalid telephony readback")
-        actual_hash = payload_hash(actual)
+        try:
+            normalized = normalized_actual_state(command, actual)
+        except ValueError as exc:
+            raise TelephonyClientError(str(exc)) from exc
+        actual_hash = payload_hash(normalized)
         return {
             "actual": actual,
+            "normalized_actual": normalized,
             "actual_hash": actual_hash,
             "readback_matches": actual_hash == operation["desired_hash"],
         }

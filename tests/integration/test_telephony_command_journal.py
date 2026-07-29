@@ -1,5 +1,6 @@
 import asyncio
 import os
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -36,6 +37,15 @@ async def _scenario(database_url: str):
         "enforced": True,
         "action": "sync",
         "resource": "telephony.endpoint",
+        "expiration": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+        "authorization_scope": {
+            "action": "sync",
+            "subject": "AGT-SYNTHETIC-DB",
+            "resource": "telephony.asterisk.endpoint.apply",
+            "business_unit": "BU-SYNTHETIC-DB",
+            "campaign": "CMP-SYNTHETIC-DB",
+            "agent": "AGT-SYNTHETIC-DB",
+        },
     }
     command = TelephonyCommandRequest.model_validate(
         {
@@ -90,5 +100,43 @@ async def _scenario(database_url: str):
             with pytest.raises(HTTPException) as conflict:
                 await create_command(changed, idempotency_key, session)
             assert conflict.value.status_code == 409
+
+            wrong_scope = command.model_copy(
+                update={
+                    "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
+                    "campaign_public_id": "CMP-SYNTHETIC-OTHER",
+                }
+            )
+            with pytest.raises(HTTPException, match="authorization scope mismatch"):
+                await create_command(
+                    wrong_scope, wrong_scope.idempotency_key, session
+                )
+
+            expired_id = uuid4()
+            expired_context = {
+                **context,
+                "decision_id": str(expired_id),
+                "expiration": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+            }
+            session.add(
+                PolicyDecision(
+                    id=expired_id,
+                    policy="synthetic-telephony-policy",
+                    allowed=True,
+                    reason="allowed",
+                    correlation_id=correlation_id,
+                    context=expired_context,
+                )
+            )
+            await session.commit()
+            expired = command.model_copy(
+                update={
+                    "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
+                    "policy_decision_id": str(expired_id),
+                    "policy_decision_hash": payload_hash(expired_context),
+                }
+            )
+            with pytest.raises(HTTPException, match="policy decision expired"):
+                await create_command(expired, expired.idempotency_key, session)
     finally:
         await engine.dispose()
