@@ -44,6 +44,9 @@ class OdooDeliveryClient:
     business_unit_public_id: str = ""
     campaign_public_id: str = ""
 
+    async def aclose(self) -> None:
+        await self.service_client.aclose()
+
     async def request(
         self,
         operation: str,
@@ -67,7 +70,17 @@ class OdooDeliveryClient:
             organization_public_id=self.organization_public_id,
             business_unit_public_id=self.business_unit_public_id,
             campaign_public_id=self.campaign_public_id,
-            mutation=operation not in {"outbox.read", "results.read", "desired_state.read", "agents.read", "leads.read", "campaigns.read", "traces.read"},
+            mutation=operation
+            not in {
+                "outbox.read",
+                "results.read",
+                "results.by_delivery",
+                "desired_state.read",
+                "agents.read",
+                "leads.read",
+                "campaigns.read",
+                "traces.read",
+            },
         )
         return await self.service_client.request(
             route,
