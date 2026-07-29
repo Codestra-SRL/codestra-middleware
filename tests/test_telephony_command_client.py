@@ -1,4 +1,6 @@
 import asyncio
+from types import SimpleNamespace
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -16,8 +18,12 @@ from app.core.telephony_commands import (
     READBACK_ENDPOINTS,
     TelephonyCommandRequest,
     TelephonyCommandType,
+    payload_hash,
 )
-from app.workers.telephony_commands import _run_while_lease
+from app.workers.telephony_commands import (
+    _run_while_lease,
+    _validate_policy_for_dispatch,
+)
 from tests.test_endpoint_registry import endpoint
 
 
@@ -45,6 +51,38 @@ def command(**changes):
     }
     values.update(changes)
     return TelephonyCommandRequest.model_validate(values)
+
+
+def policy_bound_command(*, expiration: str):
+    value = command()
+    context = {
+        "decision_id": value.policy_decision_id,
+        "correlation_id": value.correlation_id,
+        "allow": True,
+        "enforced": True,
+        "action": value.policy_scope()["action"],
+        "resource": "telephony.endpoint",
+        "expiration": expiration,
+        "authorization_scope": value.policy_scope(),
+    }
+    value = value.model_copy(update={"policy_decision_hash": payload_hash(context)})
+    decision: Any = SimpleNamespace(
+        correlation_id=value.correlation_id,
+        allowed=True,
+        context=context,
+    )
+    return value, decision
+
+
+def test_dispatch_policy_is_revalidated_immediately_before_external_work():
+    value, decision = policy_bound_command(expiration="2099-01-01T00:00:00+00:00")
+    _validate_policy_for_dispatch(value, decision)
+
+    expired, expired_decision = policy_bound_command(
+        expiration="2000-01-01T00:00:00+00:00"
+    )
+    with pytest.raises(TelephonyClientError, match="authorization expired"):
+        _validate_policy_for_dispatch(expired, expired_decision)
 
 
 def test_all_command_routes_are_registry_keys_with_readback():

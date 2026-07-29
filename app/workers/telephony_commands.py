@@ -20,8 +20,13 @@ from app.adapters.telephony.client import (
 from app.core.telephony_commands import (
     TelephonyCommandRequest,
     TelephonyCommandState,
+    payload_hash,
 )
-from app.db.models import TelephonyCommandJournal, TelephonyOperationJournal
+from app.db.models import (
+    PolicyDecision,
+    TelephonyCommandJournal,
+    TelephonyOperationJournal,
+)
 
 LEASE_SECONDS = 120
 HEARTBEAT_SECONDS = 20
@@ -152,6 +157,30 @@ def _permanent(exc: Exception) -> bool:
     return False
 
 
+def _validate_policy_for_dispatch(
+    command: TelephonyCommandRequest, decision: PolicyDecision | None
+) -> None:
+    if decision is None:
+        raise TelephonyClientError("telephony policy decision is unavailable")
+    if decision.correlation_id != command.correlation_id:
+        raise TelephonyClientError("telephony policy correlation changed")
+    if payload_hash(decision.context) != command.policy_decision_hash:
+        raise TelephonyClientError("telephony policy decision changed")
+    if decision.context.get("authorization_scope") != command.policy_scope():
+        raise TelephonyClientError("telephony policy scope changed")
+    if not decision.allowed or decision.context.get("enforced") is not True:
+        raise TelephonyClientError("telephony policy no longer authorizes dispatch")
+    expiration = decision.context.get("expiration")
+    if not isinstance(expiration, str):
+        raise TelephonyClientError("telephony policy expiration is invalid")
+    try:
+        expires_at = datetime.fromisoformat(expiration)
+    except ValueError:
+        raise TelephonyClientError("telephony policy expiration is invalid") from None
+    if expires_at.tzinfo is None or expires_at <= datetime.now(UTC):
+        raise TelephonyClientError("telephony policy authorization expired")
+
+
 async def _record_failure(
     session_factory: async_sessionmaker[AsyncSession],
     command_id: UUID,
@@ -276,11 +305,17 @@ async def dispatch_one(
             if existing
             else None
         )
+        decision = (
+            await session.get(PolicyDecision, UUID(command.policy_decision_id))
+            if operation is None
+            else None
+        )
 
     client = client_factory()
     heartbeat = asyncio.create_task(_renew_lease(session_factory, command_id, owner))
     try:
         if operation is None:
+            _validate_policy_for_dispatch(command, decision)
             operation = await _run_while_lease(
                 client.dispatch(
                     str(command_id), command, traceparent=traceparent_factory()
