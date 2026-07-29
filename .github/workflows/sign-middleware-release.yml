@@ -107,9 +107,17 @@ jobs:
           done
           jq -e \
             --arg digest "${IMAGE_DIGEST}" \
-            --arg source "${SOURCE_COMMIT}" '
+            --arg source "${SOURCE_COMMIT}" \
+            --arg sbom_sha256 "$(sha256sum evidence/sbom.spdx.json | cut -d' ' -f1)" \
+            --arg provenance_sha256 "$(sha256sum evidence/provenance.json | cut -d' ' -f1)" \
+            --arg vex_sha256 "$(sha256sum evidence/openvex.json | cut -d' ' -f1)" \
+            --arg decision_sha256 "$(sha256sum evidence/security-decision.json | cut -d' ' -f1)" '
               .image_digest == $digest and
               .source_commit == $source and
+              .sbom_spdx_sha256 == $sbom_sha256 and
+              .provenance_sha256 == $provenance_sha256 and
+              .openvex_sha256 == $vex_sha256 and
+              .security_decision_sha256 == $decision_sha256 and
               .format_gate == "PASS" and
               .ruff_gate == "PASS" and
               .mypy_gate == "PASS" and
@@ -144,7 +152,6 @@ jobs:
                 all(.products[];
                   .["@id"] | contains($digest)))
             ' evidence/openvex.json
-          grep -Fq "${IMAGE_DIGEST#sha256:}" evidence/sbom.spdx.json
 
       - name: Verify registry digest and immutable tag binding
         shell: bash
