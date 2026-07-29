@@ -4,9 +4,12 @@ import pytest
 
 from app.core.notifications import (
     Channel,
+    CommandType,
     CommandState,
     Decision,
+    InvalidNotificationCommand,
     InvalidNotificationTransition,
+    NotificationCommand,
     PolicyInput,
     can_dispatch,
     evaluate_policy,
@@ -114,3 +117,79 @@ def test_payload_hash_is_exact_bytes():
         payload_digest(b"{}")
         == "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
     )
+
+
+def command(**overrides):
+    now = datetime(2026, 7, 29, 12, tzinfo=timezone.utc)
+    values = {
+        "schema_version": "notification-command.v1",
+        "command_id": "CMD-1",
+        "command_type": CommandType.EMAIL_SEND,
+        "idempotency_key": "IDEMPOTENCY-1",
+        "correlation_id": "CORRELATION-1",
+        "causation_id": "CAUSATION-1",
+        "organization_id": "ORG-1",
+        "business_unit_id": "BU-1",
+        "campaign_id": "CMP-1",
+        "lead_id": "LEAD-1",
+        "customer_id": "CUSTOMER-1",
+        "channel": Channel.EMAIL,
+        "template_id": "TEMPLATE-1",
+        "template_version": 1,
+        "sender_profile_id": "SENDER-1",
+        "destination_token": "opaque-destination-token",
+        "destination_classification": "APPROVED_EMPLOYEE_TEST",
+        "consent_evidence_id": "CONSENT-1",
+        "suppression_version": "SUPPRESSION-1",
+        "policy_version": "POLICY-1",
+        "policy_hash": "a" * 64,
+        "requested_by": "USER-1",
+        "approved_by": "APPROVER-1",
+        "requested_at": now,
+        "not_before": now,
+        "expires_at": now + timedelta(minutes=5),
+        "timezone": "UTC",
+        "quiet_hours_policy": "INTERNAL-TEST",
+        "rate_limit_bucket": "BU-1:EMAIL",
+        "cost_limit_bucket": "BU-1:EMAIL",
+        "pii_classification": "TOKENIZED",
+        "payload_hash": "b" * 64,
+        "template_variables": {"first_name": "synthetic"},
+    }
+    values.update(overrides)
+    return NotificationCommand(**values)
+
+
+def test_common_command_contract_accepts_complete_tokenized_metadata():
+    command().validate()
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"destination_token": ""},
+        {"template_version": 0},
+        {"policy_hash": "short"},
+        {
+            "not_before": datetime(2026, 7, 29, 11, tzinfo=timezone.utc),
+        },
+    ],
+)
+def test_common_command_contract_fails_closed(override):
+    with pytest.raises(InvalidNotificationCommand):
+        command(**override).validate()
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        CommandState.DELIVERED,
+        CommandState.DEFERRED,
+        CommandState.BOUNCED,
+        CommandState.COMPLAINED,
+        CommandState.UNSUBSCRIBED,
+        CommandState.UNDELIVERED,
+    ],
+)
+def test_provider_receipt_states_are_explicit(target):
+    validate_transition(CommandState.PROVIDER_ACCEPTED, target)
