@@ -13,7 +13,10 @@ import httpx
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.adapters.telephony.client import TelephonyClientError
+from app.adapters.telephony.client import (
+    TelephonyClientError,
+    TelephonyReadbackPending,
+)
 from app.core.telephony_commands import (
     TelephonyCommandRequest,
     TelephonyCommandState,
@@ -139,6 +142,8 @@ async def _run_while_lease(
 
 
 def _permanent(exc: Exception) -> bool:
+    if isinstance(exc, TelephonyReadbackPending):
+        return False
     if isinstance(exc, TelephonyClientError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):

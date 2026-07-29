@@ -21,6 +21,10 @@ class TelephonyClientError(RuntimeError):
     pass
 
 
+class TelephonyReadbackPending(TelephonyClientError):
+    """An acknowledged adapter operation is not yet visible to readback."""
+
+
 class TargetAttestor(Protocol):
     async def attest(
         self,
@@ -120,6 +124,10 @@ class TelephonyServiceClient:
             causation_id=command.causation_id,
             traceparent=traceparent,
         )
+        if response.status_code == 404:
+            raise TelephonyReadbackPending(
+                "acknowledged telephony operation is not yet visible"
+            )
         response.raise_for_status()
         actual = response.json()
         if not isinstance(actual, dict):

@@ -5,7 +5,11 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from app.adapters.telephony.client import TelephonyClientError, TelephonyServiceClient
+from app.adapters.telephony.client import (
+    TelephonyClientError,
+    TelephonyReadbackPending,
+    TelephonyServiceClient,
+)
 from app.core.telephony_commands import (
     LOGICAL_ENDPOINT_KEYS,
     MUTATION_ENDPOINTS,
@@ -224,6 +228,28 @@ async def test_dispatch_fails_closed_without_attestation():
         await client.dispatch(
             "CMD-SYNTHETIC-001",
             command(),
+            traceparent="00-" + "1" * 32 + "-" + "2" * 16 + "-01",
+        )
+
+
+@pytest.mark.asyncio
+async def test_acknowledged_operation_not_yet_visible_is_retryable():
+    resolver = Resolver()
+    common = CommonClient(resolver)
+
+    async def pending_readback(route, payload, **kwargs):
+        request = httpx.Request("GET", "https://invalid")
+        return httpx.Response(404, json={"status": "pending"}, request=request)
+
+    common.request = pending_readback
+    client = TelephonyServiceClient(common, Attestor())
+    with pytest.raises(TelephonyReadbackPending, match="not yet visible"):
+        await client.readback(
+            command(),
+            {
+                "operation_id": str(uuid4()),
+                "desired_hash": "a" * 64,
+            },
             traceparent="00-" + "1" * 32 + "-" + "2" * 16 + "-01",
         )
 
