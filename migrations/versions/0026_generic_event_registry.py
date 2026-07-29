@@ -5,7 +5,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0026_generic_event_registry"
-down_revision = "0025_endpoint_registry"
+down_revision = "0026_n8n_contracts"
 branch_labels = None
 depends_on = None
 
@@ -28,4 +28,3 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("integration_event_type")
-

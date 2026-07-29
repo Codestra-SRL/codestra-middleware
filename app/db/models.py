@@ -172,6 +172,8 @@ class N8nExecutionRegistration(Base):
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="REGISTERED"
@@ -183,6 +185,34 @@ class N8nExecutionRegistration(Base):
         DateTime(timezone=True), nullable=False
     )
     response_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class N8nExecutionTransition(Base):
+    __tablename__ = "n8n_execution_transition"
+    transition_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("n8n_execution_registration.registration_id"),
+        nullable=False,
+    )
+    from_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    persisted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "registration_id",
+            "to_status",
+            name="uq_n8n_transition_registration_status",
+        ),
+    )
 
 
 class N8nAcknowledgement(Base):

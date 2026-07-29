@@ -1,3 +1,5 @@
+import re
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
@@ -51,6 +53,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v1/events/vicidial",
         "/api/v1/automation/events",
         "/api/v2/telephony/canary",
+        "/api/v1/n8n/executions",
         "/api/v1/n8n/executions/register",
         "/api/v1/n8n/acknowledgements",
         "/api/v1/registry/resolve",
@@ -58,6 +61,9 @@ SIGNED_WEBHOOK_PATHS = frozenset(
     }
 )
 SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
+N8N_TRANSITION_PATH = re.compile(
+    r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
+)
 
 
 @app.middleware("http")
@@ -70,6 +76,9 @@ async def control_request_guard(request: Request, call_next):
     if (
         (request.url.path.startswith("/api/") or request.url.path.startswith("/v1/"))
         and request.url.path not in SIGNED_WEBHOOK_PATHS
+        and not (
+            request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
+        )
         and request.url.path not in SELF_AUTHENTICATED_PATHS
     ):
         try:
