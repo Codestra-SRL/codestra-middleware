@@ -12,6 +12,7 @@ from redis.exceptions import RedisError
 from sqlalchemy import and_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
     IntegrationEndpoint,
@@ -163,8 +164,14 @@ class SqlEndpointRepository:
             .join(
                 IntegrationSchemaVersion,
                 (IntegrationSchemaVersion.service_key == IntegrationService.service_key)
-                & (IntegrationSchemaVersion.endpoint_key == IntegrationEndpoint.endpoint_key)
-                & (IntegrationSchemaVersion.api_version == IntegrationEndpoint.api_version),
+                & (
+                    IntegrationSchemaVersion.endpoint_key
+                    == IntegrationEndpoint.endpoint_key
+                )
+                & (
+                    IntegrationSchemaVersion.api_version
+                    == IntegrationEndpoint.api_version
+                ),
             )
             .where(
                 and_(
@@ -234,6 +241,22 @@ class SqlEndpointRepository:
                 registry_generation=self.generation,
             )
         ]
+
+
+class SessionEndpointRepository:
+    """Resolve routes with a short independently managed database session."""
+
+    def __init__(
+        self, session_factory: async_sessionmaker[AsyncSession], generation: int = 0
+    ) -> None:
+        self.session_factory = session_factory
+        self.generation = generation
+
+    async def candidates(self, request: ResolutionRequest) -> list[ResolvedEndpoint]:
+        async with self.session_factory() as session:
+            return await SqlEndpointRepository(
+                session, generation=self.generation
+            ).candidates(request)
 
 
 @dataclass

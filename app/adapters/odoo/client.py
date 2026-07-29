@@ -29,7 +29,28 @@ ODOO_ENDPOINTS = {
     "leads.read": "odoo.leads.read",
     "campaigns.read": "odoo.campaigns.read",
     "traces.read": "odoo.traces.read",
+    "telephony.projections.read": "odoo.telephony.projections.read",
+    "telephony.mappings.read": "odoo.telephony.mappings.read",
+    "reconciliation.runs.read": "odoo.reconciliation.runs.read",
+    "reconciliation.drifts.read": "odoo.reconciliation.drifts.read",
 }
+
+ODOO_READ_OPERATIONS = frozenset(
+    {
+        "outbox.read",
+        "results.read",
+        "results.by_delivery",
+        "desired_state.read",
+        "agents.read",
+        "leads.read",
+        "campaigns.read",
+        "traces.read",
+        "telephony.projections.read",
+        "telephony.mappings.read",
+        "reconciliation.runs.read",
+        "reconciliation.drifts.read",
+    }
+)
 
 
 class OdooDeliveryError(RuntimeError):
@@ -70,17 +91,7 @@ class OdooDeliveryClient:
             organization_public_id=self.organization_public_id,
             business_unit_public_id=self.business_unit_public_id,
             campaign_public_id=self.campaign_public_id,
-            mutation=operation
-            not in {
-                "outbox.read",
-                "results.read",
-                "results.by_delivery",
-                "desired_state.read",
-                "agents.read",
-                "leads.read",
-                "campaigns.read",
-                "traces.read",
-            },
+            mutation=operation not in ODOO_READ_OPERATIONS,
         )
         return await self.service_client.request(
             route,

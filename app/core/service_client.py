@@ -6,7 +6,11 @@ from uuid import uuid4
 
 import httpx
 
-from app.core.endpoint_registry import RegistryResolver, ResolutionRequest
+from app.core.endpoint_registry import (
+    RegistryResolver,
+    ResolutionRequest,
+    ResolvedEndpoint,
+)
 from app.core.token_manager import TokenManager
 
 
@@ -50,6 +54,31 @@ class CommonServiceClient:
         if route_request.mutation and not idempotency_key:
             raise ValueError("mutation requires durable idempotency key")
         route = await self.resolver.resolve(route_request)
+        return await self.request_resolved(
+            route,
+            payload,
+            idempotency_key=idempotency_key,
+            request_id=request_id,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+            traceparent=traceparent,
+            tracestate=tracestate,
+        )
+
+    async def request_resolved(
+        self,
+        route: ResolvedEndpoint,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        request_id: str,
+        correlation_id: str,
+        causation_id: str,
+        traceparent: str,
+        tracestate: str = "",
+    ) -> httpx.Response:
+        if route.method not in {"GET", "HEAD"} and not idempotency_key:
+            raise ValueError("mutation requires durable idempotency key")
         token_route = await self.resolver.resolve(self.token_endpoint_key)
         token_url = f"{token_route.base_url.rstrip('/')}/{token_route.path.lstrip('/')}"
         access_token = await self.token_manager.get_token(
