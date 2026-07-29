@@ -13,9 +13,9 @@ import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 
 PUBLIC_ID = re.compile(r"^[A-Z][A-Z0-9_]{1,15}-[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$")
 
@@ -28,23 +28,60 @@ class TelephonyCommandType(StrEnum):
     ENDPOINT_APPLY = "telephony.asterisk.endpoint.apply"
     ENDPOINT_DISABLE = "telephony.asterisk.endpoint.disable"
     CONTACT_REVOKE = "telephony.asterisk.contact.revoke"
-    INTERNAL_CALL_CREATE = "telephony.asterisk.internal_call.create"
-    CALL_HANGUP = "telephony.asterisk.call.hangup"
-    RECONCILIATION_CREATE = "telephony.reconciliation.create"
+    CONTACTS_REVOKE_ALL = "telephony.asterisk.contacts.revoke_all"
+    TARGET_RECONCILE = "telephony.target.reconcile"
+    AGENT_RECONCILE = "telephony.agent.reconcile"
+    CAMPAIGN_RECONCILE = "telephony.campaign.reconcile"
 
 
 class TelephonyCommandState(StrEnum):
     RECEIVED = "RECEIVED"
+    VALIDATING = "VALIDATING"
+    VALIDATED = "VALIDATED"
     POLICY_PENDING = "POLICY_PENDING"
     POLICY_DENIED = "POLICY_DENIED"
+    POLICY_APPROVED = "POLICY_APPROVED"
+    JOURNALED = "JOURNALED"
+    ROUTE_RESOLVED = "ROUTE_RESOLVED"
+    TARGET_ATTESTED = "TARGET_ATTESTED"
     AUTHORIZED = "AUTHORIZED"
+    DISPATCHING = "DISPATCHING"
+    DISPATCHED = "DISPATCHED"
+    OPERATION_REGISTERED = "OPERATION_REGISTERED"
+    APPLYING = "APPLYING"
+    APPLIED = "APPLIED"
     SUBMITTING = "SUBMITTING"
     SUBMITTED = "SUBMITTED"
     READBACK_PENDING = "READBACK_PENDING"
+    READBACK_VERIFIED = "READBACK_VERIFIED"
+    ODOO_RESULT_PENDING = "ODOO_RESULT_PENDING"
+    ODOO_RESULT_DELIVERED = "ODOO_RESULT_DELIVERED"
+    RECONCILED = "RECONCILED"
     SUCCEEDED = "SUCCEEDED"
     RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
     FAILED_TRANSIENT = "FAILED_TRANSIENT"
     FAILED_PERMANENT = "FAILED_PERMANENT"
+
+
+TELEPHONY_OPERATION_LIFECYCLE = (
+    "RECEIVED",
+    "VALIDATING",
+    "VALIDATED",
+    "POLICY_APPROVED",
+    "JOURNALED",
+    "ROUTE_RESOLVED",
+    "TARGET_ATTESTED",
+    "DISPATCHING",
+    "DISPATCHED",
+    "OPERATION_REGISTERED",
+    "APPLYING",
+    "APPLIED",
+    "READBACK_PENDING",
+    "READBACK_VERIFIED",
+    "ODOO_RESULT_PENDING",
+    "ODOO_RESULT_DELIVERED",
+    "RECONCILED",
+)
 
 
 MUTATION_ENDPOINTS: dict[TelephonyCommandType, str] = {
@@ -55,9 +92,10 @@ MUTATION_ENDPOINTS: dict[TelephonyCommandType, str] = {
     TelephonyCommandType.ENDPOINT_APPLY: "telephony.asterisk.endpoints.apply",
     TelephonyCommandType.ENDPOINT_DISABLE: "telephony.asterisk.endpoints.disable",
     TelephonyCommandType.CONTACT_REVOKE: "telephony.asterisk.contacts.revoke",
-    TelephonyCommandType.INTERNAL_CALL_CREATE: "telephony.asterisk.internal_calls.create",
-    TelephonyCommandType.CALL_HANGUP: "telephony.asterisk.calls.hangup",
-    TelephonyCommandType.RECONCILIATION_CREATE: "telephony.reconciliation.create",
+    TelephonyCommandType.CONTACTS_REVOKE_ALL: "telephony.asterisk.contacts.revoke_all",
+    TelephonyCommandType.TARGET_RECONCILE: "telephony.reconciliation.create",
+    TelephonyCommandType.AGENT_RECONCILE: "telephony.reconciliation.create",
+    TelephonyCommandType.CAMPAIGN_RECONCILE: "telephony.reconciliation.create",
 }
 
 READBACK_ENDPOINTS: dict[TelephonyCommandType, str] = {
@@ -68,9 +106,10 @@ READBACK_ENDPOINTS: dict[TelephonyCommandType, str] = {
     TelephonyCommandType.ENDPOINT_APPLY: "telephony.asterisk.endpoints.read",
     TelephonyCommandType.ENDPOINT_DISABLE: "telephony.asterisk.endpoints.read",
     TelephonyCommandType.CONTACT_REVOKE: "telephony.asterisk.contacts.list",
-    TelephonyCommandType.INTERNAL_CALL_CREATE: "telephony.asterisk.calls.read",
-    TelephonyCommandType.CALL_HANGUP: "telephony.asterisk.calls.read",
-    TelephonyCommandType.RECONCILIATION_CREATE: "telephony.reconciliation.read",
+    TelephonyCommandType.CONTACTS_REVOKE_ALL: "telephony.asterisk.contacts.list",
+    TelephonyCommandType.TARGET_RECONCILE: "telephony.reconciliation.read",
+    TelephonyCommandType.AGENT_RECONCILE: "telephony.reconciliation.read",
+    TelephonyCommandType.CAMPAIGN_RECONCILE: "telephony.reconciliation.read",
 }
 
 LOGICAL_ENDPOINT_KEYS = frozenset(
@@ -82,22 +121,31 @@ LOGICAL_ENDPOINT_KEYS = frozenset(
         "telephony.vicidial.phones.apply",
         "telephony.vicidial.phones.disable",
         "telephony.vicidial.campaigns.read",
-        "telephony.vicidial.leads.read",
+        "telephony.vicidial.runtime.read",
         "telephony.asterisk.endpoints.read",
         "telephony.asterisk.endpoints.apply",
         "telephony.asterisk.endpoints.disable",
         "telephony.asterisk.contacts.list",
         "telephony.asterisk.contacts.revoke",
+        "telephony.asterisk.contacts.revoke_all",
         "telephony.asterisk.dialplan.read",
         "telephony.asterisk.runtime.read",
-        "telephony.asterisk.internal_calls.create",
-        "telephony.asterisk.calls.read",
-        "telephony.asterisk.calls.hangup",
         "telephony.reconciliation.create",
         "telephony.reconciliation.read",
         "telephony.service.attest",
     }
 )
+
+DISABLED_ADAPTER_ENDPOINT_DEFAULTS = {
+    key: {
+        "enabled": False,
+        "kill_switch": True,
+        "redirects_allowed": False,
+        "target_attestation_required": True,
+    }
+    for key in LOGICAL_ENDPOINT_KEYS
+    if key.startswith("telephony.")
+}
 
 FORBIDDEN_PAYLOAD_KEYS = frozenset(
     {
@@ -139,6 +187,16 @@ class TelephonyCommandPayload(BaseModel):
     state: Literal["DISABLED", "ENABLED"] = "DISABLED"
     maximum_duration_seconds: int | None = Field(default=None, ge=1, le=300)
     purpose: str | None = Field(default=None, max_length=128)
+    reservation_generation: int | None = Field(default=None, ge=1)
+    reservation_hash: str | None = Field(
+        default=None, pattern=r"^(?:sha256:)?[0-9a-f]{64}$"
+    )
+    desired_state_hash: str | None = Field(
+        default=None, pattern=r"^(?:sha256:)?[0-9a-f]{64}$"
+    )
+    context_key: str | None = Field(default=None, max_length=128)
+    external_route_allowed: bool = False
+    transfer_allowed: bool = False
 
     @model_validator(mode="after")
     def validate_public_ids(self) -> TelephonyCommandPayload:
@@ -161,38 +219,82 @@ class TelephonyCommandPayload(BaseModel):
 class TelephonyCommandRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     schema_version: str = Field(pattern=r"^1[.]0$")
+    command_public_id: UUID | None = None
     command_type: TelephonyCommandType
     aggregate_type: str = Field(min_length=1, max_length=64)
     aggregate_public_id: str = Field(min_length=4, max_length=144)
     aggregate_version: int = Field(ge=1)
     environment: str = Field(pattern=r"^(staging|test|production)$")
+    organization_public_id: str = Field(default="", max_length=144)
     business_unit_public_id: str = Field(min_length=4, max_length=144)
     campaign_public_id: str = Field(min_length=4, max_length=144)
     idempotency_key: str = Field(min_length=8, max_length=255)
     correlation_id: str = Field(min_length=8, max_length=128)
     causation_id: str = Field(min_length=1, max_length=128)
-    policy_decision_id: str = Field(
-        pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    policy_decision_id: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     )
     policy_decision_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    requested_at: datetime | None = None
+    expires_at: datetime | None = None
     payload: TelephonyCommandPayload
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_v1_envelope(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "aggregate" not in value:
+            return value
+        data = dict(value)
+        aggregate = dict(data.pop("aggregate"))
+        target = dict(data.pop("target"))
+        allocation = dict(data.pop("allocation"))
+        desired = dict(data.pop("desired_state"))
+        policy_hash = str(data.pop("policy_hash")).removeprefix("sha256:")
+        data.update(
+            aggregate_type=aggregate["type"],
+            aggregate_public_id=aggregate["public_id"],
+            aggregate_version=aggregate["version"],
+            policy_decision_hash=policy_hash,
+            payload={
+                "endpoint_public_id": (
+                    target["public_id"]
+                    if target["resource_type"] == "ENDPOINT"
+                    else None
+                ),
+                "agent_public_id": (
+                    target["public_id"]
+                    if target["resource_type"] == "USER"
+                    else aggregate["public_id"]
+                    if aggregate["type"] == "agent"
+                    else None
+                ),
+                "phone_public_id": (
+                    target["public_id"] if target["resource_type"] == "PHONE" else None
+                ),
+                "allocation_reservation_id": allocation["reservation_public_id"],
+                "reservation_generation": allocation["reservation_generation"],
+                "reservation_hash": allocation["reservation_hash"],
+                "desired_state_version": desired["version"],
+                "desired_state_hash": desired["hash"],
+                "state": "ENABLED" if desired.get("enabled") else "DISABLED",
+                "context_key": desired.get("context_key"),
+                "external_route_allowed": desired.get("external_route_allowed", False),
+                "transfer_allowed": desired.get("transfer_allowed", False),
+            },
+        )
+        return data
 
     @model_validator(mode="after")
     def forbid_application_selected_resources(self) -> TelephonyCommandRequest:
+        if self.requested_at and self.expires_at:
+            if self.requested_at.tzinfo is None or self.expires_at.tzinfo is None:
+                raise ValueError("command timestamps must be timezone-aware")
+            if self.expires_at <= self.requested_at:
+                raise ValueError("command expiry must follow request time")
         raw = self.payload.model_dump(exclude_none=True)
         if FORBIDDEN_PAYLOAD_KEYS.intersection(raw):
             raise ValueError("application-selected telephony resource is prohibited")
-        if (
-            self.command_type is TelephonyCommandType.INTERNAL_CALL_CREATE
-            and (
-                self.environment != "staging"
-                or not self.payload.source_endpoint_public_id
-                or not self.payload.destination_endpoint_public_id
-                or self.payload.maximum_duration_seconds is None
-                or self.payload.purpose != "controlled_internal_acceptance"
-            )
-        ):
-            raise ValueError("internal calls require bounded staging acceptance scope")
         requirements = {
             TelephonyCommandType.USER_APPLY: ("agent_public_id",),
             TelephonyCommandType.USER_DISABLE: ("agent_public_id",),
@@ -201,12 +303,7 @@ class TelephonyCommandRequest(BaseModel):
             TelephonyCommandType.ENDPOINT_APPLY: ("endpoint_public_id",),
             TelephonyCommandType.ENDPOINT_DISABLE: ("endpoint_public_id",),
             TelephonyCommandType.CONTACT_REVOKE: ("endpoint_public_id", "contact_id"),
-            TelephonyCommandType.INTERNAL_CALL_CREATE: (
-                "source_endpoint_public_id",
-                "destination_endpoint_public_id",
-                "call_public_id",
-            ),
-            TelephonyCommandType.CALL_HANGUP: ("call_public_id",),
+            TelephonyCommandType.CONTACTS_REVOKE_ALL: ("endpoint_public_id",),
         }
         missing = [
             field
@@ -223,17 +320,8 @@ class TelephonyCommandRequest(BaseModel):
         return payload_hash(self.model_dump(mode="json"))
 
     def policy_scope(self) -> dict[str, str]:
-        action = (
-            "voice"
-            if self.command_type
-            in {
-                TelephonyCommandType.INTERNAL_CALL_CREATE,
-                TelephonyCommandType.CALL_HANGUP,
-            }
-            else "sync"
-        )
         return {
-            "action": action,
+            "action": "sync",
             "subject": self.aggregate_public_id,
             "resource": self.command_type.value,
             "environment": self.environment,
@@ -243,7 +331,9 @@ class TelephonyCommandRequest(BaseModel):
         }
 
     def desired_state(self) -> dict[str, Any]:
-        return self.payload.model_dump(mode="json", exclude_none=True)
+        return self.payload.model_dump(
+            mode="json", exclude_none=True, exclude_unset=True
+        )
 
 
 def normalized_actual_state(
@@ -275,6 +365,11 @@ class TelephonyOperationResult(BaseModel):
 def new_command_record(command: TelephonyCommandRequest) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
+        **(
+            {"command_id": command.command_public_id}
+            if command.command_public_id
+            else {}
+        ),
         "command_type": command.command_type.value,
         "aggregate_type": command.aggregate_type,
         "aggregate_public_id": command.aggregate_public_id,
@@ -282,7 +377,9 @@ def new_command_record(command: TelephonyCommandRequest) -> dict[str, Any]:
         "environment": command.environment,
         "business_unit_public_id": command.business_unit_public_id,
         "campaign_public_id": command.campaign_public_id,
-        "idempotency_hash": hashlib.sha256(command.idempotency_key.encode()).hexdigest(),
+        "idempotency_hash": hashlib.sha256(
+            command.idempotency_key.encode()
+        ).hexdigest(),
         "idempotency_key": command.idempotency_key,
         "request_hash": command.request_hash(),
         "correlation_id": command.correlation_id,

@@ -13,6 +13,7 @@ from app.adapters.telephony.client import (
     TelephonyServiceClient,
 )
 from app.core.telephony_commands import (
+    DISABLED_ADAPTER_ENDPOINT_DEFAULTS,
     LOGICAL_ENDPOINT_KEYS,
     MUTATION_ENDPOINTS,
     READBACK_ENDPOINTS,
@@ -90,6 +91,64 @@ def test_all_command_routes_are_registry_keys_with_readback():
     assert set(READBACK_ENDPOINTS.values()) <= LOGICAL_ENDPOINT_KEYS
     assert set(MUTATION_ENDPOINTS) == set(TelephonyCommandType)
     assert set(READBACK_ENDPOINTS) == set(TelephonyCommandType)
+    assert "telephony.vicidial.runtime.read" in LOGICAL_ENDPOINT_KEYS
+    assert "telephony.asterisk.contacts.revoke_all" in LOGICAL_ENDPOINT_KEYS
+    assert all(
+        defaults
+        == {
+            "enabled": False,
+            "kill_switch": True,
+            "redirects_allowed": False,
+            "target_attestation_required": True,
+        }
+        for defaults in DISABLED_ADAPTER_ENDPOINT_DEFAULTS.values()
+    )
+
+
+def test_canonical_nested_command_contract_is_normalized_without_extension():
+    value = TelephonyCommandRequest.model_validate(
+        {
+            "schema_version": "1.0",
+            "command_public_id": str(uuid4()),
+            "command_type": "telephony.asterisk.endpoint.apply",
+            "aggregate": {
+                "type": "agent",
+                "public_id": "AGT-SYNTHETIC-001",
+                "version": 6,
+            },
+            "environment": "staging",
+            "organization_public_id": "ORG-CODESTRA",
+            "business_unit_public_id": "BU-SYNTHETIC-001",
+            "campaign_public_id": "CMP-SYNTHETIC-001",
+            "target": {
+                "system": "ASTERISK",
+                "resource_type": "ENDPOINT",
+                "public_id": "EPT-SYNTHETIC-001",
+            },
+            "allocation": {
+                "reservation_public_id": "RSV-SYNTHETIC-001",
+                "reservation_generation": 3,
+                "reservation_hash": "sha256:" + "1" * 64,
+            },
+            "desired_state": {
+                "version": 6,
+                "hash": "sha256:" + "2" * 64,
+                "enabled": False,
+                "context_key": "campaign-agent-restricted",
+                "external_route_allowed": False,
+                "transfer_allowed": False,
+            },
+            "idempotency_key": "IDM-SYNTHETIC-001",
+            "correlation_id": "COR-SYNTHETIC-001",
+            "causation_id": "CAU-SYNTHETIC-001",
+            "policy_hash": "sha256:" + "3" * 64,
+            "requested_at": "2026-07-29T20:00:00Z",
+            "expires_at": "2026-07-29T20:05:00Z",
+        }
+    )
+    assert value.payload.endpoint_public_id == "EPT-SYNTHETIC-001"
+    assert value.payload.allocation_reservation_id == "RSV-SYNTHETIC-001"
+    assert "extension" not in value.model_dump_json()
 
 
 @pytest.mark.parametrize(
@@ -112,24 +171,13 @@ def test_command_rejects_application_selected_resources(field):
         TelephonyCommandRequest.model_validate(value)
 
 
-def test_internal_call_is_bounded_to_staging_acceptance():
-    base = command(
-        command_type="telephony.asterisk.internal_call.create",
-        payload={
-            "call_public_id": "CALL-SYNTHETIC-001",
-            "source_endpoint_public_id": "EPT-SOURCE-001",
-            "destination_endpoint_public_id": "EPT-DESTINATION-001",
-            "allocation_reservation_id": "RSV-SYNTHETIC-001",
-            "desired_state_version": 1,
-            "maximum_duration_seconds": 120,
-            "purpose": "controlled_internal_acceptance",
-        },
-    )
-    assert base.environment == "staging"
-    with pytest.raises(ValidationError):
-        TelephonyCommandRequest.model_validate(
-            {**base.model_dump(mode="json"), "environment": "production"}
-        )
+def test_call_control_is_outside_telephony_client_scope():
+    for command_type in (
+        "telephony.asterisk.internal_call.create",
+        "telephony.asterisk.call.hangup",
+    ):
+        with pytest.raises(ValidationError):
+            command(command_type=command_type)
 
 
 class Resolver:
@@ -159,9 +207,7 @@ class CommonClient:
     async def request_resolved(self, route, payload, **kwargs):
         self.calls.append((route, payload, kwargs))
         request = httpx.Request("POST", "https://invalid")
-        return httpx.Response(
-            202, json={"operation_id": str(uuid4())}, request=request
-        )
+        return httpx.Response(202, json={"operation_id": str(uuid4())}, request=request)
 
     async def request(self, route, payload, **kwargs):
         self.calls.append((route, payload, kwargs))
@@ -325,9 +371,9 @@ async def test_dispatch_rejects_route_that_does_not_require_attestation():
             },
         ),
         (
-            "telephony.asterisk.call.hangup",
+            "telephony.asterisk.contacts.revoke_all",
             {
-                "endpoint_public_id": "EPT-WRONG-001",
+                "agent_public_id": "AGT-WRONG-001",
                 "allocation_reservation_id": "RSV-001",
                 "desired_state_version": 1,
             },

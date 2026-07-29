@@ -37,14 +37,14 @@ def upgrade() -> None:
         sa.Column("payload_json", jsonb, nullable=False),
         sa.Column("request_json", jsonb, nullable=False),
         sa.Column("state", sa.String(32), nullable=False),
-        sa.Column(
-            "attempt_count", sa.Integer(), server_default="0", nullable=False
-        ),
+        sa.Column("attempt_count", sa.Integer(), server_default="0", nullable=False),
         sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("lease_owner", sa.String(64), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint("aggregate_version >= 1", name="ck_telephony_command_version"),
+        sa.CheckConstraint(
+            "aggregate_version >= 1", name="ck_telephony_command_version"
+        ),
         sa.CheckConstraint(
             "environment IN ('staging','test','production')",
             name="ck_telephony_command_environment",
@@ -107,9 +107,90 @@ def upgrade() -> None:
         "telephony_operation_journal",
         ["correlation_id"],
     )
+    op.create_table(
+        "telephony_terminal_result",
+        sa.Column("result_id", uuid, nullable=False),
+        sa.Column("operation_id", uuid, nullable=False),
+        sa.Column("command_id", uuid, nullable=False),
+        sa.Column("result_hash", sa.String(64), nullable=False),
+        sa.Column("application_hash", sa.String(64), nullable=False),
+        sa.Column("readback_hash", sa.String(64), nullable=False),
+        sa.Column("policy_hash", sa.String(64), nullable=False),
+        sa.Column("status", sa.String(32), nullable=False),
+        sa.Column("reconciliation_status", sa.String(32), nullable=False),
+        sa.Column("correlation_id", sa.String(128), nullable=False),
+        sa.Column("immutable_json", jsonb, nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["operation_id"],
+            ["telephony_operation_journal.operation_id"],
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["command_id"],
+            ["telephony_command_journal.command_id"],
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("result_id"),
+        sa.UniqueConstraint("operation_id"),
+        sa.UniqueConstraint(
+            "result_hash", "operation_id", name="uq_telephony_result_binding"
+        ),
+    )
+    op.create_index(
+        "ix_telephony_result_correlation",
+        "telephony_terminal_result",
+        ["correlation_id"],
+    )
+    op.create_table(
+        "telephony_reconciliation_run",
+        sa.Column("run_id", uuid, nullable=False),
+        sa.Column("command_id", uuid, nullable=True),
+        sa.Column("environment", sa.String(16), nullable=False),
+        sa.Column("aggregate_type", sa.String(64), nullable=False),
+        sa.Column("aggregate_public_id", sa.String(144), nullable=False),
+        sa.Column("target_system", sa.String(32), nullable=False),
+        sa.Column("status", sa.String(32), nullable=False),
+        sa.Column("classification", sa.String(64), nullable=False),
+        sa.Column("correlation_id", sa.String(128), nullable=False),
+        sa.Column("evidence_json", jsonb, nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["command_id"],
+            ["telephony_command_journal.command_id"],
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("run_id"),
+    )
+    op.create_index(
+        "ix_telephony_reconciliation_correlation",
+        "telephony_reconciliation_run",
+        ["correlation_id"],
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "ix_telephony_reconciliation_correlation",
+        table_name="telephony_reconciliation_run",
+    )
+    op.drop_table("telephony_reconciliation_run")
+    op.drop_index(
+        "ix_telephony_result_correlation",
+        table_name="telephony_terminal_result",
+    )
+    op.drop_table("telephony_terminal_result")
     op.drop_index(
         "ix_telephony_operation_correlation",
         table_name="telephony_operation_journal",

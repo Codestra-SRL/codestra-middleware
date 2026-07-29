@@ -8,12 +8,22 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.api.v1.commands import create_command
+from app.api.v1.commands import (
+    ReconciliationRunRequest,
+    TerminalResultRequest,
+    create_command,
+    create_reconciliation_run,
+    create_terminal_result,
+)
 from app.core.telephony_commands import (
     TelephonyCommandRequest,
     payload_hash,
 )
-from app.db.models import PolicyDecision, TelephonyCommandJournal
+from app.db.models import (
+    PolicyDecision,
+    TelephonyCommandJournal,
+    TelephonyOperationJournal,
+)
 from app.workers.telephony_commands import claim_authorized, dispatch_one
 
 
@@ -119,9 +129,7 @@ async def _scenario(database_url: str):
                 }
             )
             with pytest.raises(HTTPException, match="authorization scope mismatch"):
-                await create_command(
-                    wrong_scope, wrong_scope.idempotency_key, session
-                )
+                await create_command(wrong_scope, wrong_scope.idempotency_key, session)
 
             expired_id = uuid4()
             expired_context = {
@@ -149,10 +157,7 @@ async def _scenario(database_url: str):
             )
             with pytest.raises(HTTPException, match="policy decision expired"):
                 await create_command(expired, expired.idempotency_key, session)
-            assert (
-                await claim_authorized(session, environment="production")
-                is None
-            )
+            assert await claim_authorized(session, environment="production") is None
             stored.state = "SUBMITTING"
             stored.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
             await session.commit()
@@ -200,6 +205,48 @@ async def _scenario(database_url: str):
             )
             assert stored is not None
             assert stored.state == "SUCCEEDED"
+            operation = await session.scalar(
+                select(TelephonyOperationJournal).where(
+                    TelephonyOperationJournal.command_id == stored.command_id
+                )
+            )
+            assert operation is not None
+            result_id = uuid4()
+            terminal = TerminalResultRequest(
+                result_public_id=result_id,
+                operation_public_id=operation.operation_id,
+                command_public_id=stored.command_id,
+                result_hash="1" * 64,
+                application_hash="2" * 64,
+                readback_hash="3" * 64,
+                policy_hash=stored.policy_decision_hash,
+                status="APPLIED",
+                reconciliation_status="IN_SYNC",
+                correlation_id=correlation_id,
+            )
+            created_result = await create_terminal_result(terminal, session)
+            duplicate_result = await create_terminal_result(terminal, session)
+            assert created_result["idempotency_status"] == "NEW"
+            assert duplicate_result["idempotency_status"] == "DUPLICATE"
+            with pytest.raises(
+                HTTPException, match="IMMUTABLE_RESULT_BINDING_CONFLICT"
+            ):
+                await create_terminal_result(
+                    terminal.model_copy(update={"readback_hash": "4" * 64}),
+                    session,
+                )
+            run = await create_reconciliation_run(
+                ReconciliationRunRequest(
+                    environment="staging",
+                    aggregate_type="agent",
+                    aggregate_public_id=stored.aggregate_public_id,
+                    target_system="ASTERISK",
+                    classification="IN_SYNC",
+                    correlation_id=correlation_id,
+                ),
+                session,
+            )
+            assert run["status"] == "REQUESTED"
 
             next_command = command.model_copy(
                 update={
