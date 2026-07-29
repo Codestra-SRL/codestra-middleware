@@ -100,13 +100,9 @@ class Settings(BaseSettings):
     middleware_n8n_client_secret_file: str = ""
     middleware_n8n_audience: str = "codestra-n8n-production"
     middleware_n8n_scope: str = "n8n.events.submit"
-    odoo_results_url: str = ""
-    odoo_results_token_url: str = ""
     odoo_results_client_id: str = "codestra-middleware-odoo-results"
-    odoo_results_client_secret_file: str = ""
-    odoo_results_audience: str = "codestra-odoo"
-    odoo_results_scope: str = "odoo.integration.results.write"
-    odoo_results_ca_file: str = ""
+    odoo_service_credential_reference: str = ""
+    odoo_service_private_key_file: str = ""
     odoo_result_delivery_enabled: bool = False
     email_dispatch_enabled: bool = False
     sms_dispatch_enabled: bool = False
@@ -287,24 +283,6 @@ class Settings(BaseSettings):
     def validate_workflow_package_sha256(cls, value: str) -> str:
         if value and not re.fullmatch(r"[0-9a-f]{64}", value):
             raise ValueError("workflow package identity must be an exact SHA-256")
-        return value
-
-    @field_validator("odoo_results_url")
-    @classmethod
-    def validate_odoo_results_url(cls, value: str) -> str:
-        if not value:
-            return value
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme != "https"
-            or parsed.hostname != "odoo.internal.codestra.agency"
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.path != "/codestra/integration/v1/results"
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError("Odoo results must use the approved internal endpoint")
         return value
 
     @field_validator("n8n_production_image_digest")
