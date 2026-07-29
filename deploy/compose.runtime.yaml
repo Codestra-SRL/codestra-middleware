@@ -23,6 +23,7 @@ x-runtime: &runtime
     PORT: "8095"
     LOG_LEVEL: INFO
     LIVE_WRITES_ENABLED: "false"
+    ODOO_WRITE_ENABLED: "false"
     ALLOW_NON_TEST_CAMPAIGNS: "false"
     ODOO_DELIVERY_ENABLED: "false"
     N8N_DELIVERY_ENABLED: "false"
@@ -36,6 +37,26 @@ x-runtime: &runtime
     MESSAGING_ENABLED: "false"
     REPORT_DELIVERY_ENABLED: "false"
     VICIDIAL_CALLBACK_HMAC_SECRET_FILE: ""
+    SEND_EVENTS: "false"
+    ENABLE_EXTERNAL_DELIVERY: "false"
+    VICIDIAL_WRITES_ENABLED: "false"
+    PRODUCTION_CALLBACKS_ENABLED: "false"
+    TRANSFERS_ENABLED: "false"
+    PRODUCTION_WEBRTC_ENABLED: "false"
+    PRODUCTION_N8N_ENABLED: "false"
+    ALLOW_LIVE_EMAIL: "false"
+    ALLOW_LIVE_SMS: "false"
+    ALLOW_CAMPAIGN_ACTIVATION: "false"
+    EXTENSION_ALLOCATOR_ENABLED: "false"
+    TELEPHONY_PROVISIONING_ENABLED: "false"
+    VICIDIAL_PROVISIONING_ENABLED: "false"
+    PJSIP_PROVISIONING_ENABLED: "false"
+    WEBPHONE_SESSION_ISSUER_ENABLED: "false"
+    WEBPHONE_STAGING_PROVISIONING_ENABLED: "false"
+    WEBPHONE_KEYCLOAK_ENABLED: "false"
+    TELEPHONY_RECONCILIATION_ENABLED: "false"
+    TELEPHONY_NOTIFICATIONS_ENABLED: "false"
+    TELEPHONY_EVIDENCE_ENABLED: "false"
   healthcheck:
     test:
       - CMD
@@ -172,6 +193,56 @@ services:
       WORKER_INTERVAL_SECONDS: "60"
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-evidence-runner-database-url:/run/secrets/database_url:ro
+
+  middleware-extension-allocator:
+    <<: *runtime
+    command: [python, -m, app.entrypoints.extension_allocator]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-extension-allocator
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-extension-allocator-database-url:/run/secrets/database_url:ro
+
+  middleware-telephony-provisioning:
+    <<: *runtime
+    command: [python, -m, app.entrypoints.telephony_provisioning]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-telephony-provisioning
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-telephony-provisioning-database-url:/run/secrets/database_url:ro
+
+  middleware-vicidial-adapter:
+    <<: *worker
+    command: [python, -m, app.entrypoints.vicidial_adapter]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-vicidial-adapter
+      QUEUE_NAME: telephony.vicidial.provisioning
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-vicidial-adapter-database-url:/run/secrets/database_url:ro
+
+  middleware-pjsip-adapter:
+    <<: *worker
+    command: [python, -m, app.entrypoints.pjsip_adapter]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-pjsip-adapter
+      QUEUE_NAME: telephony.pjsip.provisioning
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-pjsip-adapter-database-url:/run/secrets/database_url:ro
+
+  middleware-webphone-session-issuer:
+    <<: *runtime
+    command: [python, -m, app.entrypoints.webphone_session_issuer]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-webphone-session-issuer
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-webphone-session-issuer-database-url:/run/secrets/database_url:ro
+    networks:
+      - middleware_backend
+      - identity_service
 
 networks:
   middleware_backend:
