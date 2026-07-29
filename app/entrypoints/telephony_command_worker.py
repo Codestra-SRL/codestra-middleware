@@ -97,6 +97,7 @@ async def cycle() -> dict[str, object]:
     return await dispatch_one(
         SessionFactory,
         _client_factory,
+        environment=settings.environment,
         traceparent_factory=lambda: (
             "00-" + uuid4().hex + "-" + uuid4().hex[:16] + "-01"
         ),

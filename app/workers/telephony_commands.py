@@ -39,11 +39,14 @@ class TelephonyDispatcher(Protocol):
     ) -> dict[str, Any]: ...
 
 
-async def claim_authorized(session: AsyncSession) -> tuple[UUID, str] | None:
+async def claim_authorized(
+    session: AsyncSession, *, environment: str
+) -> tuple[UUID, str] | None:
     now = datetime.now(UTC)
     row = await session.scalar(
         select(TelephonyCommandJournal)
         .where(
+            TelephonyCommandJournal.environment == environment,
             or_(
                 and_(
                     TelephonyCommandJournal.state.in_(
@@ -235,10 +238,11 @@ async def dispatch_one(
     session_factory: async_sessionmaker[AsyncSession],
     client_factory: Callable[[], TelephonyDispatcher],
     *,
+    environment: str,
     traceparent_factory: Callable[[], str],
 ) -> dict[str, Any]:
     async with session_factory() as session:
-        claim = await claim_authorized(session)
+        claim = await claim_authorized(session, environment=environment)
     if claim is None:
         return {"claimed": 0}
     command_id, owner = claim
