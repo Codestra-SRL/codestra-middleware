@@ -81,6 +81,10 @@ def test_telephony_command_worker_template_is_source_only_and_fail_closed() -> N
     assert "compose.telephony-command-worker.yaml.example" not in COMPOSE
     assert "app.entrypoints.telephony_command_worker" in TELEPHONY_COMMAND_WORKER
     assert 'TELEPHONY_COMMAND_WORKER_ENABLED: "false"' in TELEPHONY_COMMAND_WORKER
+    assert (
+        "TELEPHONY_CREDENTIAL_DIRECTORY: /run/secrets/middleware-telephony-client"
+        in TELEPHONY_COMMAND_WORKER
+    )
     assert "profiles: [telephony-command-worker]" in TELEPHONY_COMMAND_WORKER
     assert "middleware-telephony-command-worker-database-url" in (
         TELEPHONY_COMMAND_WORKER

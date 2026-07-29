@@ -12,6 +12,7 @@ services:
       SERVICE_NAME: middleware-telephony-command-worker
       QUEUE_NAME: telephony-commands
       TELEPHONY_COMMAND_WORKER_ENABLED: "false"
+      TELEPHONY_CREDENTIAL_DIRECTORY: /run/secrets/middleware-telephony-client
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-telephony-command-worker-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/middleware-telephony-client:/run/secrets/middleware-telephony-client:ro
