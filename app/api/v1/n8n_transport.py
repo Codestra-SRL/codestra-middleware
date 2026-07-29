@@ -132,6 +132,7 @@ def canonical_hash_bytes(value: bytes) -> str:
 
 
 @router.post("/executions/register")
+@router.post("/executions")
 async def register_execution(
     request: Request,
     response: Response,
@@ -367,3 +368,27 @@ async def delivery_status(
     if registration is None:
         return {"event_id": event_id, "status": "NOT_FOUND"}
     return {"event_id": event_id, "status": registration.status}
+
+
+@router.get("/executions/{registration_id}")
+async def execution_status(
+    registration_id: UUID, db: Annotated[AsyncSession, Depends(get_session)]
+) -> dict[str, object]:
+    registration = await db.scalar(
+        select(N8nExecutionRegistration).where(
+            N8nExecutionRegistration.registration_id == registration_id
+        )
+    )
+    if registration is None:
+        raise HTTPException(404, "execution registration not found")
+    return {
+        "registration_id": str(registration.registration_id),
+        "delivery_id": str(registration.delivery_id),
+        "event_id": registration.event_id,
+        "workflow_id": registration.workflow_id,
+        "workflow_version": registration.workflow_version,
+        "execution_id": registration.execution_id,
+        "environment": registration.environment,
+        "status": registration.status,
+        "registered_at": registration.registered_at.isoformat(),
+    }

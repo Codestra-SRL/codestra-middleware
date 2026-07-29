@@ -23,6 +23,7 @@ from app.db.models import (
 from app.db.session import get_session
 
 router = APIRouter(prefix="/v1/telephony", tags=["telephony"])
+PERMANENT_EXTENSION_EXCLUSIONS = frozenset({6000, 6110, 6197, 6198})
 
 
 class AuditRequest(BaseModel):
@@ -113,7 +114,7 @@ async def pools(session: AsyncSession = Depends(get_session)):
 @router.get("/extensions/availability")
 async def availability(extension: int, evidence_complete: bool = False):
     # A bare range check is never availability evidence.
-    if extension in {1001, 6101}:
+    if extension in PERMANENT_EXTENSION_EXCLUSIONS:
         classification = ExtensionState.EXCLUDED
     else:
         classification = ExtensionState.UNKNOWN_REQUIRES_REVIEW
@@ -181,7 +182,8 @@ async def reserve(
     selected = None
     evidence_hash = None
     for extension in range(pool.range_start, pool.range_end + 1):
-        if extension in active or extension in {1001, 6101}:
+        configured_exclusions = set(pool.excluded_extensions or [])
+        if extension in active or extension in PERMANENT_EXTENSION_EXCLUSIONS or extension in configured_exclusions:
             continue
         result = audit_extension(
             extension, payload.evidence_by_extension.get(extension, {})

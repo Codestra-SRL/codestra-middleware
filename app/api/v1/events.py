@@ -1,6 +1,7 @@
 """Fast-ACK VICIdial ingress; PostgreSQL commit is the durability boundary."""
 
 import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import ValidationError
@@ -8,6 +9,13 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.generic_events import (
+    EventSchema,
+    GenericEventError,
+    SchemaRegistry,
+    validate_generic_event,
+)
+from app.core.jwt_auth import JWTAuthError, KeycloakValidator
 from app.core.call_lifecycle import correlation_id as call_correlation_id, transition
 from app.core.security import SecurityError, payload_hash, verify_ingestion_signature
 from app.api.v1.publisher import _quarantine, _security_rejection
@@ -19,11 +27,189 @@ from app.db.models import (
     PublisherNonce,
     TelephonyCallLifecycle,
     TelephonyCallLifecycleEvent,
+    IntegrationEventType,
 )
 from app.db.session import get_session
 from app.schemas.registry import Envelope, parse_event
 
 router = APIRouter(prefix="/api/v1/events", tags=["events"])
+
+
+async def _generic_authenticate(
+    authorization: str, *, expected_environment: str, scope: str
+) -> dict:
+    if not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "service token required")
+    try:
+        return KeycloakValidator(
+            issuer=settings.keycloak_issuer,
+            audience=settings.keycloak_audience or settings.registry_service_audience,
+            jwks_url=settings.keycloak_jwks_url,
+            authorized_parties=frozenset(
+                x.strip() for x in settings.keycloak_authorized_parties.split(",") if x.strip()
+            ),
+            required_scopes=frozenset({scope}),
+            required_environment=expected_environment,
+        ).validate(authorization[7:].strip())
+    except JWTAuthError as exc:
+        raise HTTPException(401, "service token rejected") from exc
+
+
+async def _event_registry(db: AsyncSession) -> SchemaRegistry:
+    now = datetime.now(timezone.utc)
+    rows = (
+        await db.execute(
+            select(IntegrationEventType).where(
+                IntegrationEventType.active.is_(True),
+                IntegrationEventType.kill_switch.is_(False),
+                IntegrationEventType.effective_at <= now,
+                (IntegrationEventType.expires_at.is_(None) | (IntegrationEventType.expires_at > now)),
+            )
+        )
+    ).scalars().all()
+    return SchemaRegistry(
+        tuple(
+            EventSchema(
+                event_type=row.event_type,
+                schema_version=row.schema_version,
+                producer_service=row.producer_service,
+            )
+            for row in rows
+        )
+    )
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def ingest_generic_event(
+    request: Request,
+    response: Response,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_codestra_timestamp: str | None = Header(default=None, alias="X-Codestra-Timestamp"),
+    x_codestra_nonce: str | None = Header(default=None, alias="X-Codestra-Nonce"),
+    x_codestra_body_sha256: str | None = Header(default=None, alias="X-Codestra-Body-SHA256"),
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    """Strict producer gateway; no downstream delivery is performed here."""
+    if request.headers.get("content-type", "").split(";", 1)[0].lower() != "application/json":
+        raise HTTPException(400, "application/json is required")
+    body = await request.body()
+    if len(body) > settings.request_max_bytes:
+        raise HTTPException(413, "request too large")
+    if not authorization or not x_codestra_timestamp or not x_codestra_nonce or not x_codestra_body_sha256:
+        raise HTTPException(401, "service authentication headers are required")
+    claims = await _generic_authenticate(
+        authorization,
+        expected_environment=settings.environment,
+        scope="events.create",
+    )
+    try:
+        raw = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "malformed JSON") from exc
+    from app.core.automation import canonical_hash
+
+    supplied_body_hash = x_codestra_body_sha256.removeprefix("sha256:")
+    if canonical_hash(raw) != supplied_body_hash:
+        raise HTTPException(409, "body hash mismatch")
+    if not idempotency_key:
+        raise HTTPException(400, "idempotency key is required")
+    registry = await _event_registry(db)
+    try:
+        event = validate_generic_event(
+            raw,
+            registry=registry,
+            expected_environment=settings.environment,
+            max_lifetime_seconds=settings.signature_ttl_seconds,
+        )
+    except GenericEventError as exc:
+        raise HTTPException(exc.status_code, exc.code) from exc
+    if idempotency_key != event.idempotency_key:
+        raise HTTPException(409, "idempotency key does not match event")
+    subject = str(claims.get("sub") or claims.get("azp") or "unknown")
+    if not x_codestra_nonce or len(x_codestra_nonce) > 128:
+        raise HTTPException(401, "invalid nonce")
+    if await db.get(PublisherNonce, (subject, x_codestra_nonce)):
+        raise HTTPException(409, "replayed request")
+    db.add(
+        PublisherNonce(
+            key_id=subject,
+            nonce=x_codestra_nonce,
+            signed_at=int(x_codestra_timestamp),
+            expires_at=event.expires_at,
+        )
+    )
+    payload_digest = event.payload_hash.removeprefix("sha256:")
+    request_digest = canonical_hash(raw)
+    key_digest = hashlib.sha256(idempotency_key.encode()).hexdigest()
+    scope = f"generic-event:{subject}"
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:value, 0))"), {"value": f"{scope}:{key_digest}"})
+    prior = await db.scalar(select(IdempotencyRecord).where(IdempotencyRecord.scope == scope, IdempotencyRecord.key_hash == key_digest))
+    if prior:
+        if prior.request_hash != request_digest:
+            await db.rollback()
+            raise HTTPException(409, "idempotency key conflict")
+        await db.commit()
+        response.status_code = status.HTTP_200_OK
+        return {**prior.response, "idempotency_status": "DUPLICATE"}
+    incoming = IntegrationEvent(
+        idempotency_key=key_digest,
+        event_type=event.event_type,
+        schema_version=event.schema_version,
+        original_event_id=event.event_id,
+        source_system=event.producer.service_key,
+        correlation_id=event.correlation_id,
+        payload_json=event.payload,
+        payload_hash=payload_digest,
+        state="accepted",
+    )
+    db.add(incoming)
+    await db.flush()
+    result = {
+        "schema_version": "1.0",
+        "event_id": event.event_id,
+        "correlation_id": event.correlation_id,
+        "persisted": True,
+        "idempotency_status": "NEW",
+        "state": "accepted",
+    }
+    db.add(IdempotencyRecord(scope=scope, key_hash=key_digest, request_hash=request_digest, response=result, status_code=201, event_id=incoming.id, expires_at=event.expires_at))
+    db.add(AuditEvent(action="generic.event.accepted", subject=event.event_id, correlation_id=event.correlation_id, decision="ACCEPT", redacted_payload={"event_type": event.event_type, "producer": event.producer.service_key}))
+    await db.commit()
+    return result
+
+
+@router.get("/{event_id}")
+async def read_generic_event(
+    event_id: str,
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    row = await db.scalar(
+        select(IntegrationEvent).where(IntegrationEvent.original_event_id == event_id)
+    )
+    if row is None:
+        raise HTTPException(404, "event not found")
+    return {
+        "event_id": row.original_event_id,
+        "event_type": row.event_type,
+        "schema_version": row.schema_version,
+        "correlation_id": row.correlation_id,
+        "state": row.state,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+@router.get("/{event_id}/status")
+async def read_generic_event_status(
+    event_id: str,
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    row = await db.scalar(
+        select(IntegrationEvent).where(IntegrationEvent.original_event_id == event_id)
+    )
+    if row is None:
+        raise HTTPException(404, "event not found")
+    return {"event_id": row.original_event_id, "state": row.state}
 
 # Compatibility import for older callers; unlike the previous permissive model,
 # this is now the strict canonical envelope.

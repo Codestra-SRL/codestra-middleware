@@ -74,7 +74,7 @@ def audit_extension(extension: int, evidence: Mapping[str, str]) -> AuditResult:
             if value not in {"AVAILABLE", "ABSENT", "CLEAR", "NONE"}
         )
     )
-    if extension in {1001, 6101}:
+    if extension in {1001, 6101, 6000, 6110, 6197, 6198}:
         state = ExtensionState.EXCLUDED
     elif missing:
         state = ExtensionState.UNKNOWN_REQUIRES_REVIEW

@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from app.api.v1.automation import router as automation_router
+from app.api.v1.allocations import router as allocations_router
 from app.api.v1.campaign_search import router as campaign_search_router
 from app.api.v1.control import router as control_router
 from app.api.v1.events import router as events_router
@@ -16,6 +17,8 @@ from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.publisher import router as publisher_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.registry import router as registry_router
+from app.api.v1.schemas import internal_router as internal_schemas_router
+from app.api.v1.schemas import router as schemas_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
@@ -25,6 +28,7 @@ app = FastAPI(title="Codestra Middleware", version="0.2.0")
 app.include_router(events_router)
 app.include_router(control_router)
 app.include_router(automation_router)
+app.include_router(allocations_router)
 app.include_router(reports_router)
 app.include_router(operations_router)
 app.include_router(lead_reconciliation_router)
@@ -38,6 +42,8 @@ app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)
+app.include_router(schemas_router)
+app.include_router(internal_schemas_router)
 app.mount("/metrics", make_asgi_app())
 
 SIGNED_WEBHOOK_PATHS = frozenset(
@@ -48,6 +54,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v1/n8n/executions/register",
         "/api/v1/n8n/acknowledgements",
         "/api/v1/registry/resolve",
+        "/api/v1/events",
     }
 )
 SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})

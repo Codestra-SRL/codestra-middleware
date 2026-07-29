@@ -681,6 +681,7 @@ class TelephonyExtensionPool(Base):
     range_start: Mapped[int] = mapped_column(Integer, nullable=False)
     range_end: Mapped[int] = mapped_column(Integer, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    excluded_extensions: Mapped[list[int]] = mapped_column(JSONB, nullable=False, default=list)
     __table_args__ = (
         CheckConstraint("range_start >= 6100", name="ck_telephony_pool_start"),
         CheckConstraint("range_end <= 9999", name="ck_telephony_pool_end"),
@@ -910,6 +911,7 @@ class TelephonyExtensionReservation(Base):
     __table_args__ = (
         CheckConstraint("extension <> 6101", name="ck_telephony_reservation_6101"),
         CheckConstraint("extension <> 1001", name="ck_telephony_reservation_1001"),
+        CheckConstraint("extension NOT IN (6000, 6110, 6197, 6198)", name="ck_telephony_reserved_extensions"),
         CheckConstraint(
             "state IN ('RESERVED','DISABLED_READY','ACTIVE','SUSPENDED','RELEASED','EXPIRED','COOLDOWN')",
             name="ck_telephony_reservation_state",
@@ -1265,6 +1267,22 @@ class IntegrationSchemaVersion(Base):
             "api_version",
             name="uq_integration_schema_key",
         ),
+    )
+
+
+class IntegrationEventType(Base):
+    __tablename__ = "integration_event_type"
+    event_type_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    producer_service: Mapped[str] = mapped_column(String(64), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    kill_switch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("event_type", "schema_version", "producer_service", name="uq_integration_event_binding"),
     )
 
 
