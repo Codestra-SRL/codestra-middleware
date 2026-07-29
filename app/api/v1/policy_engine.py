@@ -4,9 +4,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from prometheus_client import Counter
+from pydantic import ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.policy_engine import PolicyRequest, PolicyResult, evaluate
+from app.core.telephony_commands import payload_hash
 from app.db.models import AuditEvent, PolicyDecision
 from app.db.session import get_session
 
@@ -19,10 +21,16 @@ DECISIONS = Counter(
 )
 
 
-@router.post("/decisions", response_model=PolicyResult)
+class PolicyDecisionResponse(PolicyResult):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    authorization_scope: dict[str, str]
+    decision_hash: str
+
+
+@router.post("/decisions", response_model=PolicyDecisionResponse)
 async def decide(
     request: PolicyRequest, db: AsyncSession = Depends(get_session)
-) -> PolicyResult:
+) -> PolicyDecisionResponse:
     result = evaluate(request)
     payload = result.model_dump(mode="json")
     payload["authorization_scope"] = {
@@ -61,4 +69,8 @@ async def decide(
     DECISIONS.labels(
         result.action, str(result.allow).lower(), str(result.enforced).lower()
     ).inc()
-    return result
+    return PolicyDecisionResponse(
+        **result.model_dump(),
+        authorization_scope=payload["authorization_scope"],
+        decision_hash=payload_hash(payload),
+    )

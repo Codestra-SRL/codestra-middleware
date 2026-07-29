@@ -132,6 +132,15 @@ def test_policy_api_requires_auth_and_audits_decision(monkeypatch):
         )
         assert response.status_code == 200
         assert response.json()["allow"] is True
+        assert len(response.json()["decision_hash"]) == 64
+        assert response.json()["authorization_scope"] == {
+            "action": "voice",
+            "subject": "synthetic-subject",
+            "resource": "synthetic-resource",
+            "business_unit": "MOY",
+            "campaign": "TEST_SYN",
+            "agent": "SYNTHETIC",
+        }
         assert session.add.call_count == 2
         session.commit.assert_awaited_once()
     finally:
