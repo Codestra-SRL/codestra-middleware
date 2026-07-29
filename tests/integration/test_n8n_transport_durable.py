@@ -6,14 +6,24 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from fastapi import Response
+import httpx
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.requests import Request
 
+import app.api.v1.n8n_transport as transport_api
+import app.adapters.odoo.results as odoo_results
+from app.adapters.odoo.results import deliver_result
 from app.api.v1.n8n_transport import acknowledge_execution, register_execution
 from app.core.automation import canonical_hash, sign_exact_body
 from app.core.config import settings
-from app.db.models import BroadEventDelivery, IntegrationEvent, OutboxEvent
+from app.db.models import (
+    BroadEventDelivery,
+    IntegrationEvent,
+    OdooResultDelivery,
+    OutboxEvent,
+)
 
 
 def request_for(body: bytes) -> Request:
@@ -35,6 +45,16 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
         pytest.skip("requires an explicitly provisioned disposable database")
     assert "diag" in database_url or "rehearsal" in database_url
     monkeypatch.setattr(settings, "webhook_shared_secret", "synthetic-test-secret")
+
+    async def allow_synthetic(request, db, *args):
+        return await request.body()
+
+    monkeypatch.setattr(transport_api, "authenticate_service", allow_synthetic)
+
+    async def synthetic_token(**kwargs):
+        return "synthetic-short-lived-token"
+
+    monkeypatch.setattr(odoo_results, "client_credentials_token", synthetic_token)
 
     async def scenario():
         engine = create_async_engine(database_url, pool_pre_ping=True)
@@ -80,31 +100,38 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
             execution_id = f"execution-{uuid4()}"
             registration = {
                 "schema_version": "1.0",
+                "registration_id": str(uuid4()),
                 "delivery_id": str(delivery.delivery_id),
                 "event_id": event_public_id,
                 "workflow_id": workflow_id,
                 "workflow_version": workflow_version,
                 "execution_id": execution_id,
                 "payload_hash": payload_hash,
+                "request_hash": "d" * 64,
                 "environment": "production",
-                "accepted_at": datetime.now(UTC).isoformat(),
+                "idempotency_key": f"registration-{event_public_id}",
+                "correlation_id": correlation_id,
+                "received_at": datetime.now(UTC).isoformat(),
+                "registered_at": datetime.now(UTC).isoformat(),
             }
             raw_registration = json.dumps(registration).encode()
             timestamp = str(int(time.time()))
             response = await register_execution(
                 request_for(raw_registration),
+                Response(),
+                "Bearer synthetic",
                 timestamp,
                 uuid4().hex,
-                "codestra-n8n-production",
-                sign_exact_body(raw_registration, settings.webhook_shared_secret),
+                f"sha256={sign_exact_body(raw_registration, settings.webhook_shared_secret)}",
                 session,
             )
-            assert response["idempotency_status"] == "created"
+            assert response["idempotency_status"] == "NEW"
 
             acknowledgement_id = uuid4()
             acknowledgement = {
                 "schema_version": "1.0",
                 "acknowledgement_id": str(acknowledgement_id),
+                "registration_id": registration["registration_id"],
                 "delivery_id": str(delivery.delivery_id),
                 "event_id": event_public_id,
                 "workflow_id": workflow_id,
@@ -118,23 +145,26 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
                 "attempt_number": 1,
                 "correlation_id": correlation_id,
                 "policy_hash": policy_hash,
+                "metrics": {"duration_ms": 0},
             }
             raw_ack = json.dumps(acknowledgement).encode()
             persisted = await acknowledge_execution(
                 request_for(raw_ack),
+                Response(),
+                "Bearer synthetic",
                 timestamp,
                 uuid4().hex,
-                "codestra-n8n-production",
-                sign_exact_body(raw_ack, settings.webhook_shared_secret),
+                f"sha256={sign_exact_body(raw_ack, settings.webhook_shared_secret)}",
                 session,
             )
             assert persisted["persisted"] is True
             duplicate = await acknowledge_execution(
                 request_for(raw_ack),
+                Response(),
+                "Bearer synthetic",
                 timestamp,
                 uuid4().hex,
-                "codestra-n8n-production",
-                sign_exact_body(raw_ack, settings.webhook_shared_secret),
+                f"sha256={sign_exact_body(raw_ack, settings.webhook_shared_secret)}",
                 session,
             )
             assert duplicate["persisted"] is True
@@ -153,6 +183,51 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
                 )
             )
             assert result_count == 1
+            result_delivery = await session.scalar(
+                select(OdooResultDelivery).where(
+                    OdooResultDelivery.acknowledgement_id == acknowledgement_id
+                )
+            )
+            assert result_delivery is not None
+            monkeypatch.setattr(settings, "odoo_result_delivery_enabled", True)
+            monkeypatch.setattr(
+                settings,
+                "odoo_results_url",
+                "https://odoo.internal.codestra.agency/codestra/integration/v1/results",
+            )
+
+            def odoo_callback(request):
+                submitted = json.loads(request.content)
+                response_body = {
+                    "schema_version": "1.0",
+                    "persisted": True,
+                    "idempotency_status": "NEW",
+                    "result_inbox_id": "90000001",
+                    "result_public_id": submitted["result_public_id"],
+                    "originating_outbox_public_id": submitted[
+                        "originating_outbox_public_id"
+                    ],
+                    "integration_status": "COMPLETED",
+                    "trace_id": "trace-90000001",
+                    "received_at": datetime.now(UTC).isoformat(),
+                }
+                response_body["response_hash"] = (
+                    f"sha256:{canonical_hash(response_body)}"
+                )
+                return httpx.Response(201, json=response_body)
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(odoo_callback),
+                follow_redirects=False,
+            ) as callback_client:
+                callback = await deliver_result(
+                    session,
+                    result_delivery.result_delivery_id,
+                    client=callback_client,
+                )
+            assert callback["result_inbox_id"] == "90000001"
+            await session.refresh(result_delivery)
+            assert result_delivery.status == "DELIVERED"
         await engine.dispose()
 
     asyncio.run(scenario())

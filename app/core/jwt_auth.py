@@ -17,6 +17,10 @@ class KeycloakValidator:
     jwks_url: str
     authorized_parties: frozenset[str]
     required_roles: frozenset[str] = frozenset()
+    required_scopes: frozenset[str] = frozenset()
+    required_environment: str | None = None
+    required_business_unit: str | None = None
+    required_campaign: str | None = None
 
     def validate(self, token: str) -> dict[str, Any]:
         if not all(
@@ -42,6 +46,26 @@ class KeycloakValidator:
         roles = set(claims.get("realm_access", {}).get("roles", []))
         if not self.required_roles.issubset(roles):
             raise JWTAuthError("required role denied")
+        scopes = set(str(claims.get("scope", "")).split())
+        if not self.required_scopes.issubset(scopes):
+            raise JWTAuthError("required scope denied")
+        if (
+            self.required_environment is not None
+            and claims.get("environment") != self.required_environment
+        ):
+            raise JWTAuthError("environment denied")
+        business_units = set(claims.get("business_units", []))
+        if (
+            self.required_business_unit is not None
+            and self.required_business_unit not in business_units
+        ):
+            raise JWTAuthError("business unit denied")
+        campaigns = set(claims.get("campaigns", []))
+        if (
+            self.required_campaign is not None
+            and self.required_campaign not in campaigns
+        ):
+            raise JWTAuthError("campaign denied")
         if (
             claims.get("typ") == "Bearer"
             and not claims.get("business_units")
