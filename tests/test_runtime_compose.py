@@ -1,0 +1,71 @@
+from pathlib import Path
+import re
+
+
+COMPOSE = (
+    Path(__file__).resolve().parents[1] / "deploy" / "compose.runtime.yaml"
+).read_text(encoding="utf-8")
+
+
+def _service_block(service_name: str) -> str:
+    match = re.search(
+        rf"(?ms)^  {re.escape(service_name)}:\n(?P<body>.*?)(?=^  [a-z0-9_-]+:\n|\Z)",
+        COMPOSE,
+    )
+    assert match is not None, f"missing runtime service: {service_name}"
+    return match.group("body")
+
+
+def test_separated_runtime_catalog_has_required_specialized_services() -> None:
+    expected_commands = {
+        "middleware-extension-allocator": "app.entrypoints.extension_allocator",
+        "middleware-telephony-provisioning": "app.entrypoints.telephony_provisioning",
+        "middleware-vicidial-adapter": "app.entrypoints.vicidial_adapter",
+        "middleware-pjsip-adapter": "app.entrypoints.pjsip_adapter",
+        "middleware-webphone-session-issuer": "app.entrypoints.webphone_session_issuer",
+    }
+
+    for service_name, entrypoint in expected_commands.items():
+        block = _service_block(service_name)
+        assert f"command: [python, -m, {entrypoint}]" in block
+        assert "<<: *" in block
+
+
+def test_specialized_services_use_distinct_secret_references() -> None:
+    expected_secrets = {
+        "middleware-extension-allocator": "middleware-extension-allocator-database-url",
+        "middleware-telephony-provisioning": "middleware-telephony-provisioning-database-url",
+        "middleware-vicidial-adapter": "middleware-vicidial-adapter-database-url",
+        "middleware-pjsip-adapter": "middleware-pjsip-adapter-database-url",
+        "middleware-webphone-session-issuer": "middleware-webphone-session-issuer-database-url",
+    }
+
+    for service_name, secret_name in expected_secrets.items():
+        block = _service_block(service_name)
+        assert f"/{secret_name}:/run/secrets/database_url:ro" in block
+
+
+def test_runtime_action_flags_default_fail_closed() -> None:
+    false_flags = (
+        "LIVE_WRITES_ENABLED",
+        "ODOO_WRITE_ENABLED",
+        "CALLBACK_DISPATCH_ENABLED",
+        "SEND_EVENTS",
+        "ENABLE_EXTERNAL_DELIVERY",
+        "VICIDIAL_WRITES_ENABLED",
+        "PRODUCTION_CALLBACKS_ENABLED",
+        "TRANSFERS_ENABLED",
+        "PRODUCTION_WEBRTC_ENABLED",
+        "PRODUCTION_N8N_ENABLED",
+        "ALLOW_LIVE_EMAIL",
+        "ALLOW_LIVE_SMS",
+        "ALLOW_CAMPAIGN_ACTIVATION",
+    )
+
+    for flag in false_flags:
+        assert f'{flag}: "false"' in COMPOSE
+
+
+def test_canonical_compose_does_not_pin_one_off_scheduler_release() -> None:
+    scheduler = _service_block("middleware-scheduler")
+    assert "\n    image:" not in scheduler
