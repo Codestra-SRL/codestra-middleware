@@ -23,6 +23,7 @@ class PolicyRequest(BaseModel):
     action: DecisionAction
     subject: str = Field(min_length=1, max_length=128)
     resource: str = Field(min_length=1, max_length=128)
+    environment: Literal["test", "staging", "production"] | None = None
     evaluated_at: datetime | None = None
     consent_allowed: bool | None = None
     consent_observed_at: datetime | None = None

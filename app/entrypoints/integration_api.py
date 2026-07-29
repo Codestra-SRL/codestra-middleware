@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from app.api.v1.automation import router as automation_router
+from app.api.v1.commands import router as commands_router
 from app.api.v1.control import router as control_router
 from app.api.v1.lead_reconciliation import router as lead_reconciliation_router
 from app.api.v1.mappings import router as mappings_router
@@ -18,6 +19,7 @@ from app.entrypoints.runtime import add_api_runtime, run_api
 
 SERVICE = "middleware-integration-api"
 routers = (
+    commands_router,
     control_router,
     automation_router,
     reports_router,

@@ -33,6 +33,250 @@ class Base(DeclarativeBase):
     pass
 
 
+class TelephonyCommandJournal(Base):
+    __tablename__ = "telephony_command_journal"
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    command_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, unique=True, default=lambda: f"CMD-{uuid4().hex}"
+    )
+    command_type: Mapped[str] = mapped_column(String(96), nullable=False)
+    aggregate_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregate_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    aggregate_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    business_unit_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    campaign_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    idempotency_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    causation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_decision_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    policy_decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    request_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    __table_args__ = (
+        CheckConstraint("aggregate_version >= 1", name="ck_telephony_command_version"),
+        CheckConstraint(
+            "environment IN ('staging','test','production')",
+            name="ck_telephony_command_environment",
+        ),
+        UniqueConstraint(
+            "environment",
+            "aggregate_type",
+            "aggregate_public_id",
+            "aggregate_version",
+            name="uq_telephony_command_aggregate_version",
+        ),
+        Index(
+            "ix_telephony_command_aggregate",
+            "aggregate_type",
+            "aggregate_public_id",
+            "aggregate_version",
+        ),
+        Index("ix_telephony_command_correlation", "correlation_id"),
+    )
+
+
+class TelephonyOperationJournal(Base):
+    __tablename__ = "telephony_operation_journal"
+    operation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    operation_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, unique=True, default=lambda: f"OPR-{uuid4().hex}"
+    )
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_command_journal.command_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    adapter_service_key: Mapped[str] = mapped_column(
+        String(144), nullable=False, default="telephony-adapter"
+    )
+    adapter_operation_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, default=""
+    )
+    target_system: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    target_resource_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=""
+    )
+    target_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, default=""
+    )
+    desired_state_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )
+    idempotency_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, default=lambda: uuid4().hex
+    )
+    transition_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    readback_endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    target_configuration_checksum: Mapped[str] = mapped_column(
+        String(71), nullable=False
+    )
+    target_attested: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    desired_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actual_hash: Mapped[str | None] = mapped_column(String(64))
+    readback_matches: Mapped[bool | None] = mapped_column(Boolean)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    response_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "(readback_matches IS NOT TRUE) OR (actual_hash IS NOT NULL)",
+            name="ck_telephony_operation_readback_hash",
+        ),
+        Index("ix_telephony_operation_correlation", "correlation_id"),
+    )
+
+
+class TelephonyOperationTransition(Base):
+    __tablename__ = "telephony_operation_transition"
+    transition_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    operation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_operation_journal.operation_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_command_journal.command_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    transition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "operation_id", "sequence", name="uq_telephony_transition_sequence"
+        ),
+        UniqueConstraint(
+            "operation_id",
+            "transition_hash",
+            name="uq_telephony_transition_hash",
+        ),
+    )
+
+
+class TelephonyTerminalResult(Base):
+    __tablename__ = "telephony_terminal_result"
+    result_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    result_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, unique=True, default=lambda: f"RES-{uuid4().hex}"
+    )
+    operation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_operation_journal.operation_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_command_journal.command_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    application_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    readback_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_system: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    requested_state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    applied_state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    observed_state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    application_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    readback_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    adapter_service_key: Mapped[str] = mapped_column(String(144), nullable=False)
+    adapter_configuration_checksum: Mapped[str] = mapped_column(
+        String(71), nullable=False
+    )
+    safe_summary: Mapped[str] = mapped_column(String(512), nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    readback_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    odoo_callback_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="PENDING"
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    reconciliation_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    immutable_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "result_hash", "operation_id", name="uq_telephony_result_binding"
+        ),
+        Index("ix_telephony_result_correlation", "correlation_id"),
+    )
+
+
+class TelephonyReconciliationRun(Base):
+    __tablename__ = "telephony_reconciliation_run"
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    run_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, unique=True, default=lambda: f"REC-{uuid4().hex}"
+    )
+    command_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_command_journal.command_id", ondelete="RESTRICT"),
+    )
+    environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    aggregate_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregate_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    target_system: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    evidence_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        Index("ix_telephony_reconciliation_correlation", "correlation_id"),
+    )
+
+
 class IntegrationEvent(Base):
     __tablename__ = "integration_event"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
