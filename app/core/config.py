@@ -59,8 +59,17 @@ class Settings(BaseSettings):
     vicidial_crl_file: str = ""
     callback_dispatch_enabled: bool = False
     messaging_enabled: bool = False
+    send_events: bool = False
     broad_event_delivery_enabled: bool = False
     production_n8n_enabled: bool = False
+    enable_external_delivery: bool = False
+    controlled_broad_event_activation: bool = False
+    broad_event_business_unit_allowlist: str = ""
+    broad_event_campaign_allowlist: str = ""
+    broad_event_workflow_allowlist: str = ""
+    broad_event_type_allowlist: str = ""
+    broad_event_activation_high_water_mark: str = ""
+    broad_event_submission_limit: int = 0
     email_dispatch_enabled: bool = False
     sms_dispatch_enabled: bool = False
     allow_live_email: bool = False
@@ -116,14 +125,18 @@ class Settings(BaseSettings):
     telephony_evidence_enabled: bool = False
 
     def validate_safety(self) -> None:
+        broad_event_switches = (
+            self.send_events,
+            self.broad_event_delivery_enabled,
+            self.production_n8n_enabled,
+            self.n8n_production_workflows_enabled,
+        )
         production_switches = (
             self.live_writes_enabled,
             self.allow_non_test_campaigns,
-            self.n8n_production_workflows_enabled,
             self.vicidial_write_enabled,
             self.messaging_enabled,
-            self.broad_event_delivery_enabled,
-            self.production_n8n_enabled,
+            self.enable_external_delivery,
             self.email_dispatch_enabled,
             self.sms_dispatch_enabled,
             self.allow_live_email,
@@ -135,6 +148,36 @@ class Settings(BaseSettings):
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
+        if any(broad_event_switches):
+            if not all(broad_event_switches):
+                raise ValueError("broad-event activation requires every canonical gate")
+            required_scope = (
+                self.broad_event_business_unit_allowlist,
+                self.broad_event_campaign_allowlist,
+                self.broad_event_workflow_allowlist,
+                self.broad_event_type_allowlist,
+                self.broad_event_activation_high_water_mark,
+            )
+            if (
+                not self.controlled_broad_event_activation
+                or not all(value.strip() for value in required_scope)
+                or self.broad_event_submission_limit not in range(1, 26)
+            ):
+                raise ValueError(
+                    "broad-event activation requires bounded explicit scope"
+                )
+
+    @property
+    def broad_event_pipeline_enabled(self) -> bool:
+        """Require every internal broad-event gate; external delivery is separate."""
+        return all(
+            (
+                self.send_events,
+                self.broad_event_delivery_enabled,
+                self.production_n8n_enabled,
+                self.n8n_production_workflows_enabled,
+            )
+        )
 
     def load_secret_files(self) -> None:
         """Load runtime secrets without placing their values in environment metadata."""
