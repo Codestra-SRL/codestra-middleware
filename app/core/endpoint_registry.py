@@ -11,12 +11,12 @@ from typing import Any, Protocol
 from redis.exceptions import RedisError
 from sqlalchemy import and_, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import (
+    IntegrationCredentialReference,
     IntegrationEndpoint,
     IntegrationEndpointVersion,
-    IntegrationCredentialReference,
     IntegrationRouteBinding,
     IntegrationSchemaVersion,
     IntegrationService,
@@ -234,6 +234,22 @@ class SqlEndpointRepository:
                 registry_generation=self.generation,
             )
         ]
+
+
+class SessionEndpointRepository:
+    """Resolve routes with a short independently managed database session."""
+
+    def __init__(
+        self, session_factory: async_sessionmaker[AsyncSession], generation: int = 0
+    ) -> None:
+        self.session_factory = session_factory
+        self.generation = generation
+
+    async def candidates(self, request: ResolutionRequest) -> list[ResolvedEndpoint]:
+        async with self.session_factory() as session:
+            return await SqlEndpointRepository(
+                session, generation=self.generation
+            ).candidates(request)
 
 
 @dataclass

@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
@@ -8,8 +8,7 @@ from app.core.policy_engine import PolicyRequest, evaluate
 from app.db.session import get_session
 from app.entrypoints.policy_engine import app
 
-
-NOW = datetime(2026, 7, 26, 15, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 26, 15, 0, tzinfo=UTC)
 
 
 def request(**overrides):
@@ -18,6 +17,7 @@ def request(**overrides):
         "action": "voice",
         "subject": "synthetic-subject",
         "resource": "synthetic-resource",
+        "environment": "staging",
         "evaluated_at": NOW,
         "consent_allowed": True,
         "consent_observed_at": NOW - timedelta(minutes=5),
@@ -81,7 +81,7 @@ def test_dnc_kill_switch_access_and_attempt_controls_deny():
 
 
 def test_timezone_midnight_dst_and_jurisdiction_boundaries():
-    dst_now = datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc)
+    dst_now = datetime(2026, 11, 1, 5, 30, tzinfo=UTC)
     overnight = evaluate(
         request(
             customer_timezone="America/New_York",
@@ -95,7 +95,7 @@ def test_timezone_midnight_dst_and_jurisdiction_boundaries():
     assert overnight.allow
     midnight_denied = evaluate(
         request(
-            evaluated_at=datetime(2026, 7, 26, 4, 0, tzinfo=timezone.utc),
+            evaluated_at=datetime(2026, 7, 26, 4, 0, tzinfo=UTC),
         )
     )
     assert "outside_calling_hours" in midnight_denied.reason_codes
@@ -132,6 +132,16 @@ def test_policy_api_requires_auth_and_audits_decision(monkeypatch):
         )
         assert response.status_code == 200
         assert response.json()["allow"] is True
+        assert len(response.json()["decision_hash"]) == 64
+        assert response.json()["authorization_scope"] == {
+            "action": "voice",
+            "subject": "synthetic-subject",
+            "resource": "synthetic-resource",
+            "environment": "staging",
+            "business_unit": "MOY",
+            "campaign": "TEST_SYN",
+            "agent": "SYNTHETIC",
+        }
         assert session.add.call_count == 2
         session.commit.assert_awaited_once()
     finally:

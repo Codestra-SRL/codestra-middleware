@@ -1,9 +1,13 @@
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 COMPOSE = (
     Path(__file__).resolve().parents[1] / "deploy" / "compose.runtime.yaml"
+).read_text(encoding="utf-8")
+TELEPHONY_COMMAND_WORKER = (
+    Path(__file__).resolve().parents[1]
+    / "deploy"
+    / "compose.telephony-command-worker.yaml.example"
 ).read_text(encoding="utf-8")
 
 
@@ -70,3 +74,18 @@ def test_runtime_action_flags_default_fail_closed() -> None:
 def test_canonical_compose_does_not_pin_one_off_scheduler_release() -> None:
     scheduler = _service_block("middleware-scheduler")
     assert "\n    image:" not in scheduler
+
+
+def test_telephony_command_worker_template_is_source_only_and_fail_closed() -> None:
+    assert "compose.telephony-command-worker.yaml.example" not in COMPOSE
+    assert "app.entrypoints.telephony_command_worker" in TELEPHONY_COMMAND_WORKER
+    assert 'TELEPHONY_COMMAND_WORKER_ENABLED: "false"' in TELEPHONY_COMMAND_WORKER
+    assert (
+        "TELEPHONY_CREDENTIAL_DIRECTORY: /run/secrets/middleware-telephony-client"
+        in TELEPHONY_COMMAND_WORKER
+    )
+    assert "profiles: [telephony-command-worker]" in TELEPHONY_COMMAND_WORKER
+    assert "middleware-telephony-command-worker-database-url" in (
+        TELEPHONY_COMMAND_WORKER
+    )
+    assert "middleware-telephony-client:ro" in TELEPHONY_COMMAND_WORKER

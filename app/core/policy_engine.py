@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from typing import Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 POLICY_VERSION = "2026-07-26.1"
 MAX_FRESHNESS = timedelta(hours=24)
@@ -23,6 +22,7 @@ class PolicyRequest(BaseModel):
     action: DecisionAction
     subject: str = Field(min_length=1, max_length=128)
     resource: str = Field(min_length=1, max_length=128)
+    environment: Literal["test", "staging", "production"] | None = None
     evaluated_at: datetime | None = None
     consent_allowed: bool | None = None
     consent_observed_at: datetime | None = None
@@ -80,9 +80,9 @@ def _in_window(current: time, start: time, end: time) -> bool:
 
 
 def evaluate(request: PolicyRequest) -> PolicyResult:
-    now = request.evaluated_at or datetime.now(timezone.utc)
+    now = request.evaluated_at or datetime.now(UTC)
     if not _aware(now):
-        now = now.replace(tzinfo=timezone.utc)
+        now = now.replace(tzinfo=UTC)
     reasons: list[str] = []
     freshness: dict[str, str] = {}
 

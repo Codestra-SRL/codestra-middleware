@@ -1,11 +1,11 @@
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 
 from app.core.notifications import (
     Channel,
-    CommandType,
     CommandState,
+    CommandType,
     Decision,
     InvalidNotificationCommand,
     InvalidNotificationTransition,
@@ -19,7 +19,7 @@ from app.core.notifications import (
 
 
 def policy(**overrides):
-    now = datetime(2026, 7, 28, 15, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 28, 15, tzinfo=UTC)
     values = {
         "channel": Channel.EMAIL,
         "organization_id": "ORG-1",
@@ -74,8 +74,8 @@ def test_quiet_hours_cross_midnight():
     assert (
         evaluate_policy(
             policy(
-                requested_at=datetime(2026, 7, 28, 23, tzinfo=timezone.utc),
-                expires_at=datetime(2026, 7, 29, 0, tzinfo=timezone.utc),
+                requested_at=datetime(2026, 7, 28, 23, tzinfo=UTC),
+                expires_at=datetime(2026, 7, 29, 0, tzinfo=UTC),
                 quiet_hours_start=time(22),
                 quiet_hours_end=time(8),
             )
@@ -120,12 +120,12 @@ def test_payload_hash_is_exact_bytes():
 
 
 def command(**overrides):
-    now = datetime(2026, 7, 29, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 29, 12, tzinfo=UTC)
     values = {
         "schema_version": "notification-command.v1",
         "command_id": "CMD-1",
         "command_type": CommandType.EMAIL_SEND,
-        "idempotency_key": "IDEMPOTENCY-1",
+        "idempotency_key": "test-test-test",
         "correlation_id": "CORRELATION-1",
         "causation_id": "CAUSATION-1",
         "organization_id": "ORG-1",
@@ -171,7 +171,7 @@ def test_common_command_contract_accepts_complete_tokenized_metadata():
         {"template_version": 0},
         {"policy_hash": "short"},
         {
-            "not_before": datetime(2026, 7, 29, 11, tzinfo=timezone.utc),
+            "not_before": datetime(2026, 7, 29, 11, tzinfo=UTC),
         },
     ],
 )
