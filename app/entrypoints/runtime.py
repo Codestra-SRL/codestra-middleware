@@ -30,6 +30,11 @@ WORKER_CYCLES = Counter(
     "codestra_worker_cycles_total", "Worker cycles", ["service", "result"]
 )
 WORKER_READY = Gauge("codestra_worker_ready", "Worker readiness", ["service"])
+FEATURE_FLAG_STATE = Gauge(
+    "codestra_feature_flag_state",
+    "Canonical fail-closed feature flag state",
+    ["service", "flag"],
+)
 CORRELATION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _RATE_WINDOWS: OrderedDict[str, deque[float]] = OrderedDict()
 MAX_RATE_IDENTITIES = 4096
@@ -65,6 +70,19 @@ def configure_logging() -> None:
 
 def validate_runtime(service: str, queue: str | None = None) -> None:
     settings.validate_safety()
+    canonical_flags = {
+        "send_events": settings.send_events,
+        "broad_event_delivery_enabled": settings.broad_event_delivery_enabled,
+        "production_n8n_enabled": settings.production_n8n_enabled,
+        "n8n_production_workflows_enabled": (settings.n8n_production_workflows_enabled),
+        "enable_external_delivery": settings.enable_external_delivery,
+    }
+    for flag, enabled in canonical_flags.items():
+        FEATURE_FLAG_STATE.labels(service=service, flag=flag).set(int(enabled))
+    logger.info(
+        "canonical feature flags loaded",
+        extra={"result": json.dumps(canonical_flags, sort_keys=True)},
+    )
     expected = os.getenv("SERVICE_NAME")
     if expected and expected != service:
         raise RuntimeError(f"SERVICE_NAME must be {service}")
@@ -170,6 +188,14 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "live_writes_enabled": settings.live_writes_enabled,
             "odoo_delivery_enabled": settings.odoo_delivery_enabled,
             "n8n_delivery_enabled": settings.n8n_delivery_enabled,
+            "send_events": settings.send_events,
+            "broad_event_delivery_enabled": settings.broad_event_delivery_enabled,
+            "production_n8n_enabled": settings.production_n8n_enabled,
+            "n8n_production_workflows_enabled": (
+                settings.n8n_production_workflows_enabled
+            ),
+            "enable_external_delivery": settings.enable_external_delivery,
+            "broad_event_pipeline_enabled": settings.broad_event_pipeline_enabled,
         }
 
     app.mount("/metrics", make_asgi_app())

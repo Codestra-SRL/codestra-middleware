@@ -51,6 +51,7 @@ def test_runtime_action_flags_default_fail_closed() -> None:
         "ODOO_WRITE_ENABLED",
         "CALLBACK_DISPATCH_ENABLED",
         "SEND_EVENTS",
+        "BROAD_EVENT_DELIVERY_ENABLED",
         "ENABLE_EXTERNAL_DELIVERY",
         "VICIDIAL_WRITES_ENABLED",
         "PRODUCTION_CALLBACKS_ENABLED",
