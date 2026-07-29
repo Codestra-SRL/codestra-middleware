@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from typing import Any, Protocol
-from uuid import UUID
+
+import httpx
 
 from app.core.endpoint_registry import ResolutionRequest
 from app.core.endpoint_registry import ResolvedEndpoint
@@ -63,7 +64,9 @@ class TelephonyServiceClient:
         route_request = self._route(command, endpoint_key, mutation=True)
         route = await self.common_client.resolver.resolve(route_request)
         if not route.target_attestation_required:
-            raise TelephonyClientError("telephony mutation route must require attestation")
+            raise TelephonyClientError(
+                "telephony mutation route must require attestation"
+            )
         if not await self.attestor.attest(
             route=route,
             environment=command.environment,
@@ -72,35 +75,70 @@ class TelephonyServiceClient:
             correlation_id=command.correlation_id,
         ):
             raise TelephonyClientError("telephony target attestation failed")
-        response = await self.common_client.request_resolved(
-            route,
+        dispatch_key = payload_hash(
             {
-                "command_id": command_id,
-                **command.model_dump(mode="json"),
-            },
-            idempotency_key=command.idempotency_key,
-            request_id=command_id,
-            correlation_id=command.correlation_id,
-            causation_id=command.causation_id,
-            traceparent=traceparent,
+                "command_public_id": command.command_public_id or command_id,
+                "resolved_endpoint_id": route.endpoint_id,
+                "endpoint_configuration_version": route.endpoint_version_id,
+            }
         )
+        try:
+            response = await self.common_client.request_resolved(
+                route,
+                {
+                    "command_id": command_id,
+                    **command.model_dump(mode="json"),
+                },
+                idempotency_key=dispatch_key,
+                request_id=command_id,
+                correlation_id=command.correlation_id,
+                causation_id=command.causation_id,
+                traceparent=traceparent,
+            )
+        except httpx.TimeoutException:
+            operation_public_id = "OPR-" + dispatch_key[:32]
+            return {
+                "operation_id": operation_public_id,
+                "operation_public_id": operation_public_id,
+                "adapter_operation_id": dispatch_key,
+                "adapter_service_key": route.service_key,
+                "endpoint_id": route.endpoint_id,
+                "endpoint_version_id": route.endpoint_version_id,
+                "endpoint_key": endpoint_key,
+                "readback_endpoint_key": READBACK_ENDPOINTS[command.command_type],
+                "target_configuration_checksum": route.configuration_checksum,
+                "target_attested": True,
+                "desired_hash": payload_hash(command.desired_state()),
+                "ambiguous": True,
+            }
         response.raise_for_status()
         result = response.json()
         if not isinstance(result, dict) or not result.get("operation_id"):
             raise TelephonyClientError("invalid telephony operation acknowledgement")
-        try:
-            operation_id = str(UUID(str(result["operation_id"])))
-        except ValueError:
-            raise TelephonyClientError("telephony operation ID must be a UUID") from None
+        adapter_operation_id = str(result["operation_id"])
+        if len(adapter_operation_id) > 144:
+            raise TelephonyClientError("telephony operation ID is invalid")
+        operation_public_id = (
+            "OPR-"
+            + payload_hash(
+                {
+                    "command_public_id": command.command_public_id or command_id,
+                    "adapter_operation_id": adapter_operation_id,
+                }
+            )[:32]
+        )
         return {
-            "operation_id": operation_id,
+            "operation_id": operation_public_id,
+            "operation_public_id": operation_public_id,
+            "adapter_operation_id": adapter_operation_id,
+            "adapter_service_key": route.service_key,
+            "endpoint_id": route.endpoint_id,
+            "endpoint_version_id": route.endpoint_version_id,
             "endpoint_key": endpoint_key,
             "readback_endpoint_key": READBACK_ENDPOINTS[command.command_type],
             "target_configuration_checksum": route.configuration_checksum,
             "target_attested": True,
-            "desired_hash": payload_hash(
-                command.desired_state()
-            ),
+            "desired_hash": payload_hash(command.desired_state()),
         }
 
     async def readback(

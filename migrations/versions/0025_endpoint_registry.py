@@ -22,7 +22,12 @@ def upgrade() -> None:
         sa.Column("reference_key", sa.String(255), nullable=False, unique=True),
         sa.Column("provider", sa.String(64), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
     )
     op.create_table(
         "integration_service",
@@ -180,7 +185,12 @@ def upgrade() -> None:
         sa.Column("schema_reference", sa.String(512), nullable=False),
         sa.Column("checksum", sa.String(71), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.UniqueConstraint("service_key", "endpoint_key", "api_version", name="uq_integration_schema_key"),
+        sa.UniqueConstraint(
+            "service_key",
+            "endpoint_key",
+            "api_version",
+            name="uq_integration_schema_key",
+        ),
     )
     op.create_table(
         "integration_endpoint_audit",
@@ -191,7 +201,12 @@ def upgrade() -> None:
         sa.Column("previous_checksum", sa.String(71)),
         sa.Column("new_checksum", sa.String(71), nullable=False),
         sa.Column("correlation_id", sa.String(128), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
     )
     op.create_table(
         "integration_registry_generation",

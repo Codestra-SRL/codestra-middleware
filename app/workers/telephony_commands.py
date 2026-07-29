@@ -120,6 +120,7 @@ async def _run_while_lease(
 ) -> dict[str, Any]:
     """Abort external work if durable lease renewal stops or fails."""
     operation_task: asyncio.Future[dict[str, Any]] = asyncio.ensure_future(operation)
+
     async def lease_guard() -> dict[str, Any]:
         try:
             await asyncio.shield(heartbeat)
@@ -231,7 +232,7 @@ async def _persist_submission(
             or row.lease_owner != owner
         ):
             raise RuntimeError("telephony command submission ownership conflict")
-        operation_id = UUID(operation["operation_id"])
+        operation_public_id = str(operation["operation_public_id"])
         existing_for_command = await session.scalar(
             select(TelephonyOperationJournal).where(
                 TelephonyOperationJournal.command_id == command_id
@@ -240,21 +241,57 @@ async def _persist_submission(
         if existing_for_command is None:
             session.add(
                 TelephonyOperationJournal(
-                    operation_id=operation_id,
+                    operation_id=uuid4(),
+                    operation_public_id=operation_public_id,
                     command_id=command_id,
-                    state=TelephonyCommandState.SUBMITTED.value,
+                    state=(
+                        "AMBIGUOUS"
+                        if operation.get("ambiguous")
+                        else TelephonyCommandState.SUBMITTED.value
+                    ),
                     endpoint_key=operation["endpoint_key"],
                     readback_endpoint_key=operation["readback_endpoint_key"],
                     target_configuration_checksum=operation[
                         "target_configuration_checksum"
                     ],
                     target_attested=operation["target_attested"],
+                    adapter_service_key=operation["adapter_service_key"],
+                    adapter_operation_id=operation["adapter_operation_id"],
+                    target_system=(
+                        "ASTERISK"
+                        if command.command_type.value.startswith("telephony.asterisk.")
+                        else "VICIDIAL"
+                    ),
+                    target_resource_type=(
+                        "ENDPOINT"
+                        if command.payload.endpoint_public_id
+                        else "PHONE"
+                        if command.payload.phone_public_id
+                        else "USER"
+                    ),
+                    target_public_id=(
+                        command.payload.endpoint_public_id
+                        or command.payload.phone_public_id
+                        or command.payload.agent_public_id
+                        or command.aggregate_public_id
+                    ),
+                    desired_state_version=command.payload.desired_state_version,
+                    idempotency_hash=payload_hash(
+                        {
+                            "command_public_id": command.command_public_id
+                            or str(command_id),
+                            "resolved_endpoint_id": operation["endpoint_id"],
+                            "endpoint_configuration_version": operation[
+                                "endpoint_version_id"
+                            ],
+                        }
+                    ),
                     desired_hash=operation["desired_hash"],
                     correlation_id=command.correlation_id,
                     response_json={},
                 )
             )
-        elif existing_for_command.operation_id != operation_id:
+        elif existing_for_command.operation_public_id != operation_public_id:
             raise RuntimeError("adapter operation idempotency conflict")
         # Keep the submitting worker's lease across the durable
         # submission-to-readback handoff. Exposing READBACK_PENDING here would
@@ -293,7 +330,9 @@ async def dispatch_one(
         )
         operation = (
             {
-                "operation_id": str(existing.operation_id),
+                "operation_id": existing.operation_public_id,
+                "operation_public_id": existing.operation_public_id,
+                "adapter_operation_id": existing.adapter_operation_id,
                 "endpoint_key": existing.endpoint_key,
                 "readback_endpoint_key": existing.readback_endpoint_key,
                 "target_configuration_checksum": (
@@ -326,9 +365,7 @@ async def dispatch_one(
                 session_factory, command_id, owner, command, operation
             )
         readback = await _run_while_lease(
-            client.readback(
-                command, operation, traceparent=traceparent_factory()
-            ),
+            client.readback(command, operation, traceparent=traceparent_factory()),
             heartbeat,
         )
     except Exception as exc:
@@ -343,7 +380,7 @@ async def dispatch_one(
             await close()
 
     state = (
-        TelephonyCommandState.SUCCEEDED
+        TelephonyCommandState.ODOO_RESULT_PENDING
         if readback["readback_matches"]
         else TelephonyCommandState.RECONCILIATION_REQUIRED
     )

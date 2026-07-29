@@ -52,11 +52,7 @@ def build_client_factory() -> Callable[[], TelephonyDispatcher]:
         if not reference or Path(reference).name != reference:
             raise RuntimeError("invalid telephony credential reference")
         path = credential_root / reference
-        if (
-            not path.is_file()
-            or path.is_symlink()
-            or path.stat().st_mode & 0o077
-        ):
+        if not path.is_file() or path.is_symlink() or path.stat().st_mode & 0o077:
             raise RuntimeError("telephony credential reference is not protected")
         return path.read_text().strip()
 
@@ -70,9 +66,7 @@ def build_client_factory() -> Callable[[], TelephonyDispatcher]:
             stale_grace_seconds=settings.registry_stale_grace_seconds,
         ),
     )
-    token_manager = TokenManager(
-        settings.telephony_service_client_id, load_private_key
-    )
+    token_manager = TokenManager(settings.telephony_service_client_id, load_private_key)
 
     def factory() -> TelephonyDispatcher:
         common = CommonServiceClient(

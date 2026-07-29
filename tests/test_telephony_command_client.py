@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
@@ -7,6 +8,11 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from app.api.v1.commands import (
+    OperationRegistration,
+    OperationTransition,
+    TerminalResultRequest,
+)
 from app.adapters.telephony.client import (
     TelephonyClientError,
     TelephonyReadbackPending,
@@ -20,6 +26,7 @@ from app.core.telephony_commands import (
     TelephonyCommandRequest,
     TelephonyCommandType,
     payload_hash,
+    stable_result_idempotency_key,
 )
 from app.workers.telephony_commands import (
     _run_while_lease,
@@ -106,6 +113,7 @@ def test_all_command_routes_are_registry_keys_with_readback():
 
 
 def test_canonical_nested_command_contract_is_normalized_without_extension():
+    requested_at = datetime.now(UTC)
     value = TelephonyCommandRequest.model_validate(
         {
             "schema_version": "1.0",
@@ -142,13 +150,101 @@ def test_canonical_nested_command_contract_is_normalized_without_extension():
             "correlation_id": "COR-SYNTHETIC-001",
             "causation_id": "CAU-SYNTHETIC-001",
             "policy_hash": "sha256:" + "3" * 64,
-            "requested_at": "2026-07-29T20:00:00Z",
-            "expires_at": "2026-07-29T20:05:00Z",
+            "requested_at": requested_at.isoformat(),
+            "expires_at": (requested_at + timedelta(minutes=5)).isoformat(),
         }
     )
     assert value.payload.endpoint_public_id == "EPT-SYNTHETIC-001"
     assert value.payload.allocation_reservation_id == "RSV-SYNTHETIC-001"
     assert "extension" not in value.model_dump_json()
+
+
+def test_operation_transition_and_result_contracts_are_strict():
+    registration = OperationRegistration.model_validate(
+        {
+            "schema_version": "1.0",
+            "operation_public_id": "OPR-SYNTHETIC-001",
+            "command_public_id": "CMD-SYNTHETIC-001",
+            "adapter_service_key": "codestra-telephony-adapter-staging",
+            "adapter_operation_id": "ADP-OP-SYNTHETIC-001",
+            "target_system": "ASTERISK",
+            "target_resource_type": "ENDPOINT",
+            "target_public_id": "EPT-SYNTHETIC-001",
+            "desired_state_version": 6,
+            "desired_state_hash": "sha256:" + "1" * 64,
+            "idempotency_key": "IDM-OPR-SYNTHETIC-001",
+            "correlation_id": "COR-SYNTHETIC-001",
+            "registered_at": "2026-07-29T20:00:01Z",
+        }
+    )
+    transition_binding = {
+        "schema_version": "1.0",
+        "command_public_id": registration.command_public_id,
+        "state": "APPLYING",
+        "target_system": registration.target_system,
+        "target_resource_type": registration.target_resource_type,
+        "target_public_id": registration.target_public_id,
+        "desired_state_version": registration.desired_state_version,
+        "adapter_service_key": registration.adapter_service_key,
+        "environment": "staging",
+        "correlation_id": registration.correlation_id,
+        "transition_sequence": 1,
+        "occurred_at": "2026-07-29T20:00:02Z",
+    }
+    transition = OperationTransition.model_validate(
+        {
+            **transition_binding,
+            "transition_hash": "sha256:"
+            + payload_hash(
+                OperationTransition.model_validate(
+                    {
+                        **transition_binding,
+                        "transition_hash": "sha256:" + "0" * 64,
+                    }
+                ).model_dump(mode="json", exclude={"transition_hash"})
+            ),
+        }
+    )
+    assert transition.transition_sequence == 1
+    result = TerminalResultRequest.model_validate(
+        {
+            "schema_version": "1.0",
+            "result_public_id": "RES-SYNTHETIC-001",
+            "command_public_id": registration.command_public_id,
+            "operation_public_id": registration.operation_public_id,
+            "target_system": "ASTERISK",
+            "target_resource_type": "ENDPOINT",
+            "target_public_id": "EPT-SYNTHETIC-001",
+            "application_status": "APPLIED",
+            "readback_status": "READBACK_VERIFIED",
+            "requested_state_version": 6,
+            "applied_state_version": 6,
+            "observed_state_version": 6,
+            "application_hash": "sha256:" + "2" * 64,
+            "readback_hash": "sha256:" + "3" * 64,
+            "result_hash": "sha256:" + "4" * 64,
+            "adapter_service_key": registration.adapter_service_key,
+            "adapter_configuration_checksum": "sha256:" + "5" * 64,
+            "correlation_id": registration.correlation_id,
+            "policy_hash": "sha256:" + "6" * 64,
+            "applied_at": "2026-07-29T20:00:02Z",
+            "readback_at": "2026-07-29T20:00:03Z",
+            "safe_summary": "Endpoint applied and verified.",
+        }
+    )
+    assert stable_result_idempotency_key(
+        result.command_public_id,
+        result.operation_public_id,
+        result.target_public_id,
+        result.observed_state_version,
+        result.result_hash,
+    ) == stable_result_idempotency_key(
+        result.command_public_id,
+        result.operation_public_id,
+        result.target_public_id,
+        result.observed_state_version,
+        result.result_hash,
+    )
 
 
 @pytest.mark.parametrize(
@@ -293,7 +389,13 @@ async def test_dispatch_uses_registry_common_client_attestation_and_readback():
     assert resolver.requests[0].endpoint_key == "telephony.asterisk.endpoints.apply"
     assert resolver.requests[0].mutation is True
     assert attestor.calls[0]["configuration_checksum"].startswith("sha256:")
-    assert common.calls[0][2]["idempotency_key"] == value.idempotency_key
+    assert common.calls[0][2]["idempotency_key"] == payload_hash(
+        {
+            "command_public_id": "CMD-SYNTHETIC-001",
+            "resolved_endpoint_id": endpoint().endpoint_id,
+            "endpoint_configuration_version": endpoint().endpoint_version_id,
+        }
+    )
     readback = await client.readback(
         value,
         operation,
@@ -314,6 +416,26 @@ async def test_dispatch_fails_closed_without_attestation():
             command(),
             traceparent="00-" + "1" * 32 + "-" + "2" * 16 + "-01",
         )
+
+
+@pytest.mark.asyncio
+async def test_post_write_timeout_returns_ambiguous_operation_for_readback():
+    resolver = Resolver()
+    common = CommonClient(resolver)
+
+    async def timeout_after_possible_write(route, payload, **kwargs):
+        raise httpx.ReadTimeout("synthetic ambiguous timeout")
+
+    common.request_resolved = timeout_after_possible_write
+    client = TelephonyServiceClient(common, Attestor())
+    operation = await client.dispatch(
+        "CMD-SYNTHETIC-AMBIGUOUS",
+        command(),
+        traceparent="00-" + "1" * 32 + "-" + "2" * 16 + "-01",
+    )
+    assert operation["ambiguous"] is True
+    assert operation["operation_public_id"].startswith("OPR-")
+    assert operation["adapter_operation_id"]
 
 
 @pytest.mark.asyncio

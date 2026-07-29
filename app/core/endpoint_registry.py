@@ -164,8 +164,14 @@ class SqlEndpointRepository:
             .join(
                 IntegrationSchemaVersion,
                 (IntegrationSchemaVersion.service_key == IntegrationService.service_key)
-                & (IntegrationSchemaVersion.endpoint_key == IntegrationEndpoint.endpoint_key)
-                & (IntegrationSchemaVersion.api_version == IntegrationEndpoint.api_version),
+                & (
+                    IntegrationSchemaVersion.endpoint_key
+                    == IntegrationEndpoint.endpoint_key
+                )
+                & (
+                    IntegrationSchemaVersion.api_version
+                    == IntegrationEndpoint.api_version
+                ),
             )
             .where(
                 and_(

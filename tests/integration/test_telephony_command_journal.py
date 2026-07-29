@@ -4,17 +4,24 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+import httpx
 from fastapi import HTTPException
+from fastapi import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.v1.commands import (
     ReconciliationRunRequest,
+    OperationRegistration,
+    OperationTransition,
     TerminalResultRequest,
     create_command,
     create_reconciliation_run,
+    register_operation,
     create_terminal_result,
+    transition_operation,
 )
+from app.adapters.odoo.telephony_results import deliver_telephony_result
 from app.core.telephony_commands import (
     TelephonyCommandRequest,
     payload_hash,
@@ -62,6 +69,8 @@ async def _scenario(database_url: str):
     command = TelephonyCommandRequest.model_validate(
         {
             "schema_version": "1.0",
+            "originating_outbox_public_id": "OUT-SYNTHETIC-DB",
+            "event_id": "EVT-SYNTHETIC-DB",
             "command_type": "telephony.asterisk.endpoint.apply",
             "aggregate_type": "agent",
             "aggregate_public_id": "AGT-SYNTHETIC-DB",
@@ -170,6 +179,11 @@ async def _scenario(database_url: str):
                 assert traceparent.startswith("00-")
                 return {
                     "operation_id": str(uuid4()),
+                    "operation_public_id": f"OPR-{uuid4().hex}",
+                    "adapter_operation_id": f"ADP-OP-{uuid4().hex}",
+                    "adapter_service_key": "codestra-telephony-adapter-staging",
+                    "endpoint_id": "EPT-REGISTRY-SYNTHETIC",
+                    "endpoint_version_id": "EPV-REGISTRY-SYNTHETIC",
                     "endpoint_key": "telephony.asterisk.endpoints.apply",
                     "readback_endpoint_key": "telephony.asterisk.endpoints.read",
                     "target_configuration_checksum": "sha256:" + "a" * 64,
@@ -195,7 +209,7 @@ async def _scenario(database_url: str):
             environment="staging",
             traceparent_factory=lambda: "00-" + "1" * 32 + "-" + "2" * 16 + "-01",
         )
-        assert worker_result["state"] == "SUCCEEDED"
+        assert worker_result["state"] == "ODOO_RESULT_PENDING"
         assert client.competing_claim is None
         async with factory() as session:
             stored = await session.scalar(
@@ -204,7 +218,7 @@ async def _scenario(database_url: str):
                 )
             )
             assert stored is not None
-            assert stored.state == "SUCCEEDED"
+            assert stored.state == "ODOO_RESULT_PENDING"
             operation = await session.scalar(
                 select(TelephonyOperationJournal).where(
                     TelephonyOperationJournal.command_id == stored.command_id
@@ -213,15 +227,27 @@ async def _scenario(database_url: str):
             assert operation is not None
             result_id = uuid4()
             terminal = TerminalResultRequest(
-                result_public_id=result_id,
-                operation_public_id=operation.operation_id,
-                command_public_id=stored.command_id,
+                schema_version="1.0",
+                result_public_id=f"RES-{result_id.hex}",
+                operation_public_id=operation.operation_public_id,
+                command_public_id=stored.command_public_id,
+                target_system="ASTERISK",
+                target_resource_type="ENDPOINT",
+                target_public_id="EPT-SYNTHETIC-DB",
+                application_status="APPLIED",
+                readback_status="READBACK_VERIFIED",
+                requested_state_version=1,
+                applied_state_version=1,
+                observed_state_version=1,
                 result_hash="1" * 64,
                 application_hash="2" * 64,
                 readback_hash="3" * 64,
+                adapter_service_key=operation.adapter_service_key,
+                adapter_configuration_checksum="sha256:" + "a" * 64,
+                applied_at=datetime.now(UTC),
+                readback_at=datetime.now(UTC),
+                safe_summary="Synthetic endpoint applied and verified.",
                 policy_hash=stored.policy_decision_hash,
-                status="APPLIED",
-                reconciliation_status="IN_SYNC",
                 correlation_id=correlation_id,
             )
             created_result = await create_terminal_result(terminal, session)
@@ -235,6 +261,45 @@ async def _scenario(database_url: str):
                     terminal.model_copy(update={"readback_hash": "4" * 64}),
                     session,
                 )
+
+            class SyntheticOdooClient:
+                calls = []
+
+                async def request(self, operation_name, payload, **kwargs):
+                    self.calls.append((operation_name, payload, kwargs))
+                    request = httpx.Request("POST", "https://invalid")
+                    if operation_name in {
+                        "results.create",
+                        "results.read",
+                    }:
+                        value = {"result_public_id": terminal.result_public_id}
+                    elif operation_name == "telephony.projections.read":
+                        value = {
+                            "observed_state_version": 1,
+                            "observed_state_hash": "sha256:" + "3" * 64,
+                        }
+                    elif operation_name == "telephony.mappings.read":
+                        value = {"target_public_id": "EPT-SYNTHETIC-DB"}
+                    else:
+                        value = {"correlation_id": correlation_id}
+                    return httpx.Response(200, json=value, request=request)
+
+            odoo_client = SyntheticOdooClient()
+            readbacks = await deliver_telephony_result(
+                session,
+                terminal.result_public_id,
+                client=odoo_client,
+            )
+            assert (
+                readbacks["telephony.projections.read"]["observed_state_version"] == 1
+            )
+            assert [call[0] for call in odoo_client.calls] == [
+                "results.create",
+                "results.read",
+                "telephony.projections.read",
+                "telephony.mappings.read",
+                "traces.read",
+            ]
             run = await create_reconciliation_run(
                 ReconciliationRunRequest(
                     environment="staging",
@@ -252,17 +317,102 @@ async def _scenario(database_url: str):
                 update={
                     "aggregate_version": 2,
                     "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
+                    "payload": command.payload.model_copy(
+                        update={"desired_state_version": 2}
+                    ),
                 }
             )
             accepted_next = await create_command(
                 next_command, next_command.idempotency_key, session
             )
             assert accepted_next["aggregate_version"] == 2
+            operation_registration = OperationRegistration(
+                schema_version="1.0",
+                operation_public_id=f"OPR-{uuid4().hex}",
+                command_public_id=accepted_next["command_public_id"],
+                adapter_service_key="codestra-telephony-adapter-staging",
+                adapter_operation_id=f"ADP-OP-{uuid4().hex}",
+                target_system="ASTERISK",
+                target_resource_type="ENDPOINT",
+                target_public_id="EPT-SYNTHETIC-DB",
+                desired_state_version=2,
+                desired_state_hash="sha256:" + "7" * 64,
+                idempotency_key=f"IDM-OPR-{uuid4()}",
+                correlation_id=correlation_id,
+                registered_at=datetime.now(UTC),
+            )
+            registration_response = Response()
+            registered = await register_operation(
+                operation_registration, registration_response, session
+            )
+            duplicate_registration_response = Response()
+            duplicate_registration = await register_operation(
+                operation_registration, duplicate_registration_response, session
+            )
+            assert registration_response.status_code == 201
+            assert duplicate_registration_response.status_code == 200
+            assert duplicate_registration["idempotency_status"] == "DUPLICATE"
+            transition_data = {
+                "schema_version": "1.0",
+                "command_public_id": accepted_next["command_public_id"],
+                "state": "APPLYING",
+                "target_system": "ASTERISK",
+                "target_resource_type": "ENDPOINT",
+                "target_public_id": "EPT-SYNTHETIC-DB",
+                "desired_state_version": 2,
+                "adapter_service_key": "codestra-telephony-adapter-staging",
+                "environment": "staging",
+                "correlation_id": correlation_id,
+                "transition_sequence": 1,
+                "occurred_at": datetime.now(UTC),
+            }
+            transition_hash = payload_hash(
+                OperationTransition(
+                    **transition_data,
+                    transition_hash="0" * 64,
+                ).model_dump(mode="json", exclude={"transition_hash"})
+            )
+            transitioned = await transition_operation(
+                registered["operation_public_id"],
+                OperationTransition(
+                    **transition_data,
+                    transition_hash=transition_hash,
+                ),
+                session,
+            )
+            assert transitioned["state"] == "APPLYING"
+            with pytest.raises(
+                HTTPException, match="out-of-order operation transition"
+            ):
+                out_of_order_base = OperationTransition(
+                    **{
+                        **transition_data,
+                        "state": "APPLIED",
+                        "transition_sequence": 3,
+                        "transition_hash": "0" * 64,
+                    }
+                )
+                await transition_operation(
+                    registered["operation_public_id"],
+                    out_of_order_base.model_copy(
+                        update={
+                            "transition_hash": payload_hash(
+                                out_of_order_base.model_dump(
+                                    mode="json", exclude={"transition_hash"}
+                                )
+                            )
+                        }
+                    ),
+                    session,
+                )
 
             duplicate_version = command.model_copy(
                 update={
                     "aggregate_version": 2,
                     "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
+                    "payload": command.payload.model_copy(
+                        update={"desired_state_version": 2}
+                    ),
                 }
             )
             with pytest.raises(

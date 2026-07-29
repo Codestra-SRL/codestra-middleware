@@ -13,7 +13,6 @@ import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -173,6 +172,25 @@ def payload_hash(value: Any) -> str:
     return hashlib.sha256(canonical_json(value)).hexdigest()
 
 
+def stable_result_idempotency_key(
+    command_public_id: str,
+    operation_public_id: str,
+    target_public_id: str,
+    observed_state_version: int,
+    result_hash: str,
+) -> str:
+    material = "\x1f".join(
+        (
+            command_public_id,
+            operation_public_id,
+            target_public_id,
+            str(observed_state_version),
+            result_hash.removeprefix("sha256:"),
+        )
+    )
+    return hashlib.sha256(material.encode()).hexdigest()
+
+
 class TelephonyCommandPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     endpoint_public_id: str | None = Field(default=None, max_length=144)
@@ -219,7 +237,11 @@ class TelephonyCommandPayload(BaseModel):
 class TelephonyCommandRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     schema_version: str = Field(pattern=r"^1[.]0$")
-    command_public_id: UUID | None = None
+    command_public_id: str | None = Field(default=None, min_length=4, max_length=144)
+    originating_outbox_public_id: str | None = Field(
+        default=None, min_length=4, max_length=144
+    )
+    event_id: str | None = Field(default=None, min_length=4, max_length=144)
     command_type: TelephonyCommandType
     aggregate_type: str = Field(min_length=1, max_length=64)
     aggregate_public_id: str = Field(min_length=4, max_length=144)
@@ -292,6 +314,8 @@ class TelephonyCommandRequest(BaseModel):
                 raise ValueError("command timestamps must be timezone-aware")
             if self.expires_at <= self.requested_at:
                 raise ValueError("command expiry must follow request time")
+            if self.expires_at <= datetime.now(UTC):
+                raise ValueError("command is expired")
         raw = self.payload.model_dump(exclude_none=True)
         if FORBIDDEN_PAYLOAD_KEYS.intersection(raw):
             raise ValueError("application-selected telephony resource is prohibited")
@@ -335,6 +359,34 @@ class TelephonyCommandRequest(BaseModel):
             mode="json", exclude_none=True, exclude_unset=True
         )
 
+    def target_system(self) -> str:
+        return (
+            "ASTERISK"
+            if self.command_type.value.startswith("telephony.asterisk.")
+            else "VICIDIAL"
+        )
+
+    def target_public_id(self) -> str:
+        return (
+            self.payload.endpoint_public_id
+            or self.payload.phone_public_id
+            or self.payload.agent_public_id
+            or self.aggregate_public_id
+        )
+
+    def stable_idempotency_key(self) -> str:
+        material = "\x1f".join(
+            (
+                self.environment,
+                self.command_type.value,
+                self.aggregate_public_id,
+                str(self.payload.desired_state_version),
+                self.target_system(),
+                self.target_public_id(),
+            )
+        )
+        return hashlib.sha256(material.encode()).hexdigest()
+
 
 def normalized_actual_state(
     command: TelephonyCommandRequest, actual: dict[str, Any]
@@ -365,11 +417,8 @@ class TelephonyOperationResult(BaseModel):
 def new_command_record(command: TelephonyCommandRequest) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
-        **(
-            {"command_id": command.command_public_id}
-            if command.command_public_id
-            else {}
-        ),
+        "command_public_id": command.command_public_id
+        or "CMD-" + command.stable_idempotency_key()[:32],
         "command_type": command.command_type.value,
         "aggregate_type": command.aggregate_type,
         "aggregate_public_id": command.aggregate_public_id,
@@ -377,9 +426,7 @@ def new_command_record(command: TelephonyCommandRequest) -> dict[str, Any]:
         "environment": command.environment,
         "business_unit_public_id": command.business_unit_public_id,
         "campaign_public_id": command.campaign_public_id,
-        "idempotency_hash": hashlib.sha256(
-            command.idempotency_key.encode()
-        ).hexdigest(),
+        "idempotency_hash": command.stable_idempotency_key(),
         "idempotency_key": command.idempotency_key,
         "request_hash": command.request_hash(),
         "correlation_id": command.correlation_id,

@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -25,6 +25,7 @@ from app.db.models import (
     PolicyDecision,
     TelephonyCommandJournal,
     TelephonyOperationJournal,
+    TelephonyOperationTransition,
     TelephonyReconciliationRun,
     TelephonyTerminalResult,
 )
@@ -36,6 +37,7 @@ router = APIRouter(prefix="/api/v1", tags=["commands"])
 def _command_view(row: TelephonyCommandJournal, *, replayed: bool = False) -> dict:
     return {
         "command_id": str(row.command_id),
+        "command_public_id": row.command_public_id,
         "command_type": row.command_type,
         "aggregate_public_id": row.aggregate_public_id,
         "aggregate_version": row.aggregate_version,
@@ -145,9 +147,13 @@ async def create_command(
 @router.get("/commands/{command_public_id}")
 @router.get("/telephony/commands/{command_public_id}")
 async def get_command(
-    command_public_id: UUID, session: AsyncSession = Depends(get_session)
+    command_public_id: str, session: AsyncSession = Depends(get_session)
 ):
-    row = await session.get(TelephonyCommandJournal, command_public_id)
+    row = await session.scalar(
+        select(TelephonyCommandJournal).where(
+            TelephonyCommandJournal.command_public_id == command_public_id
+        )
+    )
     if not row:
         raise HTTPException(404, "command not found")
     return _command_view(row)
@@ -155,10 +161,12 @@ async def get_command(
 
 @router.post("/telephony/commands/{command_public_id}/cancel")
 async def cancel_command(
-    command_public_id: UUID, session: AsyncSession = Depends(get_session)
+    command_public_id: str, session: AsyncSession = Depends(get_session)
 ):
-    row = await session.get(
-        TelephonyCommandJournal, command_public_id, with_for_update=True
+    row = await session.scalar(
+        select(TelephonyCommandJournal)
+        .where(TelephonyCommandJournal.command_public_id == command_public_id)
+        .with_for_update()
     )
     if not row:
         raise HTTPException(404, "command not found")
@@ -174,70 +182,105 @@ async def cancel_command(
 
 class OperationRegistration(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    operation_public_id: UUID
-    command_public_id: UUID
-    endpoint_key: str = Field(min_length=1, max_length=96)
-    readback_endpoint_key: str = Field(min_length=1, max_length=96)
-    target_configuration_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    schema_version: Literal["1.0"]
+    operation_public_id: str = Field(min_length=4, max_length=144)
+    command_public_id: str = Field(min_length=4, max_length=144)
+    adapter_service_key: str = Field(min_length=1, max_length=144)
+    adapter_operation_id: str = Field(min_length=1, max_length=144)
+    target_system: Literal["ASTERISK", "VICIDIAL"]
+    target_resource_type: str = Field(min_length=1, max_length=32)
+    target_public_id: str = Field(min_length=4, max_length=144)
+    desired_state_version: int = Field(ge=1)
     desired_state_hash: str = Field(pattern=r"^(?:sha256:)?[0-9a-f]{64}$")
-    target_attested: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=255)
     correlation_id: str = Field(min_length=1, max_length=128)
+    registered_at: datetime
 
 
 @router.post("/telephony/operations", status_code=202)
 async def register_operation(
-    body: OperationRegistration, session: AsyncSession = Depends(get_session)
+    body: OperationRegistration,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
 ):
-    command = await session.get(
-        TelephonyCommandJournal, body.command_public_id, with_for_update=True
+    command = await session.scalar(
+        select(TelephonyCommandJournal)
+        .where(TelephonyCommandJournal.command_public_id == body.command_public_id)
+        .with_for_update()
     )
     if not command:
         raise HTTPException(404, "command not found")
-    if command.correlation_id != body.correlation_id:
+    if (
+        command.correlation_id != body.correlation_id
+        or command.payload_json.get("desired_state_version")
+        != body.desired_state_version
+        or str(command.payload_json.get("desired_state_hash", "")).removeprefix(
+            "sha256:"
+        )
+        not in {"", body.desired_state_hash.removeprefix("sha256:")}
+    ):
         raise HTTPException(409, "operation correlation binding mismatch")
     prior = await session.scalar(
         select(TelephonyOperationJournal).where(
-            TelephonyOperationJournal.command_id == body.command_public_id
+            (TelephonyOperationJournal.operation_public_id == body.operation_public_id)
+            | (TelephonyOperationJournal.command_id == command.command_id)
+            | (
+                TelephonyOperationJournal.idempotency_hash
+                == payload_hash(body.idempotency_key)
+            )
         )
     )
     immutable = {
-        "operation_id": body.operation_public_id,
-        "endpoint_key": body.endpoint_key,
-        "readback_endpoint_key": body.readback_endpoint_key,
-        "target_configuration_checksum": body.target_configuration_checksum,
+        "operation_public_id": body.operation_public_id,
+        "adapter_service_key": body.adapter_service_key,
+        "adapter_operation_id": body.adapter_operation_id,
+        "target_system": body.target_system,
+        "target_resource_type": body.target_resource_type,
+        "target_public_id": body.target_public_id,
+        "desired_state_version": body.desired_state_version,
         "desired_hash": body.desired_state_hash.removeprefix("sha256:"),
         "correlation_id": body.correlation_id,
     }
     if prior:
         if any(getattr(prior, key) != value for key, value in immutable.items()):
             raise HTTPException(409, "immutable operation binding conflict")
+        response.status_code = status.HTTP_200_OK
         return {
-            "operation_public_id": str(prior.operation_id),
+            "operation_public_id": prior.operation_public_id,
             "idempotency_status": "DUPLICATE",
         }
     row = TelephonyOperationJournal(
         **immutable,
-        command_id=body.command_public_id,
-        state="OPERATION_REGISTERED",
+        command_id=command.command_id,
+        state="REGISTERED",
+        endpoint_key="telephony.operation.registered",
+        readback_endpoint_key="telephony.operation.readback",
+        target_configuration_checksum="pending",
         target_attested=True,
+        idempotency_hash=payload_hash(body.idempotency_key),
         response_json={},
     )
     session.add(row)
     command.state = "OPERATION_REGISTERED"
     command.updated_at = datetime.now(UTC)
     await session.commit()
-    return {"operation_public_id": str(row.operation_id), "idempotency_status": "NEW"}
+    response.status_code = status.HTTP_201_CREATED
+    return {"operation_public_id": row.operation_public_id, "idempotency_status": "NEW"}
 
 
 @router.get("/telephony/operations/{operation_public_id}")
 async def get_operation(
-    operation_public_id: UUID, session: AsyncSession = Depends(get_session)
+    operation_public_id: str, session: AsyncSession = Depends(get_session)
 ):
-    row = await session.get(TelephonyOperationJournal, operation_public_id)
+    row = await session.scalar(
+        select(TelephonyOperationJournal).where(
+            TelephonyOperationJournal.operation_public_id == operation_public_id
+        )
+    )
     if not row:
         raise HTTPException(404, "operation not found")
     return {
-        "operation_id": str(row.operation_id),
+        "operation_public_id": row.operation_public_id,
         "command_id": str(row.command_id),
         "state": row.state,
         "endpoint_key": row.endpoint_key,
@@ -253,58 +296,113 @@ async def get_operation(
 
 class OperationTransition(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["1.0"]
+    command_public_id: str = Field(min_length=4, max_length=144)
     state: Literal[
+        "REGISTERED",
         "APPLYING",
         "APPLIED",
         "READBACK_PENDING",
         "READBACK_VERIFIED",
-        "ODOO_RESULT_PENDING",
-        "ODOO_RESULT_DELIVERED",
-        "RECONCILED",
-        "RECONCILIATION_REQUIRED",
-        "FAILED_PERMANENT",
+        "READBACK_MISMATCH",
+        "SUCCEEDED",
+        "FAILED",
+        "COMPENSATION_REQUIRED",
+        "COMPENSATED",
     ]
+    target_system: Literal["ASTERISK", "VICIDIAL"]
+    target_resource_type: str = Field(min_length=1, max_length=32)
+    target_public_id: str = Field(min_length=4, max_length=144)
+    desired_state_version: int = Field(ge=1)
+    adapter_service_key: str = Field(min_length=1, max_length=144)
+    environment: Literal["staging", "test", "production"]
     correlation_id: str = Field(min_length=1, max_length=128)
+    transition_sequence: int = Field(ge=1)
+    transition_hash: str = Field(pattern=r"^(?:sha256:)?[0-9a-f]{64}$")
+    occurred_at: datetime
 
 
 _TRANSITIONS = {
-    "OPERATION_REGISTERED": {"APPLYING"},
-    "APPLYING": {"APPLIED", "FAILED_PERMANENT", "RECONCILIATION_REQUIRED"},
-    "APPLIED": {"READBACK_PENDING"},
-    "READBACK_PENDING": {"READBACK_VERIFIED", "RECONCILIATION_REQUIRED"},
-    "READBACK_VERIFIED": {"ODOO_RESULT_PENDING"},
-    "ODOO_RESULT_PENDING": {"ODOO_RESULT_DELIVERED", "RECONCILIATION_REQUIRED"},
-    "ODOO_RESULT_DELIVERED": {"RECONCILED", "RECONCILIATION_REQUIRED"},
+    "REGISTERED": {"APPLYING", "FAILED"},
+    "APPLYING": {"APPLIED", "FAILED", "COMPENSATION_REQUIRED"},
+    "APPLIED": {"READBACK_PENDING", "COMPENSATION_REQUIRED"},
+    "READBACK_PENDING": {"READBACK_VERIFIED", "READBACK_MISMATCH", "FAILED"},
+    "READBACK_VERIFIED": {"SUCCEEDED"},
+    "READBACK_MISMATCH": {"COMPENSATION_REQUIRED", "FAILED"},
+    "COMPENSATION_REQUIRED": {"COMPENSATED", "FAILED"},
 }
 
 
 @router.post("/telephony/operations/{operation_public_id}/transitions")
 async def transition_operation(
-    operation_public_id: UUID,
+    operation_public_id: str,
     body: OperationTransition,
     session: AsyncSession = Depends(get_session),
 ):
-    row = await session.get(
-        TelephonyOperationJournal, operation_public_id, with_for_update=True
+    row = await session.scalar(
+        select(TelephonyOperationJournal)
+        .where(TelephonyOperationJournal.operation_public_id == operation_public_id)
+        .with_for_update()
     )
     if not row:
         raise HTTPException(404, "operation not found")
-    if row.correlation_id != body.correlation_id:
-        raise HTTPException(409, "operation correlation binding mismatch")
-    if body.state == row.state:
+    command = await session.get(TelephonyCommandJournal, row.command_id)
+    binding = body.model_dump(mode="json", exclude={"transition_hash"})
+    expected_hash = payload_hash(binding)
+    if (
+        not command
+        or command.command_public_id != body.command_public_id
+        or command.environment != body.environment
+        or row.correlation_id != body.correlation_id
+        or row.target_system != body.target_system
+        or row.target_resource_type != body.target_resource_type
+        or row.target_public_id != body.target_public_id
+        or row.desired_state_version != body.desired_state_version
+        or row.adapter_service_key != body.adapter_service_key
+        or expected_hash != body.transition_hash.removeprefix("sha256:")
+    ):
+        raise HTTPException(409, "operation transition binding mismatch")
+    prior = await session.scalar(
+        select(TelephonyOperationTransition).where(
+            TelephonyOperationTransition.operation_id == row.operation_id,
+            (TelephonyOperationTransition.sequence == body.transition_sequence)
+            | (
+                TelephonyOperationTransition.transition_hash
+                == body.transition_hash.removeprefix("sha256:")
+            ),
+        )
+    )
+    if prior:
+        if prior.binding_json != binding:
+            raise HTTPException(409, "conflicting operation transition")
         return {
-            "operation_public_id": str(row.operation_id),
-            "state": row.state,
+            "operation_public_id": row.operation_public_id,
+            "state": prior.to_state,
             "idempotency_status": "DUPLICATE",
         }
+    if body.transition_sequence != row.transition_sequence + 1:
+        raise HTTPException(409, "out-of-order operation transition")
     if body.state not in _TRANSITIONS.get(row.state, set()):
         raise HTTPException(409, "invalid operation transition")
+    session.add(
+        TelephonyOperationTransition(
+            operation_id=row.operation_id,
+            command_id=row.command_id,
+            sequence=body.transition_sequence,
+            from_state=row.state,
+            to_state=body.state,
+            transition_hash=body.transition_hash.removeprefix("sha256:"),
+            binding_json=binding,
+            occurred_at=body.occurred_at,
+        )
+    )
     row.state = body.state
-    if body.state in {"RECONCILED", "FAILED_PERMANENT"}:
+    row.transition_sequence = body.transition_sequence
+    if body.state in {"SUCCEEDED", "FAILED", "COMPENSATED"}:
         row.completed_at = datetime.now(UTC)
     await session.commit()
     return {
-        "operation_public_id": str(row.operation_id),
+        "operation_public_id": row.operation_public_id,
         "state": row.state,
         "idempotency_status": "NEW",
     }
@@ -312,24 +410,37 @@ async def transition_operation(
 
 class TerminalResultRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    result_public_id: UUID
-    operation_public_id: UUID
-    command_public_id: UUID
+    schema_version: Literal["1.0"]
+    result_public_id: str = Field(min_length=4, max_length=144)
+    operation_public_id: str = Field(min_length=4, max_length=144)
+    command_public_id: str = Field(min_length=4, max_length=144)
+    target_system: Literal["ASTERISK", "VICIDIAL"]
+    target_resource_type: str = Field(min_length=1, max_length=32)
+    target_public_id: str = Field(min_length=4, max_length=144)
+    application_status: Literal["APPLIED", "FAILED", "STALE"]
+    readback_status: Literal["READBACK_VERIFIED", "READBACK_MISMATCH", "FAILED"]
+    requested_state_version: int = Field(ge=1)
+    applied_state_version: int = Field(ge=1)
+    observed_state_version: int = Field(ge=1)
     result_hash: str = Field(pattern=r"^(?:sha256:)?[0-9a-f]{64}$")
     application_hash: str = Field(pattern=r"^(?:sha256:)?[0-9a-f]{64}$")
     readback_hash: str = Field(pattern=r"^(?:sha256:)?[0-9a-f]{64}$")
+    adapter_service_key: str = Field(min_length=1, max_length=144)
+    adapter_configuration_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    applied_at: datetime
+    readback_at: datetime
+    safe_summary: str = Field(min_length=1, max_length=512)
     policy_hash: str = Field(pattern=r"^(?:sha256:)?[0-9a-f]{64}$")
-    status: Literal["APPLIED", "FAILED", "STALE"]
-    reconciliation_status: Literal["IN_SYNC", "RECONCILIATION_REQUIRED"]
     correlation_id: str = Field(min_length=1, max_length=128)
 
 
 def _result_view(row: TelephonyTerminalResult, duplicate: bool = False) -> dict:
     return {
-        "result_public_id": str(row.result_id),
-        "operation_public_id": str(row.operation_id),
-        "command_public_id": str(row.command_id),
-        "status": row.status,
+        "result_public_id": row.result_public_id,
+        "operation_public_id": row.immutable_json["operation_public_id"],
+        "command_public_id": row.immutable_json["command_public_id"],
+        "application_status": row.application_status,
+        "readback_status": row.readback_status,
         "reconciliation_status": row.reconciliation_status,
         "correlation_id": row.correlation_id,
         "idempotency_status": "DUPLICATE" if duplicate else "NEW",
@@ -343,44 +454,73 @@ async def create_terminal_result(
     immutable = body.model_dump(mode="json")
     prior = await session.scalar(
         select(TelephonyTerminalResult).where(
-            (TelephonyTerminalResult.result_id == body.result_public_id)
-            | (TelephonyTerminalResult.operation_id == body.operation_public_id)
+            (TelephonyTerminalResult.result_public_id == body.result_public_id)
         )
     )
     if prior:
         if prior.immutable_json != immutable:
             raise HTTPException(409, "IMMUTABLE_RESULT_BINDING_CONFLICT")
         return _result_view(prior, duplicate=True)
-    operation = await session.get(
-        TelephonyOperationJournal, body.operation_public_id, with_for_update=True
+    operation = await session.scalar(
+        select(TelephonyOperationJournal)
+        .where(
+            TelephonyOperationJournal.operation_public_id == body.operation_public_id
+        )
+        .with_for_update()
     )
-    command = await session.get(TelephonyCommandJournal, body.command_public_id)
+    command = await session.scalar(
+        select(TelephonyCommandJournal).where(
+            TelephonyCommandJournal.command_public_id == body.command_public_id
+        )
+    )
     if (
         not operation
         or not command
         or operation.command_id != command.command_id
         or command.correlation_id != body.correlation_id
         or command.policy_decision_hash != body.policy_hash.removeprefix("sha256:")
+        or operation.target_system != body.target_system
+        or operation.target_resource_type != body.target_resource_type
+        or operation.target_public_id != body.target_public_id
+        or operation.desired_state_version != body.requested_state_version
+        or operation.adapter_service_key != body.adapter_service_key
     ):
         raise HTTPException(409, "terminal result binding mismatch")
     row = TelephonyTerminalResult(
-        result_id=body.result_public_id,
-        operation_id=body.operation_public_id,
-        command_id=body.command_public_id,
+        result_public_id=body.result_public_id,
+        operation_id=operation.operation_id,
+        command_id=command.command_id,
         result_hash=body.result_hash.removeprefix("sha256:"),
         application_hash=body.application_hash.removeprefix("sha256:"),
         readback_hash=body.readback_hash.removeprefix("sha256:"),
         policy_hash=body.policy_hash.removeprefix("sha256:"),
-        status=body.status,
-        reconciliation_status=body.reconciliation_status,
+        target_system=body.target_system,
+        target_resource_type=body.target_resource_type,
+        target_public_id=body.target_public_id,
+        requested_state_version=body.requested_state_version,
+        applied_state_version=body.applied_state_version,
+        observed_state_version=body.observed_state_version,
+        application_status=body.application_status,
+        readback_status=body.readback_status,
+        adapter_service_key=body.adapter_service_key,
+        adapter_configuration_checksum=body.adapter_configuration_checksum,
+        safe_summary=body.safe_summary,
+        applied_at=body.applied_at,
+        readback_at=body.readback_at,
+        status=body.application_status,
+        reconciliation_status=(
+            "IN_SYNC"
+            if body.readback_status == "READBACK_VERIFIED"
+            else "RECONCILIATION_REQUIRED"
+        ),
         correlation_id=body.correlation_id,
         immutable_json=immutable,
     )
     session.add(row)
     operation.state = (
-        "READBACK_VERIFIED"
-        if body.reconciliation_status == "IN_SYNC"
-        else "RECONCILIATION_REQUIRED"
+        "ODOO_RESULT_PENDING"
+        if body.readback_status == "READBACK_VERIFIED"
+        else "READBACK_MISMATCH"
     )
     await session.commit()
     return _result_view(row)
@@ -388,9 +528,13 @@ async def create_terminal_result(
 
 @router.get("/telephony/results/{result_public_id}")
 async def get_terminal_result(
-    result_public_id: UUID, session: AsyncSession = Depends(get_session)
+    result_public_id: str, session: AsyncSession = Depends(get_session)
 ):
-    row = await session.get(TelephonyTerminalResult, result_public_id)
+    row = await session.scalar(
+        select(TelephonyTerminalResult).where(
+            TelephonyTerminalResult.result_public_id == result_public_id
+        )
+    )
     if not row:
         raise HTTPException(404, "result not found")
     return _result_view(row)
@@ -398,8 +542,10 @@ async def get_terminal_result(
 
 class ReconciliationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    run_public_id: UUID = Field(default_factory=uuid4)
-    command_public_id: UUID | None = None
+    run_public_id: str = Field(
+        default_factory=lambda: f"REC-{uuid4().hex}", min_length=4, max_length=144
+    )
+    command_public_id: str | None = Field(default=None, max_length=144)
     environment: Literal["staging", "test", "production"]
     aggregate_type: str = Field(min_length=1, max_length=64)
     aggregate_public_id: str = Field(min_length=1, max_length=144)
@@ -413,16 +559,30 @@ class ReconciliationRunRequest(BaseModel):
 async def create_reconciliation_run(
     body: ReconciliationRunRequest, session: AsyncSession = Depends(get_session)
 ):
-    prior = await session.get(TelephonyReconciliationRun, body.run_public_id)
+    prior = await session.scalar(
+        select(TelephonyReconciliationRun).where(
+            TelephonyReconciliationRun.run_public_id == body.run_public_id
+        )
+    )
     if prior:
         return {
-            "run_public_id": str(prior.run_id),
+            "run_public_id": prior.run_public_id,
             "status": prior.status,
             "idempotency_status": "DUPLICATE",
         }
+    command_id = None
+    if body.command_public_id:
+        command = await session.scalar(
+            select(TelephonyCommandJournal).where(
+                TelephonyCommandJournal.command_public_id == body.command_public_id
+            )
+        )
+        if not command:
+            raise HTTPException(404, "command not found")
+        command_id = command.command_id
     row = TelephonyReconciliationRun(
-        run_id=body.run_public_id,
-        command_id=body.command_public_id,
+        run_public_id=body.run_public_id,
+        command_id=command_id,
         environment=body.environment,
         aggregate_type=body.aggregate_type,
         aggregate_public_id=body.aggregate_public_id,
@@ -435,7 +595,7 @@ async def create_reconciliation_run(
     session.add(row)
     await session.commit()
     return {
-        "run_public_id": str(row.run_id),
+        "run_public_id": row.run_public_id,
         "status": row.status,
         "idempotency_status": "NEW",
     }
@@ -443,13 +603,17 @@ async def create_reconciliation_run(
 
 @router.get("/telephony/reconciliation/runs/{run_public_id}")
 async def get_reconciliation_run(
-    run_public_id: UUID, session: AsyncSession = Depends(get_session)
+    run_public_id: str, session: AsyncSession = Depends(get_session)
 ):
-    row = await session.get(TelephonyReconciliationRun, run_public_id)
+    row = await session.scalar(
+        select(TelephonyReconciliationRun).where(
+            TelephonyReconciliationRun.run_public_id == run_public_id
+        )
+    )
     if not row:
         raise HTTPException(404, "reconciliation run not found")
     return {
-        "run_public_id": str(row.run_id),
+        "run_public_id": row.run_public_id,
         "status": row.status,
         "classification": row.classification,
         "correlation_id": row.correlation_id,
