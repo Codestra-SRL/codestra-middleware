@@ -1073,17 +1073,23 @@ class IntegrationService(Base):
     service_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
+    service_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class IntegrationCredentialReference(Base):
     __tablename__ = "integration_credential_reference"
-    credential_reference_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    reference_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    credential_reference_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    reference_key: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True
+    )
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    service_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -1196,30 +1202,6 @@ class IntegrationRouteBinding(Base):
     binding_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-
-
-class IntegrationSchemaVersion(Base):
-    __tablename__ = "integration_schema_version"
-    schema_version_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    service_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
-    api_version: Mapped[str] = mapped_column(String(16), nullable=False)
-    schema_reference: Mapped[str] = mapped_column(String(512), nullable=False)
-    checksum: Mapped[str] = mapped_column(String(71), nullable=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    __table_args__ = (UniqueConstraint("service_key", "endpoint_key", "api_version", name="uq_integration_schema_key"),)
-
-
-class IntegrationEndpointAudit(Base):
-    __tablename__ = "integration_endpoint_audit"
-    audit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    endpoint_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
-    action: Mapped[str] = mapped_column(String(32), nullable=False)
-    actor: Mapped[str] = mapped_column(String(128), nullable=False)
-    previous_checksum: Mapped[str | None] = mapped_column(String(71))
-    new_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
-    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     endpoint_version_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("integration_endpoint_version.endpoint_version_id"),
@@ -1232,8 +1214,12 @@ class IntegrationEndpointAudit(Base):
     business_unit_scope: Mapped[str] = mapped_column(
         String(128), nullable=False, default=""
     )
-    campaign_scope: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-    workflow_scope: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    campaign_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    workflow_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
     event_type_scope: Mapped[str] = mapped_column(
         String(128), nullable=False, default=""
     )
@@ -1258,6 +1244,43 @@ class IntegrationEndpointAudit(Base):
             "business_unit_scope",
             "campaign_scope",
         ),
+    )
+
+
+class IntegrationSchemaVersion(Base):
+    __tablename__ = "integration_schema_version"
+    schema_version_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    service_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    api_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    schema_reference: Mapped[str] = mapped_column(String(512), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "service_key",
+            "endpoint_key",
+            "api_version",
+            name="uq_integration_schema_key",
+        ),
+    )
+
+
+class IntegrationEndpointAudit(Base):
+    __tablename__ = "integration_endpoint_audit"
+    audit_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    endpoint_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    previous_checksum: Mapped[str | None] = mapped_column(String(71))
+    new_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 
