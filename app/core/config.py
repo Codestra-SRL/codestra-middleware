@@ -1,7 +1,7 @@
 import base64
 import json
-from pathlib import Path
 import re
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from pydantic import field_validator
@@ -73,7 +73,28 @@ class Settings(BaseSettings):
     n8n_production_target_url: str = ""
     n8n_production_target_identity: str = ""
     n8n_production_image_digest: str = ""
-    n8n_transport_hmac_secret_file: str = ""
+    n8n_production_instance_id: str = ""
+    n8n_production_version: str = ""
+    n8n_runtime_health_url: str = "http://n8n:5678/healthz"
+    n8n_workflow_package_sha256: str = ""
+    n8n_target_ca_file: str = ""
+    n8n_service_issuer: str = ""
+    n8n_service_audience: str = "codestra-middleware"
+    n8n_service_jwks_url: str = ""
+    n8n_service_client_id: str = "codestra-n8n-production"
+    middleware_n8n_token_url: str = ""
+    middleware_n8n_client_id: str = "codestra-middleware-production"
+    middleware_n8n_client_secret_file: str = ""
+    middleware_n8n_audience: str = "codestra-n8n-production"
+    middleware_n8n_scope: str = "n8n.events.submit"
+    odoo_results_url: str = ""
+    odoo_results_token_url: str = ""
+    odoo_results_client_id: str = "codestra-middleware-odoo-results"
+    odoo_results_client_secret_file: str = ""
+    odoo_results_audience: str = "codestra-odoo"
+    odoo_results_scope: str = "odoo.integration.results.write"
+    odoo_results_ca_file: str = ""
+    odoo_result_delivery_enabled: bool = False
     email_dispatch_enabled: bool = False
     sms_dispatch_enabled: bool = False
     allow_live_email: bool = False
@@ -189,7 +210,6 @@ class Settings(BaseSettings):
             ("database_url", self.database_url_file),
             ("redis_url", self.redis_url_file),
             ("middleware_secret", self.middleware_secret_file),
-            ("webhook_shared_secret", self.n8n_transport_hmac_secret_file),
             # Ingestion deliberately has no legacy shared-secret fallback.
             ("ingestion_hmac_secret", self.vicidial_callback_hmac_secret_file),
         )
@@ -233,11 +253,36 @@ class Settings(BaseSettings):
             or parsed.hostname != "n8n.internal.codestra.agency"
             or parsed.username is not None
             or parsed.password is not None
-            or parsed.path != "/webhooks/codestra/events/v1"
+            or parsed.path != "/webhook/codestra/v1/events"
             or parsed.query
             or parsed.fragment
         ):
             raise ValueError("n8n target must be the approved internal webhook")
+        return value
+
+    @field_validator("n8n_workflow_package_sha256")
+    @classmethod
+    def validate_workflow_package_sha256(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise ValueError("workflow package identity must be an exact SHA-256")
+        return value
+
+    @field_validator("odoo_results_url")
+    @classmethod
+    def validate_odoo_results_url(cls, value: str) -> str:
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "odoo.internal.codestra.agency"
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path != "/codestra/integration/v1/results"
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("Odoo results must use the approved internal endpoint")
         return value
 
     @field_validator("n8n_production_image_digest")
