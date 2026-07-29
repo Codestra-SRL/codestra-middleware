@@ -1,6 +1,7 @@
 import asyncio
 import os
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -263,22 +264,29 @@ async def _scenario(database_url: str):
                 )
 
             class SyntheticOdooClient:
-                calls = []
+                calls: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
 
-                async def request(self, operation_name, payload, **kwargs):
-                    self.calls.append((operation_name, payload, kwargs))
+                async def request(
+                    self,
+                    operation: str,
+                    payload: dict[str, Any],
+                    **kwargs: Any,
+                ) -> httpx.Response:
+                    self.calls.append((operation, payload, kwargs))
                     request = httpx.Request("POST", "https://invalid")
-                    if operation_name in {
+                    if operation in {
                         "results.create",
                         "results.read",
                     }:
-                        value = {"result_public_id": terminal.result_public_id}
-                    elif operation_name == "telephony.projections.read":
+                        value: dict[str, Any] = {
+                            "result_public_id": terminal.result_public_id
+                        }
+                    elif operation == "telephony.projections.read":
                         value = {
                             "observed_state_version": 1,
                             "observed_state_hash": "sha256:" + "3" * 64,
                         }
-                    elif operation_name == "telephony.mappings.read":
+                    elif operation == "telephony.mappings.read":
                         value = {"target_public_id": "EPT-SYNTHETIC-DB"}
                     else:
                         value = {"correlation_id": correlation_id}
