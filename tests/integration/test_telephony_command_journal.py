@@ -222,7 +222,7 @@ async def _scenario(database_url: str):
                 command_public_id=stored.command_id,
                 adapter_identity=operation.adapter_identity,
                 target_public_id=operation.target_public_id,
-                environment=operation.environment,
+                environment="staging",
                 requested_state_version=operation.desired_state_version,
                 applied_state_version=operation.desired_state_version,
                 observed_state_version=operation.desired_state_version,

@@ -8,7 +8,7 @@ from app.adapters.odoo.telephony import (
 
 class FakeValidatedOdoo:
     def __init__(self, *, drift: bool = False):
-        self.calls = []
+        self.calls: list[tuple[str, dict, dict]] = []
         self.drift = drift
 
     async def validated_request(self, operation, payload, **kwargs):
