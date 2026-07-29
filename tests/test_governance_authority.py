@@ -49,6 +49,8 @@ def test_role_overlap_is_explicitly_authorized() -> None:
     data = load_assignments()
     roles = data["roles"]
     overlap = data["role_overlap"]
+    assert isinstance(roles, dict)
+    assert isinstance(overlap, dict)
     assert roles["release_owner"] == roles["security_owner"]
     assert overlap["release_owner_security_owner"] is True
     assert overlap["authorized_by"] == "CODESTRA-GOV-RES-2026-001"
