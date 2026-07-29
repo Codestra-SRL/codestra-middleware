@@ -14,7 +14,7 @@ from app.core.telephony_commands import (
     payload_hash,
 )
 from app.db.models import PolicyDecision, TelephonyCommandJournal
-from app.workers.telephony_commands import dispatch_one
+from app.workers.telephony_commands import claim_authorized, dispatch_one
 
 
 def test_command_policy_and_idempotency_are_database_authoritative():
@@ -154,6 +154,8 @@ async def _scenario(database_url: str):
             await session.commit()
 
         class SyntheticClient:
+            competing_claim = None
+
             async def dispatch(self, command_id, value, *, traceparent):
                 assert value.idempotency_key == idempotency_key
                 assert traceparent.startswith("00-")
@@ -167,18 +169,22 @@ async def _scenario(database_url: str):
                 }
 
             async def readback(self, value, operation, *, traceparent):
+                async with factory() as competing_session:
+                    self.competing_claim = await claim_authorized(competing_session)
                 return {
                     "actual": {"desired_state": value.desired_state()},
                     "actual_hash": operation["desired_hash"],
                     "readback_matches": True,
                 }
 
+        client = SyntheticClient()
         worker_result = await dispatch_one(
             factory,
-            lambda: SyntheticClient(),
+            lambda: client,
             traceparent_factory=lambda: "00-" + "1" * 32 + "-" + "2" * 16 + "-01",
         )
         assert worker_result["state"] == "SUCCEEDED"
+        assert client.competing_claim is None
         async with factory() as session:
             stored = await session.scalar(
                 select(TelephonyCommandJournal).where(

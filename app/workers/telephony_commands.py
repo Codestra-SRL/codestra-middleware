@@ -104,27 +104,6 @@ async def _renew_lease(
             await session.commit()
 
 
-async def _claim_readback(
-    session_factory: async_sessionmaker[AsyncSession], command_id: UUID
-) -> str:
-    async with session_factory() as session:
-        row = await session.get(
-            TelephonyCommandJournal, command_id, with_for_update=True
-        )
-        if (
-            row is None
-            or row.state != TelephonyCommandState.READBACK_PENDING.value
-        ):
-            raise RuntimeError("telephony readback claim conflict")
-        owner = uuid4().hex
-        row.state = TelephonyCommandState.SUBMITTING.value
-        row.lease_owner = owner
-        row.next_attempt_at = datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS)
-        row.updated_at = datetime.now(UTC)
-        await session.commit()
-        return owner
-
-
 def _permanent(exc: Exception) -> bool:
     if isinstance(exc, TelephonyClientError):
         return True
@@ -209,10 +188,15 @@ async def _persist_submission(
             )
         elif existing_for_command.operation_id != operation_id:
             raise RuntimeError("adapter operation idempotency conflict")
-        row.state = TelephonyCommandState.READBACK_PENDING.value
-        row.next_attempt_at = datetime.now(UTC)
-        row.lease_owner = None
-        row.updated_at = datetime.now(UTC)
+        # Keep the submitting worker's lease across the durable
+        # submission-to-readback handoff. Exposing READBACK_PENDING here would
+        # allow another worker to claim the row before this worker begins
+        # readback, producing duplicate readbacks and an ownership conflict.
+        now = datetime.now(UTC)
+        row.state = TelephonyCommandState.SUBMITTING.value
+        row.next_attempt_at = now + timedelta(seconds=LEASE_SECONDS)
+        row.lease_owner = owner
+        row.updated_at = now
         await session.commit()
 
 
@@ -262,15 +246,6 @@ async def dispatch_one(
             )
             await _persist_submission(
                 session_factory, command_id, owner, command, operation
-            )
-            heartbeat.cancel()
-            with suppress(asyncio.CancelledError):
-                await heartbeat
-            # The submission transaction deliberately releases ownership before
-            # readback. Reclaim it immediately using the durable operation row.
-            owner = await _claim_readback(session_factory, command_id)
-            heartbeat = asyncio.create_task(
-                _renew_lease(session_factory, command_id, owner)
             )
         readback = await client.readback(
             command, operation, traceparent=traceparent_factory()
