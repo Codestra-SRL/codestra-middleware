@@ -38,6 +38,9 @@ FEATURE_FLAG_STATE = Gauge(
 CORRELATION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _RATE_WINDOWS: OrderedDict[str, deque[float]] = OrderedDict()
 MAX_RATE_IDENTITIES = 4096
+N8N_TRANSITION_PATH = re.compile(
+    r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -117,12 +120,18 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             return JSONResponse({"detail": "invalid content length"}, status_code=400)
         if content_length > settings.request_max_bytes:
             return JSONResponse({"detail": "request too large"}, status_code=413)
-        if request.url.path in {
-            "/api/v1/events/vicidial",
-            "/api/v2/telephony/canary",
-            "/api/v1/n8n/executions/register",
-            "/api/v1/n8n/acknowledgements",
-        }:
+        signed_write = request.method == "POST" and (
+            request.url.path
+            in {
+                "/api/v1/events/vicidial",
+                "/api/v2/telephony/canary",
+                "/api/v1/n8n/executions",
+                "/api/v1/n8n/executions/register",
+                "/api/v1/n8n/acknowledgements",
+            }
+            or N8N_TRANSITION_PATH.fullmatch(request.url.path) is not None
+        )
+        if signed_write:
             identity = request.client.host if request.client else "unknown"
             now = time.monotonic()
             window = _RATE_WINDOWS.setdefault(identity, deque())
@@ -144,12 +153,18 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "/api/v1/events/vicidial",
             "/api/v1/automation/events",
             "/api/v2/telephony/canary",
+            "/api/v1/n8n/executions",
             "/api/v1/n8n/executions/register",
             "/api/v1/n8n/acknowledgements",
         }
         if (
-            request.url.path.startswith("/api/") or request.url.path.startswith("/v1/")
-        ) and request.url.path not in signed_paths:
+            (
+                request.url.path.startswith("/api/")
+                or request.url.path.startswith("/v1/")
+            )
+            and request.url.path not in signed_paths
+            and not signed_write
+        ):
             try:
                 verify_bearer(
                     request.headers.get("Authorization", ""),
