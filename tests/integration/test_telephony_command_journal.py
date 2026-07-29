@@ -14,6 +14,7 @@ from app.core.telephony_commands import (
     payload_hash,
 )
 from app.db.models import PolicyDecision, TelephonyCommandJournal
+from app.workers.telephony_commands import dispatch_one
 
 
 def test_command_policy_and_idempotency_are_database_authoritative():
@@ -147,5 +148,40 @@ async def _scenario(database_url: str):
             )
             with pytest.raises(HTTPException, match="policy decision expired"):
                 await create_command(expired, expired.idempotency_key, session)
+
+        class SyntheticClient:
+            async def dispatch(self, command_id, value, *, traceparent):
+                assert value.idempotency_key == idempotency_key
+                assert traceparent.startswith("00-")
+                return {
+                    "operation_id": str(uuid4()),
+                    "endpoint_key": "telephony.asterisk.endpoints.apply",
+                    "readback_endpoint_key": "telephony.asterisk.endpoints.read",
+                    "target_configuration_checksum": "sha256:" + "a" * 64,
+                    "target_attested": True,
+                    "desired_hash": payload_hash(value.desired_state()),
+                }
+
+            async def readback(self, value, operation, *, traceparent):
+                return {
+                    "actual": {"desired_state": value.desired_state()},
+                    "actual_hash": operation["desired_hash"],
+                    "readback_matches": True,
+                }
+
+        worker_result = await dispatch_one(
+            factory,
+            lambda session: SyntheticClient(),
+            traceparent_factory=lambda: "00-" + "1" * 32 + "-" + "2" * 16 + "-01",
+        )
+        assert worker_result["state"] == "SUCCEEDED"
+        async with factory() as session:
+            stored = await session.scalar(
+                select(TelephonyCommandJournal).where(
+                    TelephonyCommandJournal.correlation_id == correlation_id
+                )
+            )
+            assert stored is not None
+            assert stored.state == "SUCCEEDED"
     finally:
         await engine.dispose()
