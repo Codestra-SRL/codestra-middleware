@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -134,7 +134,7 @@ async def reserve_idempotency(
             request_hash=request_hash,
             response=response,
             status_code=202,
-            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+            expires_at=datetime.now(UTC) + timedelta(days=30),
         )
     )
     db.add(
@@ -281,8 +281,21 @@ async def dead_letter(body: Lifecycle) -> dict[str, Any]:
 
 
 @router.get("/events/{event_id}")
-async def event_status(event_id: str) -> dict[str, str]:
-    return {"event_id": event_id, "status": "not_persisted_in_safe_blueprint"}
+async def event_status(
+    event_id: str, db: AsyncSession = Depends(get_session)
+) -> dict[str, str]:
+    row = (
+        await db.execute(
+            text(
+                "SELECT r.status FROM n8n_execution_registration r "
+                "JOIN broad_event_delivery d ON d.delivery_id=r.delivery_id "
+                "JOIN integration_event e ON e.id=d.event_id "
+                "WHERE e.original_event_id=:event_id"
+            ),
+            {"event_id": event_id},
+        )
+    ).scalar_one_or_none()
+    return {"event_id": event_id, "status": row or "NOT_FOUND"}
 
 
 CONTEXT_RESOURCES = {"calls", "leads", "agents", "campaigns", "timeline"}
@@ -304,7 +317,7 @@ async def callbacks(state: Literal["due", "overdue"]) -> dict[str, Any]:
 
 @router.get("/queues/status")
 async def queue_status() -> dict[str, Any]:
-    return {"campaigns": [], "generated_at": datetime.now(timezone.utc)}
+    return {"campaigns": [], "generated_at": datetime.now(UTC)}
 
 
 ACTION_NAMES = {

@@ -1,11 +1,11 @@
-from pathlib import Path
 import base64
 import json
+from pathlib import Path
+import re
 from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 VICIDIAL_PRIVATE_HOSTS = frozenset(
     {
@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     broad_event_type_allowlist: str = ""
     broad_event_activation_high_water_mark: str = ""
     broad_event_submission_limit: int = 0
+    n8n_production_target_url: str = ""
+    n8n_production_target_identity: str = ""
+    n8n_production_image_digest: str = ""
+    n8n_transport_hmac_secret_file: str = ""
     email_dispatch_enabled: bool = False
     sms_dispatch_enabled: bool = False
     allow_live_email: bool = False
@@ -185,6 +189,7 @@ class Settings(BaseSettings):
             ("database_url", self.database_url_file),
             ("redis_url", self.redis_url_file),
             ("middleware_secret", self.middleware_secret_file),
+            ("webhook_shared_secret", self.n8n_transport_hmac_secret_file),
             # Ingestion deliberately has no legacy shared-secret fallback.
             ("ingestion_hmac_secret", self.vicidial_callback_hmac_secret_file),
         )
@@ -216,6 +221,31 @@ class Settings(BaseSettings):
         ):
             raise ValueError("VICIdial URL must use an approved private HTTPS endpoint")
         return value.rstrip("/")
+
+    @field_validator("n8n_production_target_url")
+    @classmethod
+    def validate_n8n_production_target_url(cls, value: str) -> str:
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "n8n.internal.codestra.agency"
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path != "/webhooks/codestra/events/v1"
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("n8n target must be the approved internal webhook")
+        return value
+
+    @field_validator("n8n_production_image_digest")
+    @classmethod
+    def validate_n8n_production_image_digest(cls, value: str) -> str:
+        if value and not re.fullmatch(r"sha256:[0-9a-f]{64}", value):
+            raise ValueError("n8n image identity must be an exact sha256 digest")
+        return value
 
     @field_validator("webphone_endpoint_adapter_url")
     @classmethod
