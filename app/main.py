@@ -6,6 +6,7 @@ from prometheus_client import make_asgi_app
 
 from app.api.v1.automation import router as automation_router
 from app.api.v1.campaign_search import router as campaign_search_router
+from app.api.v1.commands import router as commands_router
 from app.api.v1.control import router as control_router
 from app.api.v1.events import router as events_router
 from app.api.v1.lead_reconciliation import router as lead_reconciliation_router
@@ -16,8 +17,8 @@ from app.api.v1.n8n_transport import router as n8n_transport_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.publisher import router as publisher_router
-from app.api.v1.reports import router as reports_router
 from app.api.v1.registry import router as registry_router
+from app.api.v1.reports import router as reports_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
@@ -40,6 +41,7 @@ app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)
+app.include_router(commands_router)
 app.mount("/metrics", make_asgi_app())
 
 SIGNED_WEBHOOK_PATHS = frozenset(

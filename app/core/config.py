@@ -151,6 +151,9 @@ class Settings(BaseSettings):
     webphone_endpoint_adapter_url: str = ""
     extension_allocator_enabled: bool = False
     telephony_provisioning_enabled: bool = False
+    telephony_command_worker_enabled: bool = False
+    telephony_service_client_id: str = "codestra-middleware-telephony"
+    telephony_credential_directory: str = ""
     vicidial_provisioning_enabled: bool = False
     pjsip_provisioning_enabled: bool = False
     webphone_session_issuer_enabled: bool = False
@@ -177,6 +180,7 @@ class Settings(BaseSettings):
             self.allow_live_sms,
             self.outbox_worker_enabled,
             self.telephony_provisioning_enabled,
+            self.telephony_command_worker_enabled,
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
         )

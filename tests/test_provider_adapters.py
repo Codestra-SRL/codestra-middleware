@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta, timezone
 import json
 import socket
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -21,10 +21,10 @@ from app.core.provider_adapters import (
 
 
 def command(**overrides):
-    now = datetime(2026, 7, 29, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 29, 12, tzinfo=UTC)
     values = {
         "command_id": "CMD-TEST-1",
-        "idempotency_key": "IDEMPOTENCY-TEST-1",
+        "idempotency_key": "test-test-test",
         "correlation_id": "CORRELATION-TEST-1",
         "causation_id": "CAUSATION-TEST-1",
         "test_run_id": "CTR-TEST-1",
@@ -154,8 +154,8 @@ def test_synthetic_webhook_normalization_uses_hash_and_references_only():
         provider="synthetic-sink",
         provider_account="test-only",
         provider_event_id="EVENT-1",
-        received_at=datetime(2026, 7, 29, 12, tzinfo=timezone.utc),
-        occurred_at=datetime(2026, 7, 29, 12, tzinfo=timezone.utc),
+        received_at=datetime(2026, 7, 29, 12, tzinfo=UTC),
+        occurred_at=datetime(2026, 7, 29, 12, tzinfo=UTC),
         payload_hash=__import__("hashlib").sha256(body).hexdigest(),
         raw_body=body,
         headers={},

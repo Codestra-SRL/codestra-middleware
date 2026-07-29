@@ -2,7 +2,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.adapters.odoo.client import OdooDeliveryClient
+from app.adapters.odoo.client import (
+    ODOO_ENDPOINTS,
+    ODOO_READ_OPERATIONS,
+    OdooDeliveryClient,
+)
 
 
 class FakeServiceClient:
@@ -34,6 +38,17 @@ async def test_odoo_client_resolves_logical_endpoint_and_keeps_idempotency():
     assert route.business_unit_public_id == "BU"
     assert kwargs["idempotency_key"] == "IDM-1"
     assert payload["result_public_id"] == "R-1"
+
+
+def test_telephony_readback_catalog_is_registry_only_and_read_only():
+    expected = {
+        "telephony.projections.read": "odoo.telephony.projections.read",
+        "telephony.mappings.read": "odoo.telephony.mappings.read",
+        "reconciliation.runs.read": "odoo.reconciliation.runs.read",
+        "reconciliation.drifts.read": "odoo.reconciliation.drifts.read",
+    }
+    assert {key: ODOO_ENDPOINTS[key] for key in expected} == expected
+    assert expected.keys() <= ODOO_READ_OPERATIONS
 
 
 @pytest.mark.asyncio
