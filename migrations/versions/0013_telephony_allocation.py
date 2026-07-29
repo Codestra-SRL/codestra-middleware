@@ -1,7 +1,7 @@
 """Database-authoritative telephony pools, reservations and saga state."""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0013_telephony_allocation"
@@ -168,13 +168,13 @@ def upgrade():
     )
     table = sa.table(
         "telephony_extension_pool",
-        sa.column("id"),
-        sa.column("code"),
-        sa.column("business_unit"),
-        sa.column("role_class"),
-        sa.column("range_start"),
-        sa.column("range_end"),
-        sa.column("active"),
+        sa.column("id", postgresql.UUID(as_uuid=True)),
+        sa.column("code", sa.String(64)),
+        sa.column("business_unit", sa.String(64)),
+        sa.column("role_class", sa.String(32)),
+        sa.column("range_start", sa.Integer()),
+        sa.column("range_end", sa.Integer()),
+        sa.column("active", sa.Boolean()),
     )
     import uuid
 

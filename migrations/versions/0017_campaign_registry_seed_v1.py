@@ -6,9 +6,9 @@ Revises: 0016_campaign_registry_ids
 
 from uuid import UUID
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "0017_campaign_registry_seed"
 down_revision = "0016_campaign_registry_ids"
@@ -126,39 +126,39 @@ def _uuid(number: int, suffix: int) -> UUID:
 def upgrade():
     allocation = sa.table(
         "campaign_extension_allocation",
-        sa.column("id"),
-        sa.column("campaign_id"),
-        sa.column("campaign_number"),
-        sa.column("allocation_public_id"),
-        sa.column("extension_start"),
-        sa.column("extension_end"),
-        sa.column("allocation_status"),
-        sa.column("created_by"),
-        sa.column("policy_hash"),
-        sa.column("source_change_id"),
+        sa.column("id", postgresql.UUID(as_uuid=True)),
+        sa.column("campaign_id", sa.String(64)),
+        sa.column("campaign_number", sa.Integer()),
+        sa.column("allocation_public_id", sa.String(64)),
+        sa.column("extension_start", sa.Integer()),
+        sa.column("extension_end", sa.Integer()),
+        sa.column("allocation_status", sa.String(24)),
+        sa.column("created_by", sa.String(128)),
+        sa.column("policy_hash", sa.String(64)),
+        sa.column("source_change_id", sa.String(128)),
     )
     registry = sa.table(
         "campaign_registry",
-        sa.column("id"),
-        sa.column("campaign_number"),
-        sa.column("campaign_code"),
-        sa.column("campaign_public_id"),
-        sa.column("name"),
-        sa.column("vicidial_campaign_id"),
-        sa.column("agent_group"),
-        sa.column("dialplan_context"),
-        sa.column("parent_campaign_number"),
-        sa.column("extension_allocation_id"),
-        sa.column("registry_status"),
-        sa.column("policy_hash"),
-        sa.column("source_change_id"),
+        sa.column("id", postgresql.UUID(as_uuid=True)),
+        sa.column("campaign_number", sa.Integer()),
+        sa.column("campaign_code", sa.String(3)),
+        sa.column("campaign_public_id", sa.String(32)),
+        sa.column("name", sa.String(160)),
+        sa.column("vicidial_campaign_id", sa.String(8)),
+        sa.column("agent_group", sa.String(32)),
+        sa.column("dialplan_context", sa.String(80)),
+        sa.column("parent_campaign_number", sa.Integer()),
+        sa.column("extension_allocation_id", postgresql.UUID(as_uuid=True)),
+        sa.column("registry_status", sa.String(32)),
+        sa.column("policy_hash", sa.String(64)),
+        sa.column("source_change_id", sa.String(128)),
     )
     gates = sa.table(
         "campaign_feature_gate",
-        sa.column("campaign_number"),
-        sa.column("feature_name"),
-        sa.column("status"),
-        sa.column("policy_hash"),
+        sa.column("campaign_number", sa.Integer()),
+        sa.column("feature_name", sa.String(48)),
+        sa.column("status", sa.String(16)),
+        sa.column("policy_hash", sa.String(64)),
     )
     op.bulk_insert(
         allocation,
