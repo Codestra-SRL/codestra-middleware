@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -50,10 +51,30 @@ class ProvisionRequest(BaseModel):
     role: str = Field(min_length=1, max_length=64)
     idempotency_key: str = Field(min_length=16, max_length=256)
     approved_odoo_request: bool
+    record_environment: Literal["PRODUCTION", "STAGING", "TEST"] = "PRODUCTION"
+    test_run_id: str | None = Field(default=None, min_length=1, max_length=128)
+    causation_id: str | None = Field(default=None, min_length=1, max_length=128)
+    policy_hash: str | None = Field(
+        default=None, min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
 
 
 def _hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def validate_trace_binding(payload: ProvisionRequest) -> None:
+    if payload.record_environment in {"TEST", "STAGING"}:
+        if payload.business_unit != "BU-400-COD" or payload.campaign != "CMP-400-COD":
+            raise HTTPException(422, "test trace scope mismatch")
+        if (
+            not payload.test_run_id
+            or not payload.causation_id
+            or not payload.policy_hash
+        ):
+            raise HTTPException(422, "complete test trace binding required")
+    elif any((payload.test_run_id, payload.causation_id, payload.policy_hash)):
+        raise HTTPException(422, "test trace binding is prohibited in production")
 
 
 @router.post("/extensions/audit")
@@ -203,6 +224,7 @@ async def provision(
 ):
     if not payload.approved_odoo_request:
         raise HTTPException(403, "approved Odoo request required")
+    validate_trace_binding(payload)
     key_hash = _hash(payload.idempotency_key)
     existing = (
         await session.execute(
@@ -227,6 +249,10 @@ async def provision(
         state="APPROVED",
         idempotency_hash=key_hash,
         correlation_id=getattr(request.state, "correlation_id", str(uuid4())),
+        record_environment=payload.record_environment,
+        test_run_id=payload.test_run_id,
+        causation_id=payload.causation_id,
+        policy_hash=payload.policy_hash,
         approved_odoo_request=True,
         completed_steps=[],
     )

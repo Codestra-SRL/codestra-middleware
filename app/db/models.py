@@ -776,6 +776,12 @@ class TelephonyProvisioningSaga(Base):
     correlation_id: Mapped[str] = mapped_column(
         String(128), nullable=False, unique=True
     )
+    record_environment: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="PRODUCTION"
+    )
+    test_run_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    causation_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    policy_hash: Mapped[str | None] = mapped_column(String(64))
     approved_odoo_request: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
@@ -796,6 +802,17 @@ class TelephonyProvisioningSaga(Base):
     )
     __table_args__ = (
         CheckConstraint("version >= 1", name="ck_telephony_saga_version"),
+        CheckConstraint(
+            "record_environment IN ('PRODUCTION','STAGING','TEST')",
+            name="ck_telephony_saga_environment",
+        ),
+        CheckConstraint(
+            "(record_environment = 'PRODUCTION' AND test_run_id IS NULL) OR "
+            "(record_environment IN ('STAGING','TEST') AND "
+            "test_run_id IS NOT NULL AND causation_id IS NOT NULL AND "
+            "policy_hash IS NOT NULL)",
+            name="ck_telephony_saga_test_binding",
+        ),
         CheckConstraint(
             "state IN ('DRAFT','PENDING_APPROVAL','APPROVED','INVENTORY_CHECK','RESERVED',"
             "'PROVISIONING','DISABLED_READY','ACTIVATION_PENDING','ACTIVE','FAILED',"
