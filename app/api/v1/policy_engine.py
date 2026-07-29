@@ -37,6 +37,7 @@ async def decide(
         "action": request.action,
         "subject": request.subject,
         "resource": request.resource,
+        "environment": request.environment or "",
         "business_unit": request.business_unit or "",
         "campaign": request.campaign or "",
         "agent": request.agent or "",

@@ -153,6 +153,18 @@ class RegistryTargetAttestor:
         configuration_checksum: str,
         correlation_id: str,
     ) -> bool:
+        route_identity_hash = payload_hash(
+            {
+                "service_key": route.service_key,
+                "endpoint_key": route.endpoint_key,
+                "endpoint_id": route.endpoint_id,
+                "endpoint_version_id": route.endpoint_version_id,
+                "configuration_checksum": route.configuration_checksum,
+                "method": route.method,
+                "base_url_hash": payload_hash(route.base_url),
+                "path_hash": payload_hash(route.path),
+            }
+        )
         response = await self.common_client.request(
             ResolutionRequest(
                 environment=environment,
@@ -163,6 +175,8 @@ class RegistryTargetAttestor:
             {
                 "endpoint_key": endpoint_key,
                 "configuration_checksum": configuration_checksum,
+                "endpoint_version_id": route.endpoint_version_id,
+                "route_identity_hash": route_identity_hash,
             },
             idempotency_key=correlation_id,
             request_id=correlation_id,
@@ -177,4 +191,6 @@ class RegistryTargetAttestor:
             and value.get("service_key") == "telephony-adapter"
             and value.get("endpoint_key") == endpoint_key
             and value.get("configuration_checksum") == configuration_checksum
+            and value.get("endpoint_version_id") == route.endpoint_version_id
+            and value.get("route_identity_hash") == route_identity_hash
         )

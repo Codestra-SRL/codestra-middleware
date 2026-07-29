@@ -236,6 +236,7 @@ class TelephonyCommandRequest(BaseModel):
             "action": action,
             "subject": self.aggregate_public_id,
             "resource": self.command_type.value,
+            "environment": self.environment,
             "business_unit": self.business_unit_public_id,
             "campaign": self.campaign_public_id,
             "agent": self.payload.agent_public_id or "",

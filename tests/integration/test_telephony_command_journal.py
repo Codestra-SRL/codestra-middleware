@@ -43,6 +43,7 @@ async def _scenario(database_url: str):
             "action": "sync",
             "subject": "AGT-SYNTHETIC-DB",
             "resource": "telephony.asterisk.endpoint.apply",
+            "environment": "staging",
             "business_unit": "BU-SYNTHETIC-DB",
             "campaign": "CMP-SYNTHETIC-DB",
             "agent": "AGT-SYNTHETIC-DB",
