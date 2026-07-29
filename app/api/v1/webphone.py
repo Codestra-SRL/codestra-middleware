@@ -28,10 +28,10 @@ from app.core.jwt_auth import JWTAuthError, KeycloakValidator
 
 router = APIRouter(prefix="/webphone-api/v1", tags=["webphone-staging"])
 logger = logging.getLogger(__name__)
-EXPECTED_ORIGIN = "https://phone.codestra.agency"
-EXPECTED_USER = "preprod"
-CAMPAIGN = "TRANSFER_TEST"
-ENDPOINT = "6197"
+EXPECTED_ORIGIN = f"{settings.webphone_origin_scheme}://{settings.webphone_origin_host}"
+EXPECTED_USER = settings.webphone_expected_user
+CAMPAIGN = settings.webphone_staging_campaign
+ENDPOINT = settings.webphone_staging_endpoint
 TTL_SECONDS = 300
 
 
