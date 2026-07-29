@@ -136,6 +136,9 @@ async def _scenario(database_url: str):
                 update={
                     "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
                     "campaign_public_id": "CMP-SYNTHETIC-OTHER",
+                    "payload": command.payload.model_copy(
+                        update={"endpoint_public_id": "EPT-SYNTHETIC-OTHER"}
+                    ),
                 }
             )
             with pytest.raises(HTTPException, match="authorization scope mismatch"):
@@ -163,6 +166,9 @@ async def _scenario(database_url: str):
                     "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
                     "policy_decision_id": str(expired_id),
                     "policy_decision_hash": payload_hash(expired_context),
+                    "payload": command.payload.model_copy(
+                        update={"endpoint_public_id": "EPT-SYNTHETIC-EXPIRED"}
+                    ),
                 }
             )
             with pytest.raises(HTTPException, match="policy decision expired"):
@@ -419,7 +425,10 @@ async def _scenario(database_url: str):
                     "aggregate_version": 2,
                     "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
                     "payload": command.payload.model_copy(
-                        update={"desired_state_version": 2}
+                        update={
+                            "desired_state_version": 2,
+                            "endpoint_public_id": "EPT-SYNTHETIC-DUPLICATE-VERSION",
+                        }
                     ),
                 }
             )
@@ -431,7 +440,12 @@ async def _scenario(database_url: str):
                 )
 
             stale_version = command.model_copy(
-                update={"idempotency_key": f"IDM-SYNTHETIC-{uuid4()}"}
+                update={
+                    "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
+                    "payload": command.payload.model_copy(
+                        update={"endpoint_public_id": "EPT-SYNTHETIC-STALE-VERSION"}
+                    ),
+                }
             )
             with pytest.raises(
                 HTTPException, match="stale or duplicate aggregate version"
