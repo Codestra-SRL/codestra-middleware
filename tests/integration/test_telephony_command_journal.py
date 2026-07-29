@@ -193,5 +193,39 @@ async def _scenario(database_url: str):
             )
             assert stored is not None
             assert stored.state == "SUCCEEDED"
+
+            next_command = command.model_copy(
+                update={
+                    "aggregate_version": 2,
+                    "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
+                }
+            )
+            accepted_next = await create_command(
+                next_command, next_command.idempotency_key, session
+            )
+            assert accepted_next["aggregate_version"] == 2
+
+            duplicate_version = command.model_copy(
+                update={
+                    "aggregate_version": 2,
+                    "idempotency_key": f"IDM-SYNTHETIC-{uuid4()}",
+                }
+            )
+            with pytest.raises(
+                HTTPException, match="stale or duplicate aggregate version"
+            ):
+                await create_command(
+                    duplicate_version, duplicate_version.idempotency_key, session
+                )
+
+            stale_version = command.model_copy(
+                update={"idempotency_key": f"IDM-SYNTHETIC-{uuid4()}"}
+            )
+            with pytest.raises(
+                HTTPException, match="stale or duplicate aggregate version"
+            ):
+                await create_command(
+                    stale_version, stale_version.idempotency_key, session
+                )
     finally:
         await engine.dispose()

@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,6 +74,21 @@ async def create_command(
         raise HTTPException(409, "policy expiration is invalid") from None
     if expires_at.tzinfo is None or expires_at <= datetime.now(UTC):
         raise HTTPException(409, "policy decision expired")
+    aggregate_lock_key = "\x1f".join(
+        (body.environment, body.aggregate_type, body.aggregate_public_id)
+    )
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtextextended(aggregate_lock_key, 0)))
+    )
+    latest_version = await session.scalar(
+        select(func.max(TelephonyCommandJournal.aggregate_version)).where(
+            TelephonyCommandJournal.environment == body.environment,
+            TelephonyCommandJournal.aggregate_type == body.aggregate_type,
+            TelephonyCommandJournal.aggregate_public_id == body.aggregate_public_id,
+        )
+    )
+    if latest_version is not None and body.aggregate_version <= latest_version:
+        raise HTTPException(409, "stale or duplicate aggregate version")
     values["state"] = (
         "AUTHORIZED"
         if decision.allowed and decision.context.get("enforced") is True
@@ -92,7 +107,19 @@ async def create_command(
             )
         )
         if not existing or existing.request_hash != values["request_hash"]:
-            raise HTTPException(409, "concurrent idempotency conflict") from None
+            latest_version = await session.scalar(
+                select(func.max(TelephonyCommandJournal.aggregate_version)).where(
+                    TelephonyCommandJournal.environment == body.environment,
+                    TelephonyCommandJournal.aggregate_type == body.aggregate_type,
+                    TelephonyCommandJournal.aggregate_public_id
+                    == body.aggregate_public_id,
+                )
+            )
+            if latest_version is not None and body.aggregate_version <= latest_version:
+                raise HTTPException(
+                    409, "stale or duplicate aggregate version"
+                ) from None
+            raise HTTPException(409, "concurrent command conflict") from None
         return _command_view(existing, replayed=True)
     return _command_view(row)
 

@@ -51,6 +51,13 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("command_id"),
         sa.UniqueConstraint("idempotency_hash"),
+        sa.UniqueConstraint(
+            "environment",
+            "aggregate_type",
+            "aggregate_public_id",
+            "aggregate_version",
+            name="uq_telephony_command_aggregate_version",
+        ),
     )
     op.create_index(
         "ix_telephony_command_aggregate",

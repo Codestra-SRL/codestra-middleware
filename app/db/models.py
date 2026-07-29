@@ -66,6 +66,13 @@ class TelephonyCommandJournal(Base):
             "environment IN ('staging','test','production')",
             name="ck_telephony_command_environment",
         ),
+        UniqueConstraint(
+            "environment",
+            "aggregate_type",
+            "aggregate_public_id",
+            "aggregate_version",
+            name="uq_telephony_command_aggregate_version",
+        ),
         Index(
             "ix_telephony_command_aggregate",
             "aggregate_type",
