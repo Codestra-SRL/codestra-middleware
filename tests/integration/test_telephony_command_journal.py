@@ -84,10 +84,19 @@ async def _scenario(database_url: str):
             )
             await session.commit()
             first = await create_command(command, idempotency_key, session)
+            stored_decision = await session.get(PolicyDecision, decision_id)
+            assert stored_decision is not None
+            stored_decision.context = {
+                **context,
+                "expiration": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+            }
+            await session.commit()
             replay = await create_command(command, idempotency_key, session)
             assert first["state"] == "AUTHORIZED"
             assert replay["replayed"] is True
             assert replay["command_id"] == first["command_id"]
+            stored_decision.context = context
+            await session.commit()
             stored = await session.scalar(
                 select(TelephonyCommandJournal).where(
                     TelephonyCommandJournal.correlation_id == correlation_id

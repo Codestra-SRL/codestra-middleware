@@ -127,6 +127,8 @@ def payload_hash(value: Any) -> str:
 class TelephonyCommandPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     endpoint_public_id: str | None = Field(default=None, max_length=144)
+    source_endpoint_public_id: str | None = Field(default=None, max_length=144)
+    destination_endpoint_public_id: str | None = Field(default=None, max_length=144)
     agent_public_id: str | None = Field(default=None, max_length=144)
     phone_public_id: str | None = Field(default=None, max_length=144)
     call_public_id: str | None = Field(default=None, max_length=144)
@@ -141,6 +143,8 @@ class TelephonyCommandPayload(BaseModel):
     def validate_public_ids(self) -> TelephonyCommandPayload:
         values = (
             self.endpoint_public_id,
+            self.source_endpoint_public_id,
+            self.destination_endpoint_public_id,
             self.agent_public_id,
             self.phone_public_id,
             self.call_public_id,
@@ -181,11 +185,37 @@ class TelephonyCommandRequest(BaseModel):
             self.command_type is TelephonyCommandType.INTERNAL_CALL_CREATE
             and (
                 self.environment != "staging"
+                or not self.payload.source_endpoint_public_id
+                or not self.payload.destination_endpoint_public_id
                 or self.payload.maximum_duration_seconds is None
                 or self.payload.purpose != "controlled_internal_acceptance"
             )
         ):
             raise ValueError("internal calls require bounded staging acceptance scope")
+        requirements = {
+            TelephonyCommandType.USER_APPLY: ("agent_public_id",),
+            TelephonyCommandType.USER_DISABLE: ("agent_public_id",),
+            TelephonyCommandType.PHONE_APPLY: ("phone_public_id",),
+            TelephonyCommandType.PHONE_DISABLE: ("phone_public_id",),
+            TelephonyCommandType.ENDPOINT_APPLY: ("endpoint_public_id",),
+            TelephonyCommandType.ENDPOINT_DISABLE: ("endpoint_public_id",),
+            TelephonyCommandType.CONTACT_REVOKE: ("endpoint_public_id", "contact_id"),
+            TelephonyCommandType.INTERNAL_CALL_CREATE: (
+                "source_endpoint_public_id",
+                "destination_endpoint_public_id",
+                "call_public_id",
+            ),
+            TelephonyCommandType.CALL_HANGUP: ("call_public_id",),
+        }
+        missing = [
+            field
+            for field in requirements.get(self.command_type, ())
+            if not getattr(self.payload, field)
+        ]
+        if missing:
+            raise ValueError(
+                f"{self.command_type.value} requires {', '.join(sorted(missing))}"
+            )
         return self
 
     def request_hash(self) -> str:

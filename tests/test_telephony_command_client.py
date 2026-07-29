@@ -73,7 +73,8 @@ def test_internal_call_is_bounded_to_staging_acceptance():
         command_type="telephony.asterisk.internal_call.create",
         payload={
             "call_public_id": "CALL-SYNTHETIC-001",
-            "endpoint_public_id": "EPT-SYNTHETIC-001",
+            "source_endpoint_public_id": "EPT-SOURCE-001",
+            "destination_endpoint_public_id": "EPT-DESTINATION-001",
             "allocation_reservation_id": "RSV-SYNTHETIC-001",
             "desired_state_version": 1,
             "maximum_duration_seconds": 120,
@@ -111,12 +112,19 @@ class CommonClient:
         self.resolver = resolver
         self.calls = []
 
+    async def request_resolved(self, route, payload, **kwargs):
+        self.calls.append((route, payload, kwargs))
+        request = httpx.Request("POST", "https://invalid")
+        return httpx.Response(
+            202, json={"operation_id": str(uuid4())}, request=request
+        )
+
     async def request(self, route, payload, **kwargs):
         self.calls.append((route, payload, kwargs))
         request = httpx.Request("POST" if route.mutation else "GET", "https://invalid")
         if route.mutation:
             return httpx.Response(
-                202, json={"operation_id": "OP-SYNTHETIC-001"}, request=request
+                202, json={"operation_id": str(uuid4())}, request=request
             )
         return httpx.Response(
             200,
@@ -193,3 +201,37 @@ async def test_dispatch_rejects_route_that_does_not_require_attestation():
             command(),
             traceparent="00-" + "1" * 32 + "-" + "2" * 16 + "-01",
         )
+
+
+@pytest.mark.parametrize(
+    ("command_type", "payload"),
+    [
+        (
+            "telephony.vicidial.user.apply",
+            {
+                "endpoint_public_id": "EPT-WRONG-001",
+                "allocation_reservation_id": "RSV-001",
+                "desired_state_version": 1,
+            },
+        ),
+        (
+            "telephony.vicidial.phone.apply",
+            {
+                "agent_public_id": "AGT-WRONG-001",
+                "allocation_reservation_id": "RSV-001",
+                "desired_state_version": 1,
+            },
+        ),
+        (
+            "telephony.asterisk.call.hangup",
+            {
+                "endpoint_public_id": "EPT-WRONG-001",
+                "allocation_reservation_id": "RSV-001",
+                "desired_state_version": 1,
+            },
+        ),
+    ],
+)
+def test_command_specific_target_is_required(command_type, payload):
+    with pytest.raises(ValidationError):
+        command(command_type=command_type, payload=payload)

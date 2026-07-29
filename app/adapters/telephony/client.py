@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Protocol
+from uuid import UUID
 
 from app.core.endpoint_registry import ResolutionRequest
 from app.core.service_client import CommonServiceClient
@@ -58,8 +59,8 @@ class TelephonyServiceClient:
             correlation_id=command.correlation_id,
         ):
             raise TelephonyClientError("telephony target attestation failed")
-        response = await self.common_client.request(
-            route_request,
+        response = await self.common_client.request_resolved(
+            route,
             {
                 "command_id": command_id,
                 **command.model_dump(mode="json"),
@@ -74,8 +75,12 @@ class TelephonyServiceClient:
         result = response.json()
         if not isinstance(result, dict) or not result.get("operation_id"):
             raise TelephonyClientError("invalid telephony operation acknowledgement")
+        try:
+            operation_id = str(UUID(str(result["operation_id"])))
+        except ValueError:
+            raise TelephonyClientError("telephony operation ID must be a UUID") from None
         return {
-            "operation_id": str(result["operation_id"]),
+            "operation_id": operation_id,
             "endpoint_key": endpoint_key,
             "readback_endpoint_key": READBACK_ENDPOINTS[command.command_type],
             "target_configuration_checksum": route.configuration_checksum,

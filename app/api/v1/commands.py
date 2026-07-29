@@ -47,6 +47,15 @@ async def create_command(
     if idempotency_key != body.idempotency_key:
         raise HTTPException(400, "header and command idempotency keys must match")
     values = new_command_record(body)
+    existing = await session.scalar(
+        select(TelephonyCommandJournal).where(
+            TelephonyCommandJournal.idempotency_hash == values["idempotency_hash"]
+        )
+    )
+    if existing:
+        if existing.request_hash != values["request_hash"]:
+            raise HTTPException(409, "idempotency key conflict")
+        return _command_view(existing, replayed=True)
     decision = await session.get(PolicyDecision, UUID(body.policy_decision_id))
     if not decision:
         raise HTTPException(422, "policy decision not found")
@@ -70,15 +79,6 @@ async def create_command(
         if decision.allowed and decision.context.get("enforced") is True
         else "POLICY_DENIED"
     )
-    existing = await session.scalar(
-        select(TelephonyCommandJournal).where(
-            TelephonyCommandJournal.idempotency_hash == values["idempotency_hash"]
-        )
-    )
-    if existing:
-        if existing.request_hash != values["request_hash"]:
-            raise HTTPException(409, "idempotency key conflict")
-        return _command_view(existing, replayed=True)
     row = TelephonyCommandJournal(**values)
     session.add(row)
     try:
