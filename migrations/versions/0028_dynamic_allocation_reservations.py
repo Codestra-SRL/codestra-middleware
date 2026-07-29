@@ -4,7 +4,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0028_dynamic_allocation_reservations"
+revision = "0028_dynamic_alloc_resv"
 down_revision = "0027_extension_pool_exclusions"
 branch_labels = None
 depends_on = None
