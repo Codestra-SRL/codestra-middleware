@@ -136,8 +136,11 @@ class N8nTargetAttestation(Base):
     )
     target_identity: Mapped[str] = mapped_column(String(128), nullable=False)
     target_environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    canonical_host: Mapped[str] = mapped_column(String(255), nullable=False)
     image_digest: Mapped[str] = mapped_column(String(71), nullable=False)
     version: Mapped[str] = mapped_column(String(64), nullable=False)
+    workflow_package_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_nonce: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     verified_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -153,6 +156,9 @@ class N8nExecutionRegistration(Base):
     execution_registration_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
+    registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False, unique=True
+    )
     delivery_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("broad_event_delivery.delivery_id"),
@@ -162,12 +168,18 @@ class N8nExecutionRegistration(Base):
     workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
     workflow_version: Mapped[str] = mapped_column(String(128), nullable=False)
     execution_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="REGISTERED"
     )
-    accepted_at: Mapped[datetime] = mapped_column(
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    registered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
     response_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -177,6 +189,11 @@ class N8nAcknowledgement(Base):
     __tablename__ = "n8n_acknowledgement"
     acknowledgement_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True
+    )
+    registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("n8n_execution_registration.registration_id"),
+        nullable=False,
     )
     delivery_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -199,8 +216,43 @@ class N8nAcknowledgement(Base):
     completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     persisted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class OdooResultDelivery(Base):
+    __tablename__ = "odoo_result_delivery"
+    result_delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    acknowledgement_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("n8n_acknowledgement.acknowledgement_id"),
+        nullable=False,
+        unique=True,
+    )
+    result_public_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False, unique=True, default=uuid4
+    )
+    originating_outbox_public_id: Mapped[str] = mapped_column(
+        String(128), nullable=False
+    )
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    odoo_result_inbox_id: Mapped[str | None] = mapped_column(String(64))
+    response_hash: Mapped[str | None] = mapped_column(String(64))
+    last_error_class: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 

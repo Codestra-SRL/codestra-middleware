@@ -144,6 +144,8 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "/api/v1/events/vicidial",
             "/api/v1/automation/events",
             "/api/v2/telephony/canary",
+            "/api/v1/n8n/executions/register",
+            "/api/v1/n8n/acknowledgements",
         }
         if (
             request.url.path.startswith("/api/") or request.url.path.startswith("/v1/")
