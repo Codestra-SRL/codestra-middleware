@@ -12,7 +12,7 @@ MIGRATION = (
 def test_runtime_grants_follow_current_linear_migration_chain() -> None:
     source = MIGRATION.read_text(encoding="utf-8")
 
-    assert 'revision = "0020_campaign_registry_runtime_grants"' in source
+    assert 'revision = "0020_registry_runtime_grants"' in source
     assert 'down_revision = "0019_notification_control_plane"' in source
 
 

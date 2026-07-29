@@ -1,13 +1,13 @@
 """Grant least-privilege canonical campaign registry access.
 
-Revision ID: 0020_campaign_registry_runtime_grants
+Revision identifier: 0020_registry_runtime_grants
 Revises: 0019_notification_control_plane
 """
 
 from alembic import op
 
 
-revision = "0020_campaign_registry_runtime_grants"
+revision = "0020_registry_runtime_grants"
 down_revision = "0019_notification_control_plane"
 branch_labels = None
 depends_on = None
