@@ -7,8 +7,6 @@ defaults false, so source merge alone cannot dispatch a command.
 from collections.abc import Callable
 from uuid import uuid4
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.db.session import SessionFactory
 from app.entrypoints.runtime import run_worker
@@ -16,11 +14,11 @@ from app.workers.telephony_commands import TelephonyDispatcher, dispatch_one
 
 SERVICE = "middleware-telephony-command-worker"
 QUEUE = "telephony-commands"
-_client_factory: Callable[[AsyncSession], TelephonyDispatcher] | None = None
+_client_factory: Callable[[], TelephonyDispatcher] | None = None
 
 
 def configure_client_factory(
-    factory: Callable[[AsyncSession], TelephonyDispatcher],
+    factory: Callable[[], TelephonyDispatcher],
 ) -> None:
     global _client_factory
     _client_factory = factory

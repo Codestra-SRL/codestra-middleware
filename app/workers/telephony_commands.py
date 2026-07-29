@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.telephony_commands import (
@@ -36,15 +36,24 @@ async def claim_authorized(session: AsyncSession) -> UUID | None:
     row = await session.scalar(
         select(TelephonyCommandJournal)
         .where(
-            TelephonyCommandJournal.state.in_(
-                (
-                    TelephonyCommandState.AUTHORIZED.value,
-                    TelephonyCommandState.FAILED_TRANSIENT.value,
-                )
-            ),
             or_(
-                TelephonyCommandJournal.next_attempt_at.is_(None),
-                TelephonyCommandJournal.next_attempt_at <= now,
+                and_(
+                    TelephonyCommandJournal.state.in_(
+                        (
+                            TelephonyCommandState.AUTHORIZED.value,
+                            TelephonyCommandState.FAILED_TRANSIENT.value,
+                        )
+                    ),
+                    or_(
+                        TelephonyCommandJournal.next_attempt_at.is_(None),
+                        TelephonyCommandJournal.next_attempt_at <= now,
+                    ),
+                ),
+                and_(
+                    TelephonyCommandJournal.state
+                    == TelephonyCommandState.SUBMITTING.value,
+                    TelephonyCommandJournal.next_attempt_at <= now,
+                ),
             ),
         )
         .order_by(TelephonyCommandJournal.created_at)
@@ -64,7 +73,7 @@ async def claim_authorized(session: AsyncSession) -> UUID | None:
 
 async def dispatch_one(
     session_factory: async_sessionmaker[AsyncSession],
-    client_factory: Callable[[AsyncSession], TelephonyDispatcher],
+    client_factory: Callable[[], TelephonyDispatcher],
     *,
     traceparent_factory: Callable[[], str],
 ) -> dict[str, Any]:
@@ -78,7 +87,7 @@ async def dispatch_one(
         if row is None:
             raise RuntimeError("claimed telephony command disappeared")
         command = TelephonyCommandRequest.model_validate(row.request_json)
-        client = client_factory(session)
+        client = client_factory()
 
     try:
         operation = await client.dispatch(

@@ -148,6 +148,9 @@ async def _scenario(database_url: str):
             )
             with pytest.raises(HTTPException, match="policy decision expired"):
                 await create_command(expired, expired.idempotency_key, session)
+            stored.state = "SUBMITTING"
+            stored.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+            await session.commit()
 
         class SyntheticClient:
             async def dispatch(self, command_id, value, *, traceparent):
@@ -171,7 +174,7 @@ async def _scenario(database_url: str):
 
         worker_result = await dispatch_one(
             factory,
-            lambda session: SyntheticClient(),
+            lambda: SyntheticClient(),
             traceparent_factory=lambda: "00-" + "1" * 32 + "-" + "2" * 16 + "-01",
         )
         assert worker_result["state"] == "SUCCEEDED"
