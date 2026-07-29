@@ -3,7 +3,7 @@ import json
 import os
 import time
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import Response
@@ -14,7 +14,11 @@ from starlette.requests import Request
 
 import app.api.v1.n8n_transport as transport_api
 from app.adapters.odoo.results import deliver_result
-from app.api.v1.n8n_transport import acknowledge_execution, register_execution
+from app.api.v1.n8n_transport import (
+    acknowledge_execution,
+    register_execution,
+    transition_execution,
+)
 from app.core.automation import canonical_hash, sign_exact_body
 from app.core.config import settings
 from app.db.models import (
@@ -97,11 +101,13 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
                 "registration_id": str(uuid4()),
                 "delivery_id": str(delivery.delivery_id),
                 "event_id": event_public_id,
-                "workflow_id": workflow_id,
+                "workflow_key": workflow_id,
                 "workflow_version": workflow_version,
                 "execution_id": execution_id,
                 "payload_hash": payload_hash,
                 "request_hash": "d" * 64,
+                "policy_hash": policy_hash,
+                "attempt_number": 1,
                 "environment": "production",
                 "idempotency_key": f"registration-{event_public_id}",
                 "correlation_id": correlation_id,
@@ -122,13 +128,34 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
             assert response["idempotency_status"] == "NEW"
 
             acknowledgement_id = uuid4()
+            transition = {
+                "schema_version": "1.0",
+                "transition_id": str(uuid4()),
+                "state": "RUNNING",
+                "correlation_id": correlation_id,
+                "attempt_number": 1,
+                "occurred_at": datetime.now(UTC).isoformat(),
+            }
+            raw_transition = json.dumps(transition).encode()
+            transitioned = await transition_execution(
+                UUID(registration["registration_id"]),
+                request_for(raw_transition),
+                Response(),
+                "Bearer synthetic",
+                timestamp,
+                uuid4().hex,
+                f"sha256={sign_exact_body(raw_transition, settings.webhook_shared_secret)}",
+                session,
+            )
+            assert transitioned["state"] == "RUNNING"
+
             acknowledgement = {
                 "schema_version": "1.0",
                 "acknowledgement_id": str(acknowledgement_id),
                 "registration_id": registration["registration_id"],
                 "delivery_id": str(delivery.delivery_id),
                 "event_id": event_public_id,
-                "workflow_id": workflow_id,
+                "workflow_key": workflow_id,
                 "workflow_version": workflow_version,
                 "execution_id": execution_id,
                 "execution_status": "SUCCEEDED",
@@ -152,6 +179,7 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
                 session,
             )
             assert persisted["persisted"] is True
+            assert persisted["idempotency_status"] == "NEW"
             duplicate = await acknowledge_execution(
                 request_for(raw_ack),
                 Response(),
@@ -162,6 +190,7 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
                 session,
             )
             assert duplicate["persisted"] is True
+            assert duplicate["idempotency_status"] == "DUPLICATE"
             delivery_status = await session.scalar(
                 select(BroadEventDelivery.status).where(
                     BroadEventDelivery.delivery_id == delivery.delivery_id
