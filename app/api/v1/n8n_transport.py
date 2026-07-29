@@ -570,7 +570,6 @@ async def acknowledge_execution(
             raise HTTPException(409, "delivery is not execution registered")
         acknowledgement = N8nAcknowledgement(
             acknowledgement_id=body.acknowledgement_id,
-            result_id=body.result_id,
             **immutable,
             metrics=body.metrics.model_dump(),
         )
