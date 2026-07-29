@@ -272,6 +272,9 @@ jobs:
           assert not settings.messaging_enabled
           assert not settings.outbox_worker_enabled
           PY
+          kill "${server_pid}"
+          wait "${server_pid}" || true
+          trap - EXIT
 
       - name: Create test evidence manifest
         shell: bash
@@ -317,6 +320,7 @@ jobs:
             pytest-full.txt
             campaign-extension-concurrency.txt
             campaign-identity-concurrency.txt
+            middleware-rehearsal.dump
             restoration.sha256
             application-startup.txt
             healthz-final.json
