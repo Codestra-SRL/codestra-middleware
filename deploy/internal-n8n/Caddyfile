@@ -1,0 +1,64 @@
+n8n.internal.codestra.agency {
+	bind 0.0.0.0
+	tls /run/secrets/n8n_internal_tls_cert /run/secrets/n8n_internal_tls_key
+
+	@attestation path /.well-known/codestra-target/v1
+	handle @attestation {
+		rewrite * /internal/n8n-target-attestation
+		reverse_proxy middleware-integration-api:8095
+	}
+
+	@health path /healthz
+	handle @health {
+		rewrite * /healthz
+		reverse_proxy n8n:5678
+	}
+
+	@ready path /readyz
+	handle @ready {
+		rewrite * /healthz/readiness
+		reverse_proxy n8n:5678
+	}
+
+	@events {
+		path /webhook/codestra/v1/events
+		method POST
+		header Content-Type application/json*
+	}
+	handle @events {
+		request_body {
+			max_size 256KB
+		}
+		reverse_proxy n8n:5678 {
+			header_up Host n8n
+		}
+	}
+
+	handle {
+		respond "not found" 404
+	}
+}
+
+odoo.internal.codestra.agency {
+	bind 0.0.0.0
+	tls /run/secrets/odoo_internal_tls_cert /run/secrets/odoo_internal_tls_key
+
+	@result path /codestra/integration/v1/results
+	handle @result {
+		request_body {
+			max_size 64KB
+		}
+		reverse_proxy odoo:8069 {
+			header_up Host odoo
+		}
+	}
+
+	@health path /web/health
+	handle @health {
+		reverse_proxy odoo:8069
+	}
+
+	handle {
+		respond "not found" 404
+	}
+}
