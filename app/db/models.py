@@ -1066,3 +1066,230 @@ class TelephonyCallLifecycleEvent(Base):
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class IntegrationService(Base):
+    __tablename__ = "integration_service"
+    service_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    service_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class IntegrationCredentialReference(Base):
+    __tablename__ = "integration_credential_reference"
+    credential_reference_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    reference_key: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True
+    )
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class IntegrationEndpoint(Base):
+    __tablename__ = "integration_endpoint"
+    endpoint_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    service_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("integration_service.service_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    api_version: Mapped[str] = mapped_column(String(16), nullable=False, default="v1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "service_id", "endpoint_key", "api_version", name="uq_endpoint_identity"
+        ),
+    )
+
+
+class IntegrationEndpointVersion(Base):
+    __tablename__ = "integration_endpoint_version"
+    endpoint_version_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    endpoint_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("integration_endpoint.endpoint_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    configuration_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    path_template: Mapped[str] = mapped_column(String(512), nullable=False)
+    http_method: Mapped[str] = mapped_column(String(10), nullable=False)
+    content_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="application/json"
+    )
+    authentication_mode: Mapped[str] = mapped_column(String(64), nullable=False)
+    required_audience: Mapped[str] = mapped_column(String(128), nullable=False)
+    required_scopes: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    credential_reference_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    tls_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    timeout_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=10000)
+    connection_timeout_ms: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3000
+    )
+    rate_limit_per_minute: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    concurrency_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    idempotency_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    retry_class: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="NO_RETRY"
+    )
+    retry_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    redirects_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    target_attestation_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    stale_read_safe: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    kill_switch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    configuration_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    effective_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "endpoint_id",
+            "configuration_version",
+            name="uq_endpoint_configuration_version",
+        ),
+        CheckConstraint("configuration_version >= 1", name="ck_endpoint_version"),
+        CheckConstraint("timeout_ms > 0", name="ck_endpoint_timeout"),
+        CheckConstraint(
+            "connection_timeout_ms > 0", name="ck_endpoint_connection_timeout"
+        ),
+        CheckConstraint("retry_limit >= 0", name="ck_endpoint_retry_limit"),
+        CheckConstraint(
+            "retry_class IN ('NO_RETRY','BOUNDED_TRANSIENT_RETRY','MANUAL_REPLAY_ONLY')",
+            name="ck_endpoint_retry_class",
+        ),
+    )
+
+
+class IntegrationRouteBinding(Base):
+    __tablename__ = "integration_route_binding"
+    binding_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    endpoint_version_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("integration_endpoint_version.endpoint_version_id"),
+        nullable=False,
+    )
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    organization_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    business_unit_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    campaign_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    workflow_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    event_type_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "environment",
+            "endpoint_version_id",
+            "organization_scope",
+            "business_unit_scope",
+            "campaign_scope",
+            "workflow_scope",
+            "event_type_scope",
+            name="uq_route_binding_scope",
+        ),
+        Index(
+            "ix_route_binding_lookup",
+            "environment",
+            "organization_scope",
+            "business_unit_scope",
+            "campaign_scope",
+        ),
+    )
+
+
+class IntegrationSchemaVersion(Base):
+    __tablename__ = "integration_schema_version"
+    schema_version_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    service_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    api_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    schema_reference: Mapped[str] = mapped_column(String(512), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "service_key",
+            "endpoint_key",
+            "api_version",
+            name="uq_integration_schema_key",
+        ),
+    )
+
+
+class IntegrationEndpointAudit(Base):
+    __tablename__ = "integration_endpoint_audit"
+    audit_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    endpoint_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    previous_checksum: Mapped[str | None] = mapped_column(String(71))
+    new_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class IntegrationRegistryGeneration(Base):
+    __tablename__ = "integration_registry_generation"
+    environment: Mapped[str] = mapped_column(String(32), primary_key=True)
+    generation: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    configuration_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    published_by: Mapped[str] = mapped_column(String(128), nullable=False)

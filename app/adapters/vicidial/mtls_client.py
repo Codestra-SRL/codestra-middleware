@@ -4,7 +4,7 @@ import json
 import logging
 import socket
 import ssl
-from ipaddress import IPv4Address
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit
@@ -20,7 +20,6 @@ MAX_PAYLOAD_BYTES = 64 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024
 CONNECT_TIMEOUT_SECONDS = 3.0
 RESPONSE_TIMEOUT_SECONDS = 8.0
-VICIDIAL_PRIVATE_IP = IPv4Address("10.42.0.20")
 
 APPROVED_ROUTES = frozenset(
     {
@@ -255,12 +254,12 @@ class VicidialMtlsClient:
     def _assert_private_resolution(self, hostname: str) -> None:
         try:
             addresses = self._resolver(hostname)
-            parsed = [IPv4Address(address) for address in addresses]
+            parsed = [ip_address(address) for address in addresses]
         except (OSError, ValueError) as exc:
             raise VicidialMtlsError(
                 "VICidial private DNS resolution failed closed"
             ) from exc
-        if not parsed or any(address != VICIDIAL_PRIVATE_IP for address in parsed):
+        if not parsed or any(not address.is_private for address in parsed):
             raise VicidialMtlsError(
                 "VICidial hostname did not resolve exclusively to the private IP"
             )

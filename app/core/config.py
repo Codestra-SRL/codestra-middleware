@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     database_url_file: str = ""
     redis_url: str = "redis://localhost:6379/2"
     redis_url_file: str = ""
+    registry_snapshot_signing_key_file: str = ""
+    registry_l1_ttl_seconds: int = 15
+    registry_l2_ttl_seconds: int = 60
+    registry_stale_grace_seconds: int = 300
+    registry_service_issuer: str = ""
+    registry_service_audience: str = "codestra-middleware"
+    registry_service_jwks_url: str = ""
+    registry_service_client_id: str = "codestra-registry-client"
     ingestion_hmac_secret: str = ""
     ingestion_token: str = ""
     middleware_secret: str = ""
@@ -75,7 +83,12 @@ class Settings(BaseSettings):
     n8n_production_image_digest: str = ""
     n8n_production_instance_id: str = ""
     n8n_production_version: str = ""
-    n8n_runtime_health_url: str = "http://n8n:5678/healthz"
+    n8n_runtime_health_url: str = ""
+    webphone_origin_scheme: str = "https"
+    webphone_origin_host: str = "phone.codestra.agency"
+    webphone_expected_user: str = "preprod"
+    webphone_staging_campaign: str = "TRANSFER_TEST"
+    webphone_staging_endpoint: str = "6197"
     n8n_workflow_package_sha256: str = ""
     n8n_target_ca_file: str = ""
     n8n_service_issuer: str = ""
@@ -222,6 +235,15 @@ class Settings(BaseSettings):
                 if not value:
                     raise ValueError(f"required {attribute} secret file is empty")
                 setattr(self, attribute, value)
+
+    def load_registry_snapshot_key(self) -> bytes:
+        path = Path(self.registry_snapshot_signing_key_file)
+        if not path.is_absolute() or not path.is_file():
+            raise ValueError("registry snapshot signing key file is unavailable")
+        value = path.read_bytes().strip()
+        if len(value) < 32:
+            raise ValueError("registry snapshot signing key is too short")
+        return value
 
     @field_validator("vicidial_authorization_url", "vicidial_edge_url")
     @classmethod
