@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -102,6 +102,33 @@ async def _renew_lease(
             row.next_attempt_at = datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS)
             row.updated_at = datetime.now(UTC)
             await session.commit()
+
+
+async def _run_while_lease(
+    operation: Awaitable[dict[str, Any]], heartbeat: asyncio.Task[None]
+) -> dict[str, Any]:
+    """Abort external work if durable lease renewal stops or fails."""
+    operation_task: asyncio.Future[dict[str, Any]] = asyncio.ensure_future(operation)
+    async def lease_guard() -> dict[str, Any]:
+        try:
+            await heartbeat
+        except asyncio.CancelledError:
+            raise RuntimeError("telephony command lease renewal was cancelled") from None
+        raise RuntimeError("telephony command lease renewal stopped")
+
+    guard_task = asyncio.create_task(lease_guard())
+    done, _ = await asyncio.wait(
+        {operation_task, guard_task}, return_when=asyncio.FIRST_COMPLETED
+    )
+    if operation_task in done:
+        guard_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await guard_task
+        return operation_task.result()
+    operation_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await operation_task
+    return guard_task.result()
 
 
 def _permanent(exc: Exception) -> bool:
@@ -241,14 +268,20 @@ async def dispatch_one(
     heartbeat = asyncio.create_task(_renew_lease(session_factory, command_id, owner))
     try:
         if operation is None:
-            operation = await client.dispatch(
-                str(command_id), command, traceparent=traceparent_factory()
+            operation = await _run_while_lease(
+                client.dispatch(
+                    str(command_id), command, traceparent=traceparent_factory()
+                ),
+                heartbeat,
             )
             await _persist_submission(
                 session_factory, command_id, owner, command, operation
             )
-        readback = await client.readback(
-            command, operation, traceparent=traceparent_factory()
+        readback = await _run_while_lease(
+            client.readback(
+                command, operation, traceparent=traceparent_factory()
+            ),
+            heartbeat,
         )
     except Exception as exc:
         await _record_failure(session_factory, command_id, owner, exc)

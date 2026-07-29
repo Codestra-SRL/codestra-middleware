@@ -1,3 +1,4 @@
+import asyncio
 from uuid import uuid4
 
 import httpx
@@ -12,6 +13,7 @@ from app.core.telephony_commands import (
     TelephonyCommandRequest,
     TelephonyCommandType,
 )
+from app.workers.telephony_commands import _run_while_lease
 from tests.test_endpoint_registry import endpoint
 
 
@@ -149,6 +151,26 @@ class Attestor:
     async def attest(self, **kwargs):
         self.calls.append(kwargs)
         return self.allowed
+
+
+@pytest.mark.asyncio
+async def test_external_operation_is_cancelled_when_lease_renewal_fails():
+    operation_cancelled = asyncio.Event()
+
+    async def slow_operation():
+        try:
+            await asyncio.Future()
+        finally:
+            operation_cancelled.set()
+
+    async def failed_heartbeat():
+        await asyncio.sleep(0)
+        raise RuntimeError("synthetic lease database failure")
+
+    heartbeat = asyncio.create_task(failed_heartbeat())
+    with pytest.raises(RuntimeError, match="synthetic lease database failure"):
+        await _run_while_lease(slow_operation(), heartbeat)
+    assert operation_cancelled.is_set()
 
 
 @pytest.mark.asyncio
