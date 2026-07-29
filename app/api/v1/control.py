@@ -98,7 +98,6 @@ async def persist(
     await db.flush()
 
 
-@router.post("/events/odoo", status_code=202)
 @router.post("/events/vicidial", status_code=202)
 async def event(
     request: Request,

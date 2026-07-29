@@ -56,6 +56,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v1/n8n/executions",
         "/api/v1/n8n/executions/register",
         "/api/v1/n8n/acknowledgements",
+        "/api/v1/n8n/results",
         "/api/v1/registry/resolve",
         "/api/v1/events",
     }

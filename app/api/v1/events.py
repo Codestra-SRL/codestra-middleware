@@ -80,6 +80,7 @@ async def _event_registry(db: AsyncSession) -> SchemaRegistry:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("/odoo", status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def ingest_generic_event(
     request: Request,
     response: Response,

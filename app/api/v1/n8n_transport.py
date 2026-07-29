@@ -23,6 +23,7 @@ from app.db.models import (
     N8nAcknowledgement,
     N8nExecutionRegistration,
     N8nExecutionTransition,
+    N8nResult,
     OdooResultDelivery,
     OutboxEvent,
     PublisherNonce,
@@ -66,6 +67,7 @@ class AcknowledgementRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal["1.0"]
     acknowledgement_id: UUID
+    result_id: str | None = Field(default=None, min_length=1, max_length=128)
     registration_id: UUID
     delivery_id: UUID
     event_id: str = Field(min_length=1, max_length=128)
@@ -85,6 +87,24 @@ class AcknowledgementRequest(BaseModel):
     started_at: datetime
     completed_at: datetime
     metrics: AcknowledgementMetrics
+
+
+class ResultRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["1.0"]
+    result_id: str = Field(min_length=1, max_length=128)
+    registration_id: UUID
+    delivery_id: UUID
+    event_id: str = Field(min_length=1, max_length=128)
+    execution_id: str = Field(min_length=1, max_length=128)
+    workflow_key: str = Field(min_length=1, max_length=128)
+    workflow_version: str = Field(min_length=1, max_length=128)
+    correlation_id: str = Field(min_length=1, max_length=128)
+    result_classification: str = Field(min_length=1, max_length=64)
+    result_hash: str = Field(pattern=SHA256)
+    policy_hash: str | None = Field(default=None, pattern=SHA256)
+    attempt_number: int = Field(ge=1, le=8)
+    payload: dict[str, object] = Field(default_factory=dict)
 
 
 class ExecutionTransitionRequest(BaseModel):
@@ -374,6 +394,80 @@ async def transition_execution(
     }
 
 
+@router.post("/results")
+async def submit_result(
+    request: Request,
+    response: Response,
+    authorization: Annotated[str, Header(alias="Authorization")],
+    x_codestra_timestamp: Annotated[str, Header(alias="X-Codestra-Timestamp")],
+    x_codestra_nonce: Annotated[str, Header(alias="X-Codestra-Nonce")],
+    x_codestra_body_sha256: Annotated[str, Header(alias="X-Codestra-Body-SHA256")],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Persist a result before n8n submits its terminal acknowledgement."""
+    raw = await authenticate_service(
+        request, db, authorization, x_codestra_timestamp, x_codestra_nonce,
+        x_codestra_body_sha256, "n8n.results.create",
+    )
+    try:
+        body = ResultRequest.model_validate_json(raw)
+    except ValueError as exc:
+        raise HTTPException(422, "invalid n8n result") from exc
+    registration = await db.scalar(
+        select(N8nExecutionRegistration).where(
+            N8nExecutionRegistration.registration_id == body.registration_id
+        )
+    )
+    delivery = await db.get(BroadEventDelivery, body.delivery_id)
+    event = await db.get(IntegrationEvent, delivery.event_id) if delivery else None
+    policy_hash = _without_prefix(body.policy_hash) if body.policy_hash else (
+        registration.policy_hash if registration else None
+    )
+    if (
+        registration is None or delivery is None or event is None or policy_hash is None
+        or registration.delivery_id != body.delivery_id
+        or event.original_event_id != body.event_id
+        or registration.execution_id != body.execution_id
+        or registration.workflow_id != body.workflow_key
+        or registration.workflow_version != body.workflow_version
+        or registration.correlation_id != body.correlation_id
+        or registration.attempt_number != body.attempt_number
+        or registration.policy_hash != policy_hash
+        or delivery.policy_hash != policy_hash
+    ):
+        await db.rollback()
+        raise HTTPException(409, "result binding mismatch")
+    prior = await db.get(N8nResult, body.result_id)
+    immutable = {
+        "registration_id": body.registration_id, "delivery_id": body.delivery_id,
+        "event_id": body.event_id, "execution_id": body.execution_id,
+        "workflow_id": body.workflow_key, "workflow_version": body.workflow_version,
+        "correlation_id": body.correlation_id,
+        "result_classification": body.result_classification,
+        "result_hash": _without_prefix(body.result_hash), "policy_hash": policy_hash,
+        "attempt_number": body.attempt_number, "payload": body.payload,
+    }
+    if prior:
+        if any(getattr(prior, key) != value for key, value in immutable.items()):
+            await db.rollback()
+            raise HTTPException(409, "result conflict")
+        response.status_code = status.HTTP_200_OK
+        result = prior
+        idempotency_status = "DUPLICATE"
+    else:
+        result = N8nResult(result_id=body.result_id, **immutable)
+        db.add(result)
+        response.status_code = status.HTTP_201_CREATED
+        idempotency_status = "NEW"
+    await db.commit()
+    return {
+        "schema_version": "1.0", "result_id": result.result_id,
+        "registration_id": str(result.registration_id),
+        "delivery_id": str(result.delivery_id), "persisted": True,
+        "idempotency_status": idempotency_status,
+    }
+
+
 @router.post("/acknowledgements")
 async def acknowledge_execution(
     request: Request,
@@ -404,6 +498,7 @@ async def acknowledge_execution(
         )
     )
     event = await db.get(IntegrationEvent, delivery.event_id) if delivery else None
+    result = await db.get(N8nResult, body.result_id) if body.result_id else None
     if (
         delivery is None
         or registration is None
@@ -419,6 +514,19 @@ async def acknowledge_execution(
         or registration.payload_hash != delivery.payload_hash
         or registration.policy_hash != delivery.policy_hash
         or registration.correlation_id != body.correlation_id
+        or (body.result_id is not None and (
+            result is None
+            or result.registration_id != body.registration_id
+            or result.delivery_id != body.delivery_id
+            or result.event_id != body.event_id
+            or result.execution_id != body.execution_id
+            or result.workflow_id != body.workflow_key
+            or result.workflow_version != body.workflow_version
+            or result.result_hash != _without_prefix(body.result_hash)
+            or result.policy_hash != _without_prefix(body.policy_hash)
+            or result.correlation_id != body.correlation_id
+            or result.attempt_number != body.attempt_number
+        ))
         or body.completed_at < body.started_at
     ):
         await db.rollback()
@@ -431,6 +539,7 @@ async def acknowledge_execution(
     )
     immutable = {
         "registration_id": body.registration_id,
+        "result_id": body.result_id,
         "delivery_id": body.delivery_id,
         "event_id": body.event_id,
         "workflow_id": body.workflow_key,
@@ -461,6 +570,7 @@ async def acknowledge_execution(
             raise HTTPException(409, "delivery is not execution registered")
         acknowledgement = N8nAcknowledgement(
             acknowledgement_id=body.acknowledgement_id,
+            result_id=body.result_id,
             **immutable,
             metrics=body.metrics.model_dump(),
         )
@@ -513,6 +623,7 @@ async def acknowledge_execution(
     result = {
         "schema_version": "1.0",
         "acknowledgement_id": str(acknowledgement.acknowledgement_id),
+        "result_id": acknowledgement.result_id,
         "delivery_id": str(acknowledgement.delivery_id),
         "event_id": acknowledgement.event_id,
         "persisted": True,

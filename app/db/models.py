@@ -215,10 +215,40 @@ class N8nExecutionTransition(Base):
     )
 
 
+class N8nResult(Base):
+    """Durable n8n result submitted before terminal acknowledgement."""
+
+    __tablename__ = "n8n_result"
+    result_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("n8n_execution_registration.registration_id"), nullable=False
+    )
+    delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("broad_event_delivery.delivery_id"), nullable=False
+    )
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    execution_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    result_classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("registration_id", name="uq_n8n_result_registration"),
+    )
+
+
 class N8nAcknowledgement(Base):
     __tablename__ = "n8n_acknowledgement"
     acknowledgement_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True
+    )
+    result_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("n8n_result.result_id")
     )
     registration_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
