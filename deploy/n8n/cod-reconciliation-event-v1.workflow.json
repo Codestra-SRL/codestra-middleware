@@ -1,0 +1,120 @@
+{
+  "name": "COD Reconciliation Event Production v1",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 30
+  },
+  "meta": {
+    "environment": "production",
+    "source_workflow_id": "N8W90Reconciliation20260722",
+    "source_workflow_version": "96631ebb-8fb4-42ed-a4fc-ff3381cb6222",
+    "n8n_assigned_workflow_id": null,
+    "business_unit_allowlist": ["BU-400-COD"],
+    "campaign_allowlist": ["CMP-400-COD"],
+    "event_type_allowlist": ["reconciliation.run"],
+    "destination_class": "INTERNAL_MIDDLEWARE_N8N_TEST_SINK",
+    "credential_reference": "codestra-n8n-production",
+    "kill_switch_default": true,
+    "rate_limit_per_minute": 3,
+    "concurrency_limit": 1,
+    "retry_limit": 0,
+    "dead_letter_route": "middleware:/api/v1/automation/events/dead-letter"
+  },
+  "nodes": [
+    {
+      "name": "Authenticated Event Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "codestra/events/v1",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "name": "Validate Fixed Pilot Scope",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "typeValidation": "strict"},
+          "conditions": [
+            {"leftValue": "={{$json.environment}}", "rightValue": "production", "operator": {"type": "string", "operation": "equals"}},
+            {"leftValue": "={{$json.business_unit_public_id}}", "rightValue": "BU-400-COD", "operator": {"type": "string", "operation": "equals"}},
+            {"leftValue": "={{$json.campaign_public_id}}", "rightValue": "CMP-400-COD", "operator": {"type": "string", "operation": "equals"}},
+            {"leftValue": "={{$json.event_type}}", "rightValue": "reconciliation.run", "operator": {"type": "string", "operation": "equals"}}
+          ]
+        }
+      }
+    },
+    {
+      "name": "Middleware Execution Registration",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [520, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://middleware.internal.codestra.agency/api/v1/n8n/executions/register",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($json.execution_registration)}}",
+        "options": {"redirect": {"redirect": {"followRedirects": false}}, "timeout": 10000}
+      },
+      "credentials": {"httpHeaderAuth": {"name": "codestra-n8n-production"}}
+    },
+    {
+      "name": "Internal Reconciliation Test Sink",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [780, 0],
+      "parameters": {}
+    },
+    {
+      "name": "Middleware Durable Acknowledgement",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1040, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://middleware.internal.codestra.agency/api/v1/n8n/acknowledgements",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($json.acknowledgement)}}",
+        "options": {"redirect": {"redirect": {"followRedirects": false}}, "timeout": 10000}
+      },
+      "credentials": {"httpHeaderAuth": {"name": "codestra-n8n-production"}}
+    },
+    {
+      "name": "Durably Accepted Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1300, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": {"responseCode": 202}
+      }
+    }
+  ],
+  "connections": {
+    "Authenticated Event Webhook": {"main": [[{"node": "Validate Fixed Pilot Scope", "type": "main", "index": 0}]]},
+    "Validate Fixed Pilot Scope": {"main": [[{"node": "Middleware Execution Registration", "type": "main", "index": 0}], []]},
+    "Middleware Execution Registration": {"main": [[{"node": "Internal Reconciliation Test Sink", "type": "main", "index": 0}]]},
+    "Internal Reconciliation Test Sink": {"main": [[{"node": "Middleware Durable Acknowledgement", "type": "main", "index": 0}]]},
+    "Middleware Durable Acknowledgement": {"main": [[{"node": "Durably Accepted Response", "type": "main", "index": 0}]]}
+  }
+}

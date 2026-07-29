@@ -10,9 +10,10 @@ import re
 import sys
 import time
 from collections import OrderedDict, deque
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Awaitable, Callable, TypedDict
+from datetime import UTC, datetime
+from typing import TypedDict
 from uuid import uuid4
 
 import uvicorn
@@ -23,7 +24,6 @@ from prometheus_client import Counter, Gauge, make_asgi_app
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
 from app.db.session import engine
-
 
 logger = logging.getLogger("codestra.runtime")
 WORKER_CYCLES = Counter(
@@ -45,7 +45,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         value = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -120,6 +120,8 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
         if request.url.path in {
             "/api/v1/events/vicidial",
             "/api/v2/telephony/canary",
+            "/api/v1/n8n/executions/register",
+            "/api/v1/n8n/acknowledgements",
         }:
             identity = request.client.host if request.client else "unknown"
             now = time.monotonic()
@@ -239,7 +241,7 @@ def worker_app(service: str, queue: str, cycle: Cycle) -> FastAPI:
         while not state["stopping"]:
             try:
                 result = await cycle()
-                state["last_success"] = datetime.now(timezone.utc).isoformat()
+                state["last_success"] = datetime.now(UTC).isoformat()
                 state["last_error"] = None
                 WORKER_CYCLES.labels(service, "success").inc()
                 logger.info(

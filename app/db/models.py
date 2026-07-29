@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -18,9 +19,11 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import (
-    ExcludeConstraint,
     INT4RANGE,
     JSONB,
+    ExcludeConstraint,
+)
+from sqlalchemy.dialects.postgresql import (
     UUID as PGUUID,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -78,6 +81,126 @@ class IntegrationDelivery(Base):
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     __table_args__ = (
         UniqueConstraint("event_id", "target", name="uq_delivery_event_target"),
+    )
+
+
+class BroadEventDelivery(Base):
+    __tablename__ = "broad_event_delivery"
+    delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("integration_event.id"), nullable=False
+    )
+    workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="RESERVED")
+    reserved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    response_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_class: Mapped[str | None] = mapped_column(String(64))
+    response_hash: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id",
+            "workflow_id",
+            "workflow_version",
+            "idempotency_key",
+            name="uq_broad_event_delivery_scope",
+        ),
+    )
+
+
+class N8nTargetAttestation(Base):
+    __tablename__ = "n8n_target_attestation"
+    attestation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    target_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    image_digest: Mapped[str] = mapped_column(String(71), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    result: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class N8nExecutionRegistration(Base):
+    __tablename__ = "n8n_execution_registration"
+    execution_registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("broad_event_delivery.delivery_id"),
+        unique=True,
+    )
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    execution_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="REGISTERED"
+    )
+    accepted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    response_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class N8nAcknowledgement(Base):
+    __tablename__ = "n8n_acknowledgement"
+    acknowledgement_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True
+    )
+    delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("broad_event_delivery.delivery_id"),
+        unique=True,
+    )
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    execution_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    execution_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    result_classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    persisted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 
