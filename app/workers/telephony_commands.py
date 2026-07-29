@@ -111,9 +111,13 @@ async def _run_while_lease(
     operation_task: asyncio.Future[dict[str, Any]] = asyncio.ensure_future(operation)
     async def lease_guard() -> dict[str, Any]:
         try:
-            await heartbeat
+            await asyncio.shield(heartbeat)
         except asyncio.CancelledError:
-            raise RuntimeError("telephony command lease renewal was cancelled") from None
+            if heartbeat.cancelled():
+                raise RuntimeError(
+                    "telephony command lease renewal was cancelled"
+                ) from None
+            raise
         raise RuntimeError("telephony command lease renewal stopped")
 
     guard_task = asyncio.create_task(lease_guard())

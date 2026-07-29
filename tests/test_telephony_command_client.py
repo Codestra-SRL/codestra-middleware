@@ -174,6 +174,22 @@ async def test_external_operation_is_cancelled_when_lease_renewal_fails():
 
 
 @pytest.mark.asyncio
+async def test_completed_operation_does_not_cancel_shared_lease_heartbeat():
+    async def heartbeat_loop():
+        await asyncio.Future()
+
+    heartbeat = asyncio.create_task(heartbeat_loop())
+    result = await _run_while_lease(
+        asyncio.sleep(0, result={"operation_id": "synthetic"}), heartbeat
+    )
+    assert result == {"operation_id": "synthetic"}
+    assert not heartbeat.done()
+    heartbeat.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await heartbeat
+
+
+@pytest.mark.asyncio
 async def test_dispatch_uses_registry_common_client_attestation_and_readback():
     resolver = Resolver()
     common = CommonClient(resolver)
