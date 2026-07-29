@@ -1,0 +1,37 @@
+schema_version: 1
+organization: Codestra-SRL
+effective_from: BUSINESS_DECISION_REQUIRED
+legal_entity: Codestra SRL
+approved_by:
+  full_name: Ralph Appolon
+  github_login: appolon1908-hue
+  corporate_role: BUSINESS_DECISION_REQUIRED
+authority_evidence:
+  type: CORPORATE_GOVERNANCE_ROLE_ASSIGNMENT_RESOLUTION
+  reference: CODESTRA-GOV-RES-2026-001
+  sha256: RECALCULATE_AFTER_AUTHORIZED_SIGNATURE
+assignment_status: PENDING_SIGNED_AUTHORITY_EVIDENCE
+operating_hours:
+  timezone: America/New_York
+  start: "09:00"
+  end: "17:00"
+roles:
+  organization_owner:
+    - appolon1908-hue
+  release_owner:
+    - appolon1908-hue
+  security_owner:
+    - appolon1908-hue
+  compliance_owner:
+    - appolon1908-hue
+  operations_owner:
+    - appolon1908-hue
+  telephony_owner: []
+  rollback_approver:
+    - appolon1908-hue
+missing_decisions:
+  authorized_assigner_corporate_role: BUSINESS_DECISION_REQUIRED
+  authority_evidence_signature: BUSINESS_DECISION_REQUIRED
+  authority_evidence_sha256: RECALCULATE_AFTER_AUTHORIZED_SIGNATURE
+  effective_from: BUSINESS_DECISION_REQUIRED
+  telephony_owner: BUSINESS_DECISION_REQUIRED
