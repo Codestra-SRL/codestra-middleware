@@ -33,6 +33,82 @@ class Base(DeclarativeBase):
     pass
 
 
+class TelephonyCommandJournal(Base):
+    __tablename__ = "telephony_command_journal"
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    command_type: Mapped[str] = mapped_column(String(96), nullable=False)
+    aggregate_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregate_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    aggregate_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    business_unit_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    campaign_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    idempotency_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    causation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_decision_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    policy_decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        CheckConstraint("aggregate_version >= 1", name="ck_telephony_command_version"),
+        CheckConstraint(
+            "environment IN ('staging','test','production')",
+            name="ck_telephony_command_environment",
+        ),
+        Index(
+            "ix_telephony_command_aggregate",
+            "aggregate_type",
+            "aggregate_public_id",
+            "aggregate_version",
+        ),
+        Index("ix_telephony_command_correlation", "correlation_id"),
+    )
+
+
+class TelephonyOperationJournal(Base):
+    __tablename__ = "telephony_operation_journal"
+    operation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_command_journal.command_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    readback_endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    target_configuration_checksum: Mapped[str] = mapped_column(
+        String(71), nullable=False
+    )
+    target_attested: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    desired_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actual_hash: Mapped[str | None] = mapped_column(String(64))
+    readback_matches: Mapped[bool | None] = mapped_column(Boolean)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    response_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "(readback_matches IS NOT TRUE) OR (actual_hash IS NOT NULL)",
+            name="ck_telephony_operation_readback_hash",
+        ),
+        Index("ix_telephony_operation_correlation", "correlation_id"),
+    )
+
+
 class IntegrationEvent(Base):
     __tablename__ = "integration_event"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
