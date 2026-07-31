@@ -1,0 +1,237 @@
+name: codestra-lead-staging
+
+x-security: &security
+  restart: "no"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+  networks: [lead_staging_internal]
+
+x-default-off: &default-off
+  LEAD_AUTOMATION_ENABLED: "false"
+  LEAD_CREATE_ENABLED: "false"
+  LEAD_UPDATE_ENABLED: "false"
+  LEAD_ASSIGNMENT_ENABLED: "false"
+  LEAD_STATUS_CHANGE_ENABLED: "false"
+  LEAD_CALLBACK_CREATE_ENABLED: "false"
+  N8N_LEAD_BINDING_ENABLED: "false"
+  N8N_RESULT_PROCESSING_ENABLED: "false"
+  ODOO_LEAD_APPLY_ENABLED: "false"
+  EMAIL_DISPATCH_ENABLED: "false"
+  SMS_DISPATCH_ENABLED: "false"
+
+services:
+  middleware-postgres:
+    <<: *security
+    image: ${POSTGRES_IMAGE:?digest-pinned PostgreSQL image required}
+    environment:
+      POSTGRES_DB: codestra_lead_staging
+      POSTGRES_USER: codestra_lead_staging
+      POSTGRES_PASSWORD_FILE: /run/secrets/middleware_postgres_password
+    secrets: [middleware_postgres_password]
+    volumes: [middleware_postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U codestra_lead_staging -d codestra_lead_staging]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+
+  odoo-postgres:
+    <<: *security
+    image: ${POSTGRES_IMAGE:?digest-pinned PostgreSQL image required}
+    environment:
+      POSTGRES_DB: codestra_odoo_lead_staging
+      POSTGRES_USER: codestra_odoo_lead_staging
+      POSTGRES_PASSWORD_FILE: /run/secrets/odoo_postgres_password
+    secrets: [odoo_postgres_password]
+    volumes: [odoo_postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U codestra_odoo_lead_staging -d codestra_odoo_lead_staging]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+
+  redis:
+    <<: *security
+    image: ${REDIS_IMAGE:?digest-pinned Redis image required}
+    command: [sh, -ec, 'exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"']
+    secrets: [redis_password]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: [CMD-SHELL, 'redis-cli --no-auth-warning -a "$$(cat /run/secrets/redis_password)" ping | grep -qx PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+
+  middleware-migrate:
+    <<: *security
+    profiles: [deployment]
+    image: ${MIDDLEWARE_IMAGE:?immutable Middleware image digest required}
+    read_only: true
+    user: "10001:10001"
+    tmpfs: [/tmp:rw,noexec,nosuid,size=32m]
+    command:
+      - sh
+      - -ec
+      - >-
+        export DATABASE_URL="$$(cat /run/secrets/middleware_database_url)";
+        exec alembic upgrade head
+    environment:
+      <<: *default-off
+      DATABASE_URL_FILE: /run/secrets/middleware_database_url
+      EXPECTED_DATABASE_NAME: codestra_lead_staging
+      DENIED_DATABASE_NAMES: postgres,production,codestra
+    secrets: [middleware_database_url]
+    depends_on:
+      middleware-postgres: {condition: service_healthy}
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+
+  middleware:
+    <<: *security
+    profiles: [deployment]
+    image: ${MIDDLEWARE_IMAGE:?immutable Middleware image digest required}
+    read_only: true
+    user: "10001:10001"
+    tmpfs: [/tmp:rw,noexec,nosuid,size=32m]
+    command:
+      - sh
+      - -ec
+      - >-
+        export DATABASE_URL="$$(cat /run/secrets/middleware_database_url)";
+        export REDIS_URL="$$(cat /run/secrets/redis_url)";
+        export LEAD_AUTOMATION_HMAC_SECRET="$$(cat /run/secrets/lead_automation_hmac)";
+        exec python -m app.entrypoints.integration_api
+    environment:
+      <<: *default-off
+      DATABASE_URL_FILE: /run/secrets/middleware_database_url
+      REDIS_URL_FILE: /run/secrets/redis_url
+      LEAD_AUTOMATION_HMAC_SECRET_FILE: /run/secrets/lead_automation_hmac
+      ENVIRONMENT: staging
+    secrets: [middleware_database_url, redis_url, lead_automation_hmac]
+    depends_on:
+      middleware-postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      middleware-migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+
+  odoo:
+    <<: *security
+    profiles: [deployment]
+    image: ${ODOO_IMAGE:?digest-pinned Odoo image required}
+    read_only: true
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    volumes:
+      - ${ODOO_ADDONS_PATH:?exact Odoo addons checkout required}:/mnt/lead-addons:ro
+      - odoo_data:/var/lib/odoo
+    secrets: [odoo_postgres_password, lead_automation_hmac]
+    entrypoint: [sh, -ec]
+    command:
+      - >-
+        umask 077;
+        printf '[options]\ndb_host = odoo-postgres\ndb_user = codestra_odoo_lead_staging\ndb_password = %s\ndb_name = codestra_odoo_lead_staging\naddons_path = /mnt/lead-addons,/usr/lib/python3/dist-packages/odoo/addons\nwithout_demo = True\n'
+        "$$(cat /run/secrets/odoo_postgres_password)" > /tmp/odoo.conf;
+        exec odoo --config=/tmp/odoo.conf
+    depends_on:
+      odoo-postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8069/web/health', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 512
+
+  n8n:
+    <<: *security
+    profiles: [deployment]
+    image: ${N8N_IMAGE:?digest-pinned n8n image required}
+    read_only: true
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - >-
+        export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)";
+        export LEAD_AUTOMATION_CALLBACK_HMAC_SECRET="$$(cat /run/secrets/lead_automation_hmac)";
+        exec /docker-entrypoint.sh
+    environment:
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "false"
+      N8N_SECURE_COOKIE: "true"
+      N8N_ENCRYPTION_KEY_FILE: /run/secrets/n8n_encryption_key
+      LEAD_AUTOMATION_CALLBACK_HMAC_SECRET_FILE: /run/secrets/lead_automation_hmac
+      N8N_WORKFLOW_ACTIVE_DEFAULT: "false"
+      N8N_BINDING_ENABLED_DEFAULT: "false"
+    secrets: [n8n_encryption_key, lead_automation_hmac]
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ../n8n/lead-automation:/source/lead-automation:ro
+    healthcheck:
+      test: [CMD-SHELL, wget -q -O- http://127.0.0.1:5678/healthz >/dev/null]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+
+  backup-verify:
+    <<: *security
+    profiles: [operations]
+    image: ${POSTGRES_IMAGE:?digest-pinned PostgreSQL image required}
+    read_only: true
+    volumes:
+      - ${STAGING_BACKUP_DIRECTORY:?staging backup directory required}:/backup
+    command: [sh, -ec, 'test -f /backup/manifest.sha256 && cd /backup && sha256sum -c manifest.sha256']
+    mem_limit: 256m
+    cpus: 0.25
+    pids_limit: 64
+
+networks:
+  lead_staging_internal:
+    name: codestra-lead-staging-network
+    internal: true
+
+volumes:
+  middleware_postgres_data: {name: codestra-lead-staging-middleware-postgres-data}
+  odoo_postgres_data: {name: codestra-lead-staging-odoo-postgres-data}
+  redis_data: {name: codestra-lead-staging-redis-data}
+  odoo_data: {name: codestra-lead-staging-odoo-data}
+  n8n_data: {name: codestra-lead-staging-n8n-data}
+
+secrets:
+  middleware_postgres_password:
+    file: "${STAGING_SECRET_DIRECTORY:?staging secret directory required}/middleware-postgres-password"
+  odoo_postgres_password:
+    file: "${STAGING_SECRET_DIRECTORY:?staging secret directory required}/odoo-postgres-password"
+  redis_password:
+    file: "${STAGING_SECRET_DIRECTORY:?staging secret directory required}/redis-password"
+  middleware_database_url:
+    file: "${STAGING_SECRET_DIRECTORY:?staging secret directory required}/middleware-database-url"
+  redis_url:
+    file: "${STAGING_SECRET_DIRECTORY:?staging secret directory required}/redis-url"
+  lead_automation_hmac:
+    file: "${STAGING_SECRET_DIRECTORY:?staging secret directory required}/lead-automation-hmac-v2"
+  n8n_encryption_key:
+    file: "${STAGING_SECRET_DIRECTORY:?staging secret directory required}/n8n-encryption-key"

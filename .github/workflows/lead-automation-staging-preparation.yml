@@ -1,0 +1,33 @@
+name: lead-automation-staging-preparation
+
+on:
+  pull_request:
+    paths:
+      - deploy/lead-automation-staging/**
+      - docs/lead-automation/staging/**
+      - .github/workflows/lead-automation-staging-preparation.yml
+
+jobs:
+  preparation-source-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Validate default-off staging source
+        run: python3 deploy/lead-automation-staging/validate.py
+      - name: Validate Compose manifest without starting services
+        env:
+          MIDDLEWARE_IMAGE: codestra.invalid/middleware@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          POSTGRES_IMAGE: postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+          REDIS_IMAGE: redis@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+          ODOO_IMAGE: odoo@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+          N8N_IMAGE: n8nio/n8n@sha256:11524034450080bd0032754892b23ff20be43d72cf320ce75640f7c5475fdca8
+          ODOO_ADDONS_PATH: /tmp/odoo-addons
+          STAGING_SECRET_DIRECTORY: /tmp/staging-secrets
+          STAGING_BACKUP_DIRECTORY: /tmp/staging-backups
+        run: docker compose -f deploy/lead-automation-staging/compose.yaml --profile deployment --profile operations config -q
+      - name: Secret and scope checks
+        run: |
+          ! git grep -Ei '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,})' -- deploy/lead-automation-staging docs/lead-automation/staging
+          git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
+          ! git diff --name-only "${{ github.event.pull_request.base.sha }}..HEAD" | grep -E '^(app/|migrations/|app/recording/)'
