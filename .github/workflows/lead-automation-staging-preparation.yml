@@ -5,6 +5,9 @@ on:
     paths:
       - deploy/lead-automation-staging/**
       - docs/lead-automation/staging/**
+      - docs/security/N8N-STAGING-RISK-ACCEPTANCE.md
+      - docs/security/POSTGRES-STAGING-RISK-ACCEPTANCE.md
+      - docs/security/SECURITY_OWNER_DECISION.md
       - .github/workflows/lead-automation-staging-preparation.yml
 
 jobs:
@@ -21,15 +24,15 @@ jobs:
         env:
           MIDDLEWARE_IMAGE: codestra.invalid/middleware@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           POSTGRES_IMAGE: postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
-          REDIS_IMAGE: redis@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+          REDIS_IMAGE: redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
           ODOO_IMAGE: odoo@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
-          N8N_IMAGE: n8nio/n8n@sha256:11524034450080bd0032754892b23ff20be43d72cf320ce75640f7c5475fdca8
+          N8N_IMAGE: n8nio/n8n@sha256:e4804b13ae6e2064fa30e5bbfc14b86d0a52eb8a3aa2c351a227314ac90ff666
           ODOO_ADDONS_PATH: /tmp/odoo-addons
           STAGING_SECRET_DIRECTORY: /tmp/staging-secrets
           STAGING_BACKUP_DIRECTORY: /tmp/staging-backups
         run: docker compose -f deploy/lead-automation-staging/compose.yaml --profile deployment --profile operations config -q
       - name: Secret and scope checks
         run: |
-          ! git grep -Ei '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,})' -- deploy/lead-automation-staging docs/lead-automation/staging
+          ! git grep -Ei '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,})' -- deploy/lead-automation-staging docs/lead-automation/staging docs/security/N8N-STAGING-RISK-ACCEPTANCE.md docs/security/POSTGRES-STAGING-RISK-ACCEPTANCE.md docs/security/SECURITY_OWNER_DECISION.md
           git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
           ! git diff --name-only "${{ github.event.pull_request.base.sha }}..HEAD" | grep -E '^(app/|migrations/|app/recording/)'

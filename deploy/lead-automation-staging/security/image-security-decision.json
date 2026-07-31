@@ -1,0 +1,32 @@
+{
+  "generated_at": "2026-07-31T21:30:00Z",
+  "status": "security_owner_decision_required",
+  "images": {
+    "postgres": {
+      "reference": "postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193",
+      "trivy_critical": 1,
+      "trivy_high": 14,
+      "grype_high_or_critical_records": 44,
+      "finding_component": "/usr/local/bin/gosu",
+      "sbom_sha256_gzip": "4978f6c84dae4064e928a49418a15d6c15f154187a38504ab798ca86246179b4"
+    },
+    "redis": {
+      "reference": "redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2",
+      "trivy_critical": 0,
+      "trivy_high": 0,
+      "grype_high_or_critical_records": 0,
+      "sbom_sha256_gzip": "f0cc5489133e57e5172fa3b03a3af98ab5e606a0985dc3ade24c37af5ec0838c"
+    },
+    "n8n": {
+      "version": "2.33.3",
+      "reference": "n8nio/n8n@sha256:e4804b13ae6e2064fa30e5bbfc14b86d0a52eb8a3aa2c351a227314ac90ff666",
+      "trivy_critical": 0,
+      "trivy_high": 8,
+      "grype_high_or_critical_records": 14,
+      "sbom_sha256_gzip": "d6a49d0071180a84f3dde9282c6de17ae6b287deff9f57d10f789350002b6348"
+    }
+  },
+  "security_owner_acceptance_present": false,
+  "production_deployment_gate": "blocked",
+  "production_activation_gate": "blocked"
+}
