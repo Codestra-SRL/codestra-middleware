@@ -19,6 +19,7 @@ from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.publisher import router as publisher_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.registry import router as registry_router
+from app.api.v1.recordings import router as recordings_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
@@ -42,6 +43,7 @@ app.include_router(telephony_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)
 app.include_router(commands_router)
+app.include_router(recordings_router)
 app.mount("/metrics", make_asgi_app())
 
 SIGNED_WEBHOOK_PATHS = frozenset(
@@ -59,6 +61,9 @@ SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
 N8N_TRANSITION_PATH = re.compile(
     r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
 )
+RECORDING_EXPORTER_PATH = re.compile(
+    r"^/api/v1/recordings(?:/reservations|/REC-[0-9a-f]{32}/(?:complete|failure))$"
+)
 
 
 @app.middleware("http")
@@ -71,6 +76,7 @@ async def control_request_guard(request: Request, call_next):
     if (
         (request.url.path.startswith("/api/") or request.url.path.startswith("/v1/"))
         and request.url.path not in SIGNED_WEBHOOK_PATHS
+        and not RECORDING_EXPORTER_PATH.fullmatch(request.url.path)
         and not (
             request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
         )
@@ -92,6 +98,7 @@ async def control_request_guard(request: Request, call_next):
 
 @app.get("/healthz")
 @app.get("/health")
+@app.get("/health/live")
 async def healthz() -> dict[str, str]:
     return {
         "status": "ok",
@@ -102,12 +109,23 @@ async def healthz() -> dict[str, str]:
 
 @app.get("/readyz", response_model=None)
 @app.get("/readiness", response_model=None)
+@app.get("/health/ready", response_model=None)
 async def readyz() -> dict[str, str] | JSONResponse:
     if not settings.auth_ready:
         return JSONResponse(
             {"status": "not-ready", "authorization": "offline"}, status_code=503
         )
     return {"status": "ready", "integration": "outbox-only", "authorization": "online"}
+
+
+@app.get("/.well-known/codestra-service")
+async def service_identity() -> dict[str, object]:
+    return {
+        "service": "codestra-recording-api",
+        "contract_version": "1.0",
+        "hostname": "api.staging.internal.codestra.agency",
+        "tls_sni_required": True,
+    }
 
 
 @app.get("/version")
