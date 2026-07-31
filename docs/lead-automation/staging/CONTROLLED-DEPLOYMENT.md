@@ -18,4 +18,3 @@ rollback before continuing:
 13. Verify observability, reconciliation, and kill-switch alerts.
 14. Produce deployment evidence. Enable no feature flag and stop before any
     activation phase.
-

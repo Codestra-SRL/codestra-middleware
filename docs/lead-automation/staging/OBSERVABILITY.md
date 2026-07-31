@@ -10,4 +10,3 @@ database host, lead mutation while default-off, communication attempt, Server B
 route, or recording access. The primary kill switches are all Lead Automation
 flags, result processing, Odoo apply, and the n8n binding; all remain false.
 Audit records must exclude request bodies and secret values.
-

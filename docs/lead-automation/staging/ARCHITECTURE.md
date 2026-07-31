@@ -14,4 +14,3 @@ provider, live n8n connection, or production database route.
 All persistent services are behind the `deployment` profile. Rendering the
 manifest does not create or start them. Initial deployment remains a separate
 authorized phase.
-

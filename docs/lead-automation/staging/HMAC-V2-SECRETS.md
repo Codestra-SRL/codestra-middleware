@@ -17,4 +17,3 @@ time, runs signature tests, and revokes the previous value. If verification
 fails, restore the prior secret files from the encrypted staging backup and
 keep every feature disabled. Logs must redact values and retain only version,
 identity, scope, timestamp, and a non-reversible fingerprint.
-

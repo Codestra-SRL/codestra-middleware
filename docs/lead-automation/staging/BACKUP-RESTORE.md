@@ -9,4 +9,3 @@ SHA-256 checksums, restore into new temporary containers, and verify the
 Alembic head and Odoo module state. Destroy containers, network, volumes,
 plaintext dumps, encrypted dumps, and the ephemeral key after evidence is
 recorded. Production data and existing volumes are prohibited.
-

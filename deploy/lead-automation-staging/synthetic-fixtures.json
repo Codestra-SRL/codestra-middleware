@@ -11,4 +11,3 @@
   "idempotency_keys": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
   "scenarios": ["authorized", "default_off", "identical_replay", "conflicting_replay", "quarantine"]
 }
-

@@ -17,4 +17,3 @@ Supply only immutable `name@sha256:digest` image references and staging-only
 paths. Do not place secret values in an environment file. The current image
 scan evidence must be reviewed and all HIGH/CRITICAL findings resolved or
 formally rejected under the security policy before deployment authorization.
-

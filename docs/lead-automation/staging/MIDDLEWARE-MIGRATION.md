@@ -13,4 +13,3 @@
    into a fresh staging-only volume, and re-run `alembic current`.
 
 No command in this document targets an existing database.
-

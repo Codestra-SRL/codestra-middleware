@@ -12,4 +12,3 @@ recording access are prohibited.
 
 Rollback deletes the staging-only imported workflow and credential binding,
 then verifies zero executions. This preparation phase performs no import.
-

@@ -13,4 +13,3 @@ start only after these checks pass.
 Rollback stops Odoo, restores the encrypted staging-only database and filestore
 backup, verifies checksums, and keeps the apply flag false. Uninstall safety is
 tested only in a disposable clone of the staging database.
-
