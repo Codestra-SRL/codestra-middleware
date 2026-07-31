@@ -16,6 +16,8 @@ HTTP_METHOD = "POST"
 REQUEST_PATH = "/codestra/api/v1/leads/automation/apply"
 IDENTITY = "codestra-middleware"
 AUDIENCE = "codestra-odoo-lead-automation-api"
+SIGNATURE_VERSION = "HMAC-V2"
+APPLY_SCOPE = "lead-automation.odoo-apply.write"
 ENVIRONMENTS = frozenset({"test", "staging", "production"})
 ACTIONS = frozenset(
     {
@@ -81,6 +83,7 @@ REQUIRED_ACK_FIELDS = frozenset(
 )
 ACK_OPTIONAL_FIELDS = frozenset({"result_code"})
 HEADER_NAMES = (
+    "X-Codestra-Signature-Version",
     "X-Service-Identity",
     "X-Service-Audience",
     "X-Codestra-Timestamp",
@@ -89,6 +92,7 @@ HEADER_NAMES = (
     "X-Codestra-Signature",
     "Idempotency-Key",
     "X-Codestra-Environment",
+    "X-Codestra-Scope",
 )
 
 
@@ -136,14 +140,34 @@ def _sha256(body: bytes) -> str:
 
 
 def signing_material(
+    signature_version: str,
     method: str,
     path: str,
     timestamp: str,
     nonce: str,
+    service_identity: str,
+    service_audience: str,
+    environment: str,
+    scope: str,
     idempotency_key: str,
     body_hash: str,
 ) -> bytes:
-    return f"{method}\n{path}\n{timestamp}\n{nonce}\n{idempotency_key}\n{body_hash}".encode()
+    values = (
+        signature_version,
+        method,
+        path,
+        timestamp,
+        nonce,
+        service_identity,
+        service_audience,
+        environment,
+        scope,
+        idempotency_key,
+        body_hash,
+    )
+    if any(not value or "\n" in value or "\r" in value for value in values):
+        raise AuthenticationError("invalid signing material")
+    return "\n".join(values).encode("ascii")
 
 
 def signed_headers_for_body(
@@ -166,10 +190,23 @@ def signed_headers_for_body(
     body_hash = _sha256(body)
     signature = hmac.new(
         secret,
-        signing_material(method, path, timestamp, nonce, idempotency_key, body_hash),
+        signing_material(
+            SIGNATURE_VERSION,
+            method,
+            path,
+            timestamp,
+            nonce,
+            IDENTITY,
+            AUDIENCE,
+            environment,
+            APPLY_SCOPE,
+            idempotency_key,
+            body_hash,
+        ),
         hashlib.sha256,
     ).hexdigest()
     return {
+        "X-Codestra-Signature-Version": SIGNATURE_VERSION,
         "X-Service-Identity": IDENTITY,
         "X-Service-Audience": AUDIENCE,
         "X-Codestra-Timestamp": timestamp,
@@ -178,6 +215,7 @@ def signed_headers_for_body(
         "X-Codestra-Signature": signature,
         "Idempotency-Key": idempotency_key,
         "X-Codestra-Environment": environment,
+        "X-Codestra-Scope": APPLY_SCOPE,
         "Content-Type": "application/json",
     }
 
@@ -219,7 +257,7 @@ def verify_signed_request(
     headers: Mapping[str, str],
     secret: bytes,
     expected_environment: str,
-    used_nonces: set[tuple[str, str]],
+    used_nonces: set[tuple[str, str, str, str]],
     now: datetime | None = None,
     maximum_age: timedelta = timedelta(minutes=5),
 ) -> None:
@@ -232,9 +270,11 @@ def verify_signed_request(
     ):
         raise AuthenticationError("method or path mismatch")
     fixed = (
+        (headers["X-Codestra-Signature-Version"], SIGNATURE_VERSION, "version"),
         (headers["X-Service-Identity"], IDENTITY, "identity"),
         (headers["X-Service-Audience"], AUDIENCE, "audience"),
         (headers["X-Codestra-Environment"], expected_environment, "environment"),
+        (headers["X-Codestra-Scope"], APPLY_SCOPE, "scope"),
     )
     for supplied, expected, label in fixed:
         if not hmac.compare_digest(supplied, expected):
@@ -249,10 +289,15 @@ def verify_signed_request(
     expected = hmac.new(
         secret,
         signing_material(
+            headers["X-Codestra-Signature-Version"],
             method,
             path,
             headers["X-Codestra-Timestamp"],
             headers["X-Codestra-Nonce"],
+            headers["X-Service-Identity"],
+            headers["X-Service-Audience"],
+            headers["X-Codestra-Environment"],
+            headers["X-Codestra-Scope"],
             headers["Idempotency-Key"],
             body_hash,
         ),
@@ -260,7 +305,12 @@ def verify_signed_request(
     ).hexdigest()
     if not hmac.compare_digest(headers["X-Codestra-Signature"], expected):
         raise AuthenticationError("signature mismatch")
-    nonce_key = (expected_environment, headers["X-Codestra-Nonce"])
+    nonce_key = (
+        expected_environment,
+        APPLY_SCOPE,
+        path,
+        headers["X-Codestra-Nonce"],
+    )
     if nonce_key in used_nonces:
         raise ReplayError("nonce replay")
     used_nonces.add(nonce_key)

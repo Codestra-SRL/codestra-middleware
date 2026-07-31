@@ -6,10 +6,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.adapters.odoo.lead_automation import (
+    APPLY_SCOPE,
     AUDIENCE,
     HTTP_METHOD,
     IDENTITY,
     REQUEST_PATH,
+    SIGNATURE_VERSION,
     AckValidationError,
     ApplySchemaError,
     AuthenticationError,
@@ -155,6 +157,9 @@ def test_signature_rejects_method_path_and_body_tampering(
         ("X-Service-Identity", "other-service"),
         ("X-Service-Audience", "other-audience"),
         ("X-Codestra-Environment", "production"),
+        ("X-Codestra-Signature-Version", "HMAC-V1"),
+        ("X-Codestra-Scope", "lead-automation.results.write"),
+        ("X-Codestra-Scope", "*"),
     ],
 )
 def test_signature_rejects_header_tampering(header: str, replacement: str) -> None:
@@ -166,7 +171,7 @@ def test_signature_rejects_header_tampering(header: str, replacement: str) -> No
 
 def test_signature_accepts_valid_request_and_rejects_expiry_and_replay() -> None:
     body, headers = signed()
-    nonces: set[tuple[str, str]] = set()
+    nonces: set[tuple[str, str, str, str]] = set()
     verify(body, headers, used_nonces=nonces)
     with pytest.raises(ReplayError):
         verify(body, headers, used_nonces=nonces)
@@ -174,7 +179,19 @@ def test_signature_accepts_valid_request_and_rejects_expiry_and_replay() -> None
         verify(body, headers, now=NOW + timedelta(minutes=6))
     assert headers["X-Service-Identity"] == IDENTITY
     assert headers["X-Service-Audience"] == AUDIENCE
+    assert headers["X-Codestra-Signature-Version"] == SIGNATURE_VERSION
+    assert headers["X-Codestra-Scope"] == APPLY_SCOPE
     assert "Authorization" not in headers
+
+
+@pytest.mark.parametrize(
+    "header", ["X-Codestra-Signature-Version", "X-Codestra-Scope"]
+)
+def test_apply_hmac_v2_rejects_missing_version_or_scope(header: str) -> None:
+    body, headers = signed()
+    headers.pop(header)
+    with pytest.raises(AuthenticationError, match="missing"):
+        verify(body, headers)
 
 
 @pytest.mark.parametrize(
