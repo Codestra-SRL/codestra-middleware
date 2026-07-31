@@ -96,6 +96,11 @@ def main() -> int:
         "canonical acknowledgement validation is incomplete",
     )
     require(api.count("response_model=") == 6, "all six response models are required")
+    require(
+        api.count("Depends(require_internal_service_auth)") == 3
+        and "hmac.compare_digest(authorization, expected)" in api,
+        "internal recording routes do not authenticate the bearer credential",
+    )
 
     n8n_fields = {
         "contract_version",
@@ -141,6 +146,12 @@ def main() -> int:
         (ROOT / "deploy/recording-storage/ROLLBACK.md").is_file(),
         "rollback documentation missing",
     )
+    required_ci = (ROOT / ".github/workflows/required-ci.yml").read_text()
+    require(
+        "alembic downgrade 0027_telephony_command_journal" in required_ci
+        and required_ci.count("alembic upgrade head") >= 2,
+        "recording migration downgrade and re-upgrade gate missing",
+    )
 
     gates = (
         "PR_B_ODOO_HMAC_AUTH_GATE",
@@ -151,6 +162,8 @@ def main() -> int:
         "PR_B_ALL_SIX_RESPONSE_MODELS_GATE",
         "PR_B_ALL_SIX_HTTP_ROUTE_TEST_GATE",
         "PR_B_OPENAPI_RESPONSE_SCHEMA_GATE",
+        "PR_B_INTERNAL_ROUTE_AUTH_GATE",
+        "PR_B_MIGRATION_DOWNGRADE_REUPGRADE_GATE",
         "PR_B_N8N_PROJECTION_SCHEMA_GATE",
         "PR_B_N8N_INACTIVE_DEFAULT_GATE",
         "PR_B_N8N_NOT_IN_CRITICAL_PATH_GATE",

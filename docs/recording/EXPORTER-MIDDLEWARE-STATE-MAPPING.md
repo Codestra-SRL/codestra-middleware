@@ -1,7 +1,7 @@
 # Exporter–Middleware State Mapping
 
 This mapping is the middleware interpretation of the recording v1 state
-contract at PR A head `817299f2648be9b8c7c29ffd51645bf2e3a5a095`.
+contract at PR A head `ae92b95240a5ff638837121bc2773545bfbf6fdc`.
 
 | Exporter observation | Middleware state | Required middleware action |
 |---|---|---|
@@ -17,6 +17,6 @@ reservation transition is `UPLOADING`. A recording must never transition to
 `ODOO_LINKED` from any state other than `SERVER_VERIFIED`, and it must never do
 so from a partial, malformed, or mismatched Odoo acknowledgement.
 
-The five core recording schemas remain authoritative and nested. The optional
+The six shared recording schemas remain authoritative. Core events remain nested. The optional
 n8n delivery uses only `recording-n8n-event-v1.json`; it is not a state
 transition prerequisite and it never receives the nested core recording object.

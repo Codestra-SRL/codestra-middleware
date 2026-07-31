@@ -1,6 +1,6 @@
 # Recording contract alignment decision required
 
-PR A head `817299f2648be9b8c7c29ffd51645bf2e3a5a095` is vendored
+PR A head `ae92b95240a5ff638837121bc2773545bfbf6fdc` is vendored
 byte-for-byte and verified by SHA-256.
 
 Two requirements in the phase instruction cannot both be satisfied:

@@ -229,6 +229,22 @@ def test_all_six_routes_auth_environment_schema_idempotency_and_failures(
     status_path = f"/api/v1/recordings/{recording_uid}"
     assert client.get(status_path).status_code == 401
     assert (
+        client.get(
+            status_path, headers={"X-Codestra-Environment": "staging"}
+        ).status_code
+        == 401
+    )
+    assert (
+        client.get(
+            status_path,
+            headers={
+                "Authorization": "Bearer wrong",
+                "X-Codestra-Environment": "staging",
+            },
+        ).status_code
+        == 401
+    )
+    assert (
         client.get(status_path, headers=bearer_headers("production")).status_code == 403
     )
     status = client.get(status_path, headers=bearer_headers())
@@ -244,6 +260,17 @@ def test_all_six_routes_auth_environment_schema_idempotency_and_failures(
         "ttl_seconds": 120,
     }
     assert client.post(playback_path, json=playback_request).status_code == 401
+    assert (
+        client.post(
+            playback_path,
+            json=playback_request,
+            headers={
+                "X-Codestra-Environment": "staging",
+                "X-Service-Identity": "codestra-odoo",
+            },
+        ).status_code
+        == 401
+    )
     denied = client.post(
         playback_path,
         json=playback_request,
@@ -268,6 +295,14 @@ def test_all_six_routes_auth_environment_schema_idempotency_and_failures(
         "result": {"transcription_status": "submitted"},
     }
     assert client.post(automation_path, json=automation_payload).status_code == 401
+    assert (
+        client.post(
+            automation_path,
+            json=automation_payload,
+            headers={"X-Codestra-Environment": "staging"},
+        ).status_code
+        == 401
+    )
     automation = client.post(
         automation_path, json=automation_payload, headers=bearer_headers()
     )

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.codestra.internal/recording/recording-n8n-event-v1.json",
-  "title": "Allowlisted n8n Recording Projection v1",
+  "title": "Recording n8n Metadata Projection v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -29,7 +29,10 @@
     "campaign_key": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
     "duration_seconds": {"type": "number", "minimum": 0},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "object_version_id": {"type": "string", "minLength": 1, "maxLength": 255},
+    "object_version_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+    },
     "retention_class": {
       "enum": ["synthetic_test", "standard", "high_compliance", "legal_hold"]
     }

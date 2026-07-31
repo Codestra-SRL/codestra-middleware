@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hmac
 from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.config import settings
 from app.recording.domain import RecordingConflict, RecordingNotFound
 from app.recording.odoo import AcknowledgingOdooClient
 from app.recording.security import (
@@ -151,10 +153,16 @@ class AutomationResultResponse(StrictModel):
     duplicate: bool
 
 
-def require_bound_environment(
+def require_internal_service_auth(
+    authorization: Annotated[str, Header(alias="Authorization")] = "",
     environment: Annotated[str, Header(alias="X-Codestra-Environment")] = "",
 ) -> str:
-    if environment not in {"staging", "production"}:
+    expected = f"Bearer {settings.middleware_secret}"
+    if (
+        not settings.middleware_secret
+        or not hmac.compare_digest(authorization, expected)
+        or environment not in {"staging", "production"}
+    ):
         raise HTTPException(401, "recording environment binding required")
     return environment
 
@@ -218,7 +226,7 @@ async def failure(
 @router.get("/{recording_uid}", response_model=RecordingStateResponse)
 async def status(
     recording_uid: str,
-    environment: str = Depends(require_bound_environment),
+    environment: str = Depends(require_internal_service_auth),
 ):
     try:
         recording = recording_service.get(recording_uid)
@@ -241,7 +249,7 @@ async def playback_url(
     payload: PlaybackRequest,
     response: Response,
     service_identity: str = Header(default="", alias="X-Service-Identity"),
-    environment: str = Depends(require_bound_environment),
+    environment: str = Depends(require_internal_service_auth),
 ):
     authorized_service = service_identity in {
         "codestra-odoo",
@@ -272,7 +280,7 @@ async def playback_url(
 async def automation_result(
     recording_uid: str,
     payload: AutomationResultRequest,
-    environment: str = Depends(require_bound_environment),
+    environment: str = Depends(require_internal_service_auth),
 ):
     try:
         _assert_environment(recording_uid, environment)

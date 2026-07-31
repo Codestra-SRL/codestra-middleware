@@ -14,7 +14,7 @@ def test_contract_and_n8n_inactive_schema():
     )
     assert manifest["contract_version"] == "1.0"
     assert manifest["source_pull_request"] == 20
-    assert manifest["source_head"] == "817299f2648be9b8c7c29ffd51645bf2e3a5a095"
+    assert manifest["source_head"] == "ae92b95240a5ff638837121bc2773545bfbf6fdc"
     for name, expected in manifest["schemas"].items():
         assert (
             hashlib.sha256((ROOT / "schemas/recording" / name).read_bytes()).hexdigest()
@@ -121,3 +121,11 @@ def test_internal_hostname_tls_and_health_contract():
     assert "mode require_and_verify" in candidate
     assert "/health/live" in candidate and "/health/ready" in candidate
     assert "10.40.0.1 {" not in candidate
+
+
+def test_all_six_routes_require_explicit_response_models_and_authentication():
+    source = (ROOT / "app/api/v1/recordings.py").read_text()
+    assert source.count("response_model=") == 6
+    assert source.count("Depends(require_exporter_mtls)") == 3
+    assert source.count("Depends(require_internal_service_auth)") == 3
+    assert "hmac.compare_digest(authorization, expected)" in source

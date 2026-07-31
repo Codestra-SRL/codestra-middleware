@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI unless the five schemas match PR A exact head byte-for-byte."""
+"""Fail CI unless all six schemas match PR A exact head byte-for-byte."""
 
 import hashlib
 import json
@@ -16,10 +16,20 @@ def main() -> int:
         "contract_version": "1.0",
         "source_repository": "Codestra-SRL/telephony-event-gateway",
         "source_pull_request": 20,
-        "source_head": "817299f2648be9b8c7c29ffd51645bf2e3a5a095",
+        "source_head": "ae92b95240a5ff638837121bc2773545bfbf6fdc",
         "schemas": manifest["schemas"],
     }:
         raise SystemExit("canonical recording provenance drifted")
+    expected_names = {
+        "recording-contract-v1.json",
+        "recording-reservation-v1.json",
+        "recording-completion-v1.json",
+        "recording-status-v1.json",
+        "recording-event-v1.json",
+        "recording-n8n-event-v1.json",
+    }
+    if set(manifest["schemas"]) != expected_names:
+        raise SystemExit("canonical six-schema set drifted")
     for name, expected in manifest["schemas"].items():
         actual = hashlib.sha256((SCHEMAS / name).read_bytes()).hexdigest()
         if actual != expected:
