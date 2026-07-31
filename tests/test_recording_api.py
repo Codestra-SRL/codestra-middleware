@@ -46,7 +46,7 @@ def payload(**updates):
 
 def test_mtls_reservation_and_idempotent_completion():
     odoo = Odoo()
-    service = RecordingService(Store(), odoo)
+    service = RecordingService(Store(), odoo, odoo_write_enabled=True)
     first = service.reserve(payload(), "server-b-recording-exporter")
     second = service.reserve(payload(), "server-b-recording-exporter")
     assert first["recording_uid"] == second["recording_uid"]
@@ -95,3 +95,20 @@ def test_status_requires_approved_mtls_peer():
     assert service.status(
         reserved["recording_uid"], "recording-retention-worker"
     )["state"] == "RESERVED"
+
+
+def test_odoo_recording_write_is_disabled_by_default():
+    odoo = Odoo()
+    service = RecordingService(Store(), odoo)
+    reserved = service.reserve(payload(), "server-b-recording-exporter")
+    result = service.complete(reserved["recording_uid"], {
+        "environment": "staging", "campaign_id": "SYNTHETIC",
+        "idempotency_key": "k" * 64, "duration_seconds": 1.0, "format": "mp3",
+    }, "server-b-recording-exporter")
+    assert result == {
+        "recording_uid": reserved["recording_uid"],
+        "state": "VERIFIED",
+        "checksum_verified": True,
+        "odoo_linked": False,
+    }
+    assert odoo.calls == 0

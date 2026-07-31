@@ -51,9 +51,16 @@ class Recording:
 
 
 class RecordingService:
-    def __init__(self, store: ObjectStore, odoo: OdooRecordingWriter) -> None:
+    def __init__(
+        self,
+        store: ObjectStore,
+        odoo: OdooRecordingWriter,
+        *,
+        odoo_write_enabled: bool = False,
+    ) -> None:
         self.store = store
         self.odoo = odoo
+        self.odoo_write_enabled = odoo_write_enabled
         self.by_uid: dict[str, Recording] = {}
         self.by_key: dict[str, str] = {}
 
@@ -146,6 +153,13 @@ class RecordingService:
             raise ValueError("object identity mismatch")
         recording.object_version = head.version_id
         recording.state = "VERIFIED"
+        if not self.odoo_write_enabled:
+            return {
+                "recording_uid": uid,
+                "state": recording.state,
+                "checksum_verified": True,
+                "odoo_linked": False,
+            }
         recording.odoo_reference = self.odoo.upsert({
             "recording_uid": uid,
             "object_version_id": head.version_id,

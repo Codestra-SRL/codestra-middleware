@@ -24,7 +24,15 @@ def test_storage_security_contract():
     assert 'mc encrypt set sse-s3 "recording/${bucket}"' in bootstrap
     assert "mc encrypt set sse-kms" not in bootstrap
     assert "STAGING_ENCRYPTION_MODE=SSE_S3" in readme
-    assert "PRODUCTION_EXTERNAL_KMS_GATE=BLOCKED" in readme
+    assert "PRODUCTION_EXTERNAL_KMS_REQUIRED=YES" in readme
+    assert "PRODUCTION_KMS_PROVIDER=OWNER_DECISION_PENDING" in readme
+    assert (
+        "PRODUCTION_STORAGE_DEPLOYMENT_GATE=BLOCKED_PENDING_KMS"
+        in readme
+    )
+    assert "RETENTION_DELETE_ENABLED_DEFAULT=false" in readme
+    assert "ODOO_RECORDING_WRITE_ENABLED_DEFAULT=false" in readme
+    assert "N8N_RECORDING_WORKFLOW_ENABLED_DEFAULT=false" in readme
     assert "--with-lock" in bootstrap
     assert "version enable" in bootstrap
     assert "GOVERNANCE 365d" in bootstrap
