@@ -6,8 +6,12 @@ import hashlib
 import json
 
 from app.core.lead_callback_auth import (
+    AUDIENCE,
+    CALLBACK_SCOPE,
     CALLBACK_METHOD,
     CALLBACK_PATH,
+    IDENTITY,
+    SIGNATURE_VERSION,
     canonical_callback_material,
     sign_callback,
 )
@@ -30,18 +34,28 @@ def build_vector() -> dict[str, str]:
         environment="staging",
     )
     material = canonical_callback_material(
+        signature_version=SIGNATURE_VERSION,
         method=CALLBACK_METHOD,
         path=CALLBACK_PATH,
         timestamp=TIMESTAMP,
         nonce=NONCE,
+        service_identity=IDENTITY,
+        service_audience=AUDIENCE,
+        environment="staging",
+        scope=CALLBACK_SCOPE,
         idempotency_key=IDEMPOTENCY_KEY,
         body_sha256=body_hash,
     )
     return {
+        "signature_version": SIGNATURE_VERSION,
         "method": CALLBACK_METHOD,
         "path": CALLBACK_PATH,
         "timestamp": TIMESTAMP,
         "nonce": NONCE,
+        "service_identity": IDENTITY,
+        "service_audience": AUDIENCE,
+        "environment": "staging",
+        "scope": CALLBACK_SCOPE,
         "idempotency_key": IDEMPOTENCY_KEY,
         "body": BODY.decode("ascii"),
         "body_sha256": body_hash,

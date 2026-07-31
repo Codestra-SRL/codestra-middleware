@@ -24,8 +24,9 @@ service.action_switches.update(
         "CREATE_INTERNAL_CALLBACK_ACTIVITY": settings.lead_callback_create_enabled,
     }
 )
-used_callback_nonces: set[tuple[str, str]] = set()
+used_callback_nonces: set[tuple[str, str, str, str]] = set()
 CALLBACK_AUTH_HEADERS = (
+    "X-Codestra-Signature-Version",
     "X-Service-Identity",
     "X-Service-Audience",
     "X-Codestra-Timestamp",
@@ -34,6 +35,7 @@ CALLBACK_AUTH_HEADERS = (
     "X-Codestra-Signature",
     "Idempotency-Key",
     "X-Codestra-Environment",
+    "X-Codestra-Scope",
 )
 
 

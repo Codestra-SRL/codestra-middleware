@@ -7,9 +7,12 @@ from fastapi.testclient import TestClient
 
 import app.api.v1.lead_automation as lead_api
 from app.core.lead_callback_auth import (
+    AUDIENCE,
+    CALLBACK_SCOPE,
     CALLBACK_METHOD,
     CALLBACK_PATH,
     IDENTITY,
+    SIGNATURE_VERSION,
     CallbackAuthenticationError,
     canonical_callback_material,
     sign_callback,
@@ -46,7 +49,7 @@ def verify(
     path: str = CALLBACK_PATH,
     query_string: bytes = b"",
     now: datetime = NOW,
-    used: set[tuple[str, str]] | None = None,
+    used: set[tuple[str, str, str, str]] | None = None,
 ) -> None:
     verify_callback(
         method=method,
@@ -65,22 +68,28 @@ def test_valid_exact_post_path_and_body_are_accepted():
     verify()
 
 
-def test_canonical_material_is_exactly_six_lines_without_terminal_newline():
+def test_canonical_material_is_exactly_hmac_v2_without_terminal_newline():
     body_hash = hashlib.sha256(BODY).hexdigest()
     expected = (
-        f"POST\n{CALLBACK_PATH}\n{TIMESTAMP}\n{NONCE}\n"
+        f"{SIGNATURE_VERSION}\nPOST\n{CALLBACK_PATH}\n{TIMESTAMP}\n{NONCE}\n"
+        f"{IDENTITY}\n{AUDIENCE}\nstaging\n{CALLBACK_SCOPE}\n"
         f"{IDEMPOTENCY_KEY}\n{body_hash}"
     ).encode("ascii")
     actual = canonical_callback_material(
+        signature_version=SIGNATURE_VERSION,
         method=CALLBACK_METHOD,
         path=CALLBACK_PATH,
         timestamp=TIMESTAMP,
         nonce=NONCE,
+        service_identity=IDENTITY,
+        service_audience=AUDIENCE,
+        environment="staging",
+        scope=CALLBACK_SCOPE,
         idempotency_key=IDEMPOTENCY_KEY,
         body_sha256=body_hash,
     )
     assert actual == expected
-    assert actual.count(b"\n") == 5 and not actual.endswith(b"\n")
+    assert actual.count(b"\n") == 10 and not actual.endswith(b"\n")
 
 
 @pytest.mark.parametrize("method", ["GET", "PUT", "PATCH", "DELETE", ""])
@@ -145,6 +154,9 @@ def test_body_changed_after_signing_is_denied():
         ("X-Service-Identity", "wrong-identity", "identity"),
         ("X-Service-Audience", "wrong-audience", "identity"),
         ("X-Codestra-Environment", "production", "environment"),
+        ("X-Codestra-Scope", "lead-automation.registration.write", "scope"),
+        ("X-Codestra-Scope", "lead-automation.acknowledgements.write", "scope"),
+        ("X-Codestra-Scope", "*", "scope"),
     ],
 )
 def test_bound_header_tampering_is_denied(header, replacement, message):
@@ -164,7 +176,7 @@ def test_expired_or_future_timestamp_is_denied(now):
 
 
 def test_reused_nonce_is_denied():
-    used: set[tuple[str, str]] = set()
+    used: set[tuple[str, str, str, str]] = set()
     verify(used=used)
     with pytest.raises(CallbackAuthenticationError, match="reused"):
         verify(used=used)
@@ -180,6 +192,30 @@ def test_missing_and_invalid_signature_are_denied():
         verify(value=invalid)
 
 
+@pytest.mark.parametrize(
+    "header", ["X-Codestra-Signature-Version", "X-Codestra-Scope"]
+)
+def test_missing_version_or_scope_is_denied(header):
+    value = headers()
+    value.pop(header)
+    with pytest.raises(CallbackAuthenticationError, match="missing"):
+        verify(value=value)
+
+
+@pytest.mark.parametrize("version", ["HMAC-V1", "HMAC-V3", "*"])
+def test_unsupported_or_legacy_signature_version_is_denied(version):
+    value = headers(**{"X-Codestra-Signature-Version": version})
+    with pytest.raises(CallbackAuthenticationError, match="version"):
+        verify(value=value)
+
+
+@pytest.mark.parametrize("scope", ["", "*", "lead-automation.registration.write"])
+def test_empty_wildcard_or_cross_capability_scope_is_denied(scope):
+    value = headers(**{"X-Codestra-Scope": scope})
+    with pytest.raises(CallbackAuthenticationError, match="missing|scope"):
+        verify(value=value)
+
+
 @pytest.mark.parametrize("body_hash", ["A" * 64, "0" * 63, "not-hex"])
 def test_invalid_body_hash_format_is_denied(body_hash):
     value = headers(**{"X-Codestra-Content-SHA256": body_hash})
@@ -190,10 +226,15 @@ def test_invalid_body_hash_format_is_denied(body_hash):
 def test_newline_in_signing_material_is_denied():
     with pytest.raises(CallbackAuthenticationError, match="material"):
         canonical_callback_material(
+            signature_version=SIGNATURE_VERSION,
             method="POST",
             path=CALLBACK_PATH,
             timestamp=TIMESTAMP,
             nonce="bad\nnonce",
+            service_identity=IDENTITY,
+            service_audience=AUDIENCE,
+            environment="staging",
+            scope=CALLBACK_SCOPE,
             idempotency_key=IDEMPOTENCY_KEY,
             body_sha256=hashlib.sha256(BODY).hexdigest(),
         )
@@ -234,3 +275,31 @@ def test_route_authentication_rejection_causes_no_state_transition(monkeypatch):
     response = client.post(CALLBACK_PATH, content=BODY, headers=invalid)
     assert response.status_code == 401
     assert processed == 0
+
+
+def test_method_override_header_does_not_change_signed_method(monkeypatch):
+    processed = 0
+
+    def process(_body):
+        nonlocal processed
+        processed += 1
+        return {"accepted": True}
+
+    monkeypatch.setattr(lead_api.service, "receive_result", process)
+    monkeypatch.setattr(lead_api.settings, "lead_automation_hmac_secret", SECRET.decode())
+    client = TestClient(app)
+    current_headers = sign_callback(
+        body=BODY,
+        secret=SECRET,
+        timestamp=datetime.now(UTC).isoformat(),
+        nonce="method-override-current-nonce",
+        idempotency_key=IDEMPOTENCY_KEY,
+        environment="staging",
+    )
+    response = client.post(
+        CALLBACK_PATH,
+        content=BODY,
+        headers={**current_headers, "X-HTTP-Method-Override": "DELETE"},
+    )
+    assert response.status_code == 200
+    assert processed == 1

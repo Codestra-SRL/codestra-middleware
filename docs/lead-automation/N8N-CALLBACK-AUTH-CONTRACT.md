@@ -8,6 +8,7 @@ The only accepted endpoint is `POST /api/v1/lead-automation/results`. A trailing
 
 Every request supplies exactly one of each header:
 
+- `X-Codestra-Signature-Version: HMAC-V2`
 - `X-Service-Identity: codestra-n8n-lead-automation`
 - `X-Service-Audience: codestra-middleware-lead-automation`
 - `X-Codestra-Timestamp`
@@ -16,18 +17,24 @@ Every request supplies exactly one of each header:
 - `X-Codestra-Signature`
 - `Idempotency-Key`
 - `X-Codestra-Environment`
+- `X-Codestra-Scope: lead-automation.results.write`
 
 There is no bearer-token fallback. Duplicate authentication headers fail closed.
 
 ## Exact signed material
 
-The HMAC-SHA256 input is exactly six newline-separated ASCII values and has no terminal newline:
+The HMAC-SHA256 input is exactly eleven newline-separated ASCII values and has no terminal newline:
 
 ```text
+HMAC-V2
 POST
 /api/v1/lead-automation/results
 <X-Codestra-Timestamp>
 <X-Codestra-Nonce>
+codestra-n8n-lead-automation
+codestra-middleware-lead-automation
+<X-Codestra-Environment>
+lead-automation.results.write
 <Idempotency-Key>
 <lowercase SHA-256 of exact transmitted body bytes>
 ```
@@ -36,11 +43,11 @@ The method is uppercase ASCII and must be exactly `POST`. The path is the undeco
 
 The content digest is lowercase hexadecimal SHA-256 over the exact bytes transmitted as the HTTP body. The signature is lowercase hexadecimal HMAC-SHA256 using the runtime callback secret and the canonical material above.
 
-Identity, audience, and environment are validated independently through their required headers. The request environment must equal the result body environment. These controls remain mandatory even though the six-line signed material is intentionally limited to the canonical method, path, timestamp, nonce, idempotency key, and body digest.
+Version, identity, audience, environment, and exact least-privilege scope are both signed and verified. The request environment must equal the result body environment. Missing, legacy, unsupported, empty, wildcard, or cross-capability values fail closed. There is no HMAC-V1 fallback on this route.
 
 ## Replay and idempotency
 
-`X-Codestra-Timestamp` is an ISO-8601 timestamp with an explicit timezone and must fall within the Middleware five-minute tolerance. `X-Codestra-Nonce` is single-use within the environment. `Idempotency-Key` is bound into the signature and into result processing. Identical result replay is deterministic; conflicting replay is rejected or quarantined and never creates another Odoo operation.
+`X-Codestra-Timestamp` is an ISO-8601 timestamp with an explicit timezone and must fall within the Middleware five-minute tolerance. `X-Codestra-Nonce` is single-use within the environment, scope, and canonical route. `Idempotency-Key` is bound into the signature and into result processing. Identical result replay is deterministic; conflicting replay is rejected or quarantined and never creates another Odoo operation.
 
 ## Runtime secret delivery
 

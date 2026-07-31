@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 
 IDENTITY = "codestra-n8n-lead-automation"
 AUDIENCE = "codestra-middleware-lead-automation"
+SIGNATURE_VERSION = "HMAC-V2"
+CALLBACK_SCOPE = "lead-automation.results.write"
 CALLBACK_METHOD = "POST"
 CALLBACK_PATH = "/api/v1/lead-automation/results"
 _LOWER_SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -18,15 +20,32 @@ class CallbackAuthenticationError(PermissionError):
 
 def canonical_callback_material(
     *,
+    signature_version: str,
     method: str,
     path: str,
     timestamp: str,
     nonce: str,
+    service_identity: str,
+    service_audience: str,
+    environment: str,
+    scope: str,
     idempotency_key: str,
     body_sha256: str,
 ) -> bytes:
-    """Return the exact six-line callback HMAC material, without a final newline."""
-    values = (method, path, timestamp, nonce, idempotency_key, body_sha256)
+    """Return the exact HMAC-V2 callback material, without a final newline."""
+    values = (
+        signature_version,
+        method,
+        path,
+        timestamp,
+        nonce,
+        service_identity,
+        service_audience,
+        environment,
+        scope,
+        idempotency_key,
+        body_sha256,
+    )
     if any(not value or "\n" in value or "\r" in value for value in values):
         raise CallbackAuthenticationError("invalid callback signing material")
     if method != method.upper() or not method.isascii():
@@ -35,6 +54,8 @@ def canonical_callback_material(
         raise CallbackAuthenticationError("invalid callback path")
     if not _LOWER_SHA256.fullmatch(body_sha256):
         raise CallbackAuthenticationError("invalid callback body hash format")
+    if signature_version != SIGNATURE_VERSION:
+        raise CallbackAuthenticationError("unsupported callback signature version")
     return "\n".join(values).encode("ascii")
 
 
@@ -52,14 +73,20 @@ def sign_callback(
     """Build callback headers for offline clients using the verifier's material."""
     body_hash = hashlib.sha256(body).hexdigest()
     material = canonical_callback_material(
+        signature_version=SIGNATURE_VERSION,
         method=method,
         path=path,
         timestamp=timestamp,
         nonce=nonce,
+        service_identity=IDENTITY,
+        service_audience=AUDIENCE,
+        environment=environment,
+        scope=CALLBACK_SCOPE,
         idempotency_key=idempotency_key,
         body_sha256=body_hash,
     )
     return {
+        "X-Codestra-Signature-Version": SIGNATURE_VERSION,
         "X-Service-Identity": IDENTITY,
         "X-Service-Audience": AUDIENCE,
         "X-Codestra-Timestamp": timestamp,
@@ -68,6 +95,7 @@ def sign_callback(
         "X-Codestra-Signature": hmac.new(secret, material, hashlib.sha256).hexdigest(),
         "Idempotency-Key": idempotency_key,
         "X-Codestra-Environment": environment,
+        "X-Codestra-Scope": CALLBACK_SCOPE,
     }
 
 
@@ -80,10 +108,11 @@ def verify_callback(
     headers: dict[str, str],
     secret: bytes,
     environment: str,
-    used_nonces: set[tuple[str, str]],
+    used_nonces: set[tuple[str, str, str, str]],
     now: datetime | None = None,
 ) -> None:
     required = (
+        "X-Codestra-Signature-Version",
         "X-Service-Identity",
         "X-Service-Audience",
         "X-Codestra-Timestamp",
@@ -92,6 +121,7 @@ def verify_callback(
         "X-Codestra-Signature",
         "Idempotency-Key",
         "X-Codestra-Environment",
+        "X-Codestra-Scope",
     )
     if any(not headers.get(name) for name in required):
         raise CallbackAuthenticationError("missing callback signature")
@@ -101,6 +131,8 @@ def verify_callback(
         raise CallbackAuthenticationError("callback path mismatch")
     if query_string:
         raise CallbackAuthenticationError("callback query string is prohibited")
+    if headers["X-Codestra-Signature-Version"] != SIGNATURE_VERSION:
+        raise CallbackAuthenticationError("unsupported callback signature version")
     if (
         headers["X-Service-Identity"] != IDENTITY
         or headers["X-Service-Audience"] != AUDIENCE
@@ -108,6 +140,8 @@ def verify_callback(
         raise CallbackAuthenticationError("callback identity binding mismatch")
     if headers["X-Codestra-Environment"] != environment:
         raise CallbackAuthenticationError("callback environment mismatch")
+    if headers["X-Codestra-Scope"] != CALLBACK_SCOPE:
+        raise CallbackAuthenticationError("callback scope mismatch")
     body_hash = hashlib.sha256(body).hexdigest()
     if not _LOWER_SHA256.fullmatch(headers["X-Codestra-Content-SHA256"]):
         raise CallbackAuthenticationError("invalid callback body hash format")
@@ -123,14 +157,24 @@ def verify_callback(
         or abs((now - occurred.astimezone(UTC)).total_seconds()) > 300
     ):
         raise CallbackAuthenticationError("expired callback timestamp")
-    nonce_key = (environment, headers["X-Codestra-Nonce"])
+    nonce_key = (
+        environment,
+        CALLBACK_SCOPE,
+        path,
+        headers["X-Codestra-Nonce"],
+    )
     if nonce_key in used_nonces:
         raise CallbackAuthenticationError("reused callback nonce")
     material = canonical_callback_material(
+        signature_version=headers["X-Codestra-Signature-Version"],
         method=method,
         path=path,
         timestamp=headers["X-Codestra-Timestamp"],
         nonce=headers["X-Codestra-Nonce"],
+        service_identity=headers["X-Service-Identity"],
+        service_audience=headers["X-Service-Audience"],
+        environment=headers["X-Codestra-Environment"],
+        scope=headers["X-Codestra-Scope"],
         idempotency_key=headers["Idempotency-Key"],
         body_sha256=body_hash,
     )
