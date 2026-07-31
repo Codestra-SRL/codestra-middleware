@@ -2,6 +2,8 @@
 
 This directory contains source-only deployment artifacts for the logical workflow `lead-automation-generic-v1`. The generic ingress is `POST /webhook/v1/events`; Middleware selects it through binding key `n8n.leads.ingest`.
 
+This resynchronized source retains PR #65's original fail-closed boundary: n8n may validate and transform allowlisted metadata and return a signed, idempotent result only; it cannot act as an application or data-access service.
+
 Supported event types are `lead.creation.requested.v1`, `lead.update.requested.v1`, `lead.assignment.requested.v1`, `lead.status_change.requested.v1`, and `lead.callback_requested.v1`. The copied event, result, status, and eight business-unit schemas are byte-identical to Middleware schema source `da215762375614aa617bf838f9e4974ac2ad7c68`; provenance also binds callback authentication head `04fa56f4c8bb8caea3e5281816a2986bcb47ba05` and Odoo head `384d175eb32bc87f34b9c736453db44c2d151b1a`.
 
 ## Default-off boundary

@@ -121,6 +121,7 @@ WORKDIR /app
 COPY --chown=10001:10001 alembic.ini app.py ./
 COPY --chown=10001:10001 app ./app
 COPY --chown=10001:10001 migrations ./migrations
+COPY --chown=10001:10001 schemas ./schemas
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
