@@ -1,22 +1,25 @@
-# Exporter–Middleware State Mapping
+# Exporter–Middleware state mapping
 
-This mapping is the middleware interpretation of the recording v1 state
-contract at PR A head `ae92b95240a5ff638837121bc2773545bfbf6fdc`.
+The exporter owns only its local durable spool. Middleware owns reservation,
+object verification, and Odoo-link state. State changes are transactional and
+idempotent.
 
-| Exporter observation | Middleware state | Required middleware action |
+| Exporter state | Middleware observation | Permitted next state |
 |---|---|---|
-| Reservation accepted | `UPLOADING` | Return the same reservation response for the same environment and idempotency key. |
-| Completion received | `UPLOADED` | Inspect the exact private object version; do not acknowledge verification yet. |
-| Object metadata matches | `SERVER_VERIFIED` | Persist the version binding and attempt the canonical Odoo metadata upsert. |
-| Canonical Odoo acknowledgement validates | `ODOO_LINKED` | Mark the Odoo link and optionally enqueue the flat n8n projection. |
-| Object or completion binding conflicts | `QUARANTINED` | Reject the completion and require operator review; never retry as a new recording. |
-| Terminal exporter/storage failure | `FAILED` | Preserve the failure code and immutable audit history. |
+| `HASHED` | No reservation | `RESERVATION_CREATED` after a valid response |
+| `RESERVATION_CREATED` | Reservation exists | `UPLOADING` |
+| `UPLOADING` | Reservation exists | `UPLOADED` or `FAILED` |
+| `UPLOADED` | Object pending verification | `SERVER_VERIFIED` or `QUARANTINED` |
+| `SERVER_VERIFIED` | Checksum and object identity verified | `ODOO_LINKED` |
+| `ODOO_LINKED` | Deterministic Odoo acknowledgement stored | `RETENTION_PENDING` |
+| `QUARANTINED` | Conflict requires review | No automatic delivery retry |
+| `FAILED` | Retryable operation exhausted | Operator-controlled retry only |
 
-`RESERVATION_CREATED` is the initial internal audit state. The first successful
-reservation transition is `UPLOADING`. A recording must never transition to
-`ODOO_LINKED` from any state other than `SERVER_VERIFIED`, and it must never do
-so from a partial, malformed, or mismatched Odoo acknowledgement.
+`RESERVED` maps to `RESERVATION_CREATED`; `VERIFIED` maps to
+`SERVER_VERIFIED`. Unknown Middleware states fail closed. No state permits the
+exporter to delete a recording.
 
-The six shared recording schemas remain authoritative. Core events remain nested. The optional
-n8n delivery uses only `recording-n8n-event-v1.json`; it is not a state
-transition prerequisite and it never receives the nested core recording object.
+The canonical nested event remains `recording-event-v1.json`. The separate
+`recording-n8n-event-v1.json` schema is a flat metadata-only projection and
+must not contain a raw filename, filesystem path, telephone number, storage
+credential, upload URL, or internal object key.

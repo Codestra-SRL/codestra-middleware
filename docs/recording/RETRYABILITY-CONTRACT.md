@@ -1,24 +1,21 @@
-# Recording Retryability Contract
+# Recording delivery retryability contract
 
-Retries preserve the original `recording_uid`, environment, payload, object
-version binding, and idempotency key. A retry must not create a second recording
-or silently replace an object version.
+Retries use the same deterministic idempotency key. Automatic delay is
+`min(3600, 2^attempt)` seconds, with at most three transport attempts per API
+operation. Redirects are always denied.
 
-| Condition | Retryability | Required behavior |
-|---|---|---|
-| Network timeout, connection failure, HTTP `429`, or HTTP `5xx` | Retryable | Exponential backoff with bounded jitter; reuse the same idempotency key. |
-| Odoo unavailable after `SERVER_VERIFIED` | Retryable | Remain `SERVER_VERIFIED`; retry only the HMAC-authenticated metadata upsert. |
-| Authentication failure, stale timestamp, replayed nonce, or HTTP `401`/`403` | Not automatically retryable | Refresh runtime credentials/configuration and use a new timestamp and nonce after operator correction. |
-| Request-schema failure or HTTP `400`/`422` | Not retryable | Correct the contract defect; do not mutate the accepted reservation. |
-| Idempotency payload conflict or HTTP `409` | Not retryable | Quarantine for review; never generate a new key to bypass the conflict. |
-| Missing object immediately after upload | Retryable only within bounded consistency window | Re-check the same opaque identifier; never select a different object. |
-| Checksum, size, content type, environment, campaign, UID, or version mismatch | Not retryable | Transition to `QUARANTINED`. |
-| Optional n8n projection delivery failure | Retryable outside the critical path | Keep `ODOO_LINKED`; retry the flat allowlisted projection independently. |
+| Condition | Retry automatically | Terminal behavior |
+|---|---:|---|
+| Network timeout | Yes | `FAILED` after bounded attempts |
+| Reservation timeout | Yes | Preserve `HASHED`; retry same key |
+| Upload timeout | Yes | Preserve reservation; retry same object URL only while unexpired |
+| Completion timeout | Yes | Query status or repeat completion with same key |
+| Middleware `429` | Yes | Bounded exponential backoff |
+| Middleware `5xx` | Yes | Bounded exponential backoff |
+| Authentication denial (`401`/`403`) | No | Fail closed |
+| Schema rejection (`400`/`422`) | No | `QUARANTINED` |
+| Checksum conflict (`409`) | No | `QUARANTINED` |
+| Quarantine | No | Manual reviewed release only |
 
-Every Odoo attempt uses a new cryptographic nonce and current timestamp while
-retaining the original idempotency key. Replay rejection is final for that
-nonce, not for the business operation.
-
-The n8n binding and workflow default to inactive. n8n delivery cannot block
-reservation, verification, the Odoo upsert, the canonical acknowledgement, or
-the `ODOO_LINKED` transition.
+An expired upload reservation is never reused. Missing, extra, malformed, or
+expired reservation response fields are schema rejection and fail closed.
