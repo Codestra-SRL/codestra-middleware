@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 
 IDENTITY = "codestra-n8n-lead-automation"
 AUDIENCE = "codestra-middleware-lead-automation"
@@ -45,15 +44,13 @@ def verify_callback(
     if not hmac.compare_digest(body_hash, headers["X-Codestra-Content-SHA256"]):
         raise CallbackAuthenticationError("callback body hash mismatch")
     try:
-        occurred = datetime.fromisoformat(
-            headers["X-Codestra-Timestamp"].replace("Z", "+00:00")
-        )
+        occurred = datetime.fromisoformat(headers["X-Codestra-Timestamp"])
     except ValueError as exc:
         raise CallbackAuthenticationError("invalid callback timestamp") from exc
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if (
         occurred.tzinfo is None
-        or abs((now - occurred.astimezone(timezone.utc)).total_seconds()) > 300
+        or abs((now - occurred.astimezone(UTC)).total_seconds()) > 300
     ):
         raise CallbackAuthenticationError("expired callback timestamp")
     nonce_key = (environment, headers["X-Codestra-Nonce"])

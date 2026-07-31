@@ -3,11 +3,17 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
+from app.adapters.odoo.lead_automation import (
+    AckValidationError,
+    build_apply_payload,
+    classify_ack,
+    validate_ack,
+)
 
 ACTIONS = {
     "CREATE_LEAD",
@@ -124,6 +130,9 @@ TRANSITIONS = {
     State.RESULT_VALIDATED: {State.ODOO_APPLY_PENDING},
     State.ODOO_APPLY_PENDING: {
         State.ODOO_APPLIED,
+        State.POLICY_DENIED,
+        State.CONSENT_BLOCKED,
+        State.DNC_BLOCKED,
         State.RETRY_PENDING,
         State.QUARANTINED,
     },
@@ -168,6 +177,7 @@ class Event:
     result_hash: str | None = None
     result_response: dict[str, Any] | None = None
     workflow_execution_id: str | None = None
+    result_payload: dict[str, Any] | None = None
     odoo_ack: dict[str, Any] | None = None
     audit: list[dict[str, str]] = field(default_factory=list)
 
@@ -373,32 +383,66 @@ class LeadAutomationService:
             "accepted": True,
         }
         event.result_hash, event.result_response = digest, response
+        event.result_payload = dict(payload)
         return response
 
     def apply_odoo_ack(self, event_id: str, ack: dict[str, Any]) -> dict[str, Any]:
         event = self._find(event_id)
         if not self.odoo_apply_enabled:
             raise LeadAutomationError("Odoo apply disabled")
-        original = event.payload
-        if (
-            ack.get("contract_version") != "1.0"
-            or ack.get("automation_event_id") != event.automation_event_id
-            or any(
-                ack.get(k) != original.get(k)
-                for k in (
-                    "automation_action",
-                    "business_unit_key",
-                    "campaign_key",
-                    "policy_version",
+        if event.odoo_ack is not None:
+            if canonical_hash(event.odoo_ack) == canonical_hash(ack):
+                return self.status(event)
+            previous_was_retryable = classify_ack(event.odoo_ack) == "retry"
+            if not (previous_was_retryable and event.state == State.ODOO_APPLY_PENDING):
+                event.state = State.QUARANTINED
+                self.quarantine.append(
+                    {
+                        "event_id": event.payload["event_id"],
+                        "reason": "ODOO_ACK_CONFLICT",
+                    }
                 )
-            )
-        ):
+                raise Conflict("conflicting Odoo acknowledgement replay")
+        if event.state != State.ODOO_APPLY_PENDING or event.result_payload is None:
             event.state = State.QUARANTINED
-            raise Conflict("Odoo acknowledgement mismatch")
-        self._transition(event, State.ODOO_APPLIED)
+            raise Conflict("Odoo acknowledgement without pending apply")
+        request = build_apply_payload(
+            event=event.payload,
+            result=event.result_payload,
+            automation_event_id=event.automation_event_id,
+        )
+        try:
+            validate_ack(ack, request)
+        except AckValidationError as exc:
+            event.state = State.QUARANTINED
+            self.quarantine.append(
+                {"event_id": event.payload["event_id"], "reason": "ODOO_ACK_INVALID"}
+            )
+            raise Conflict("Odoo acknowledgement schema or binding mismatch") from exc
+        classification = classify_ack(ack)
         event.odoo_ack = ack
         self.odoo_operations += 1
-        self._transition(event, State.COMPLETED)
+        if classification == "complete":
+            self._transition(event, State.ODOO_APPLIED)
+            self._transition(event, State.COMPLETED)
+        elif classification == "retry":
+            self._transition(event, State.RETRY_PENDING, ack["result_code"])
+        elif ack["result"] == "DENIED":
+            self._transition(
+                event, State.POLICY_DENIED, ack.get("result_code", "DENIED")
+            )
+        elif ack["result"] == "CONSENT_BLOCKED":
+            self._transition(
+                event, State.CONSENT_BLOCKED, ack.get("result_code", "CONSENT_BLOCKED")
+            )
+        elif ack["result"] == "DNC_BLOCKED":
+            self._transition(
+                event, State.DNC_BLOCKED, ack.get("result_code", "DNC_BLOCKED")
+            )
+        else:
+            self._transition(
+                event, State.QUARANTINED, ack.get("result_code", ack["result"])
+            )
         return self.status(event)
 
     def record_retry(
@@ -448,5 +492,5 @@ class LeadAutomationService:
             "environment": event.payload["environment"],
             "state": event.state,
             "policy_version": event.payload["policy_version"],
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }

@@ -1,4 +1,3 @@
-
 import pytest
 
 from app.adapters.odoo.lead_automation import signed_headers
@@ -199,7 +198,7 @@ def test_15_hmac_signature_is_deterministic():
 
 
 def test_16_reused_workflow_execution_denied():
-    s, e = dispatched()
+    s, _ = dispatched()
     s.receive_result(result())
     p = payload(event_id="EVT-synthetic02", idempotency_key="c" * 64)
     x = s.receive(p)
@@ -259,6 +258,72 @@ def test_21_ack_mismatch_quarantines():
         s.apply_odoo_ack(e["event_id"], ack)
 
 
+def full_ack(automation_event_id, result_code_result="APPLIED", **updates):
+    value = {
+        "contract_version": "1.0",
+        "automation_event_id": automation_event_id,
+        "automation_action": "UPDATE_ALLOWLISTED_FIELDS",
+        "lead_uid": "LEAD-synthetic01",
+        "odoo_record_id": 42,
+        "result": result_code_result,
+        "applied_fields": ["solution_type"] if result_code_result == "APPLIED" else [],
+        "unchanged_fields": ["solution_type"]
+        if result_code_result == "NO_CHANGE"
+        else [],
+        "rejected_fields": [],
+        "business_unit_key": "web-mobile-ai",
+        "campaign_key": "TEST_LEADS",
+        "policy_version": "1.0",
+        "updated_at": "2026-01-01T00:02:00Z",
+        "idempotent_replay": False,
+    }
+    if result_code_result == "FAILED":
+        value["result_code"] = "PERMANENT_FAILURE"
+    value.update(updates)
+    return value
+
+
+@pytest.mark.parametrize(
+    ("ack_result", "expected_state"),
+    [
+        ("APPLIED", State.COMPLETED),
+        ("NO_CHANGE", State.COMPLETED),
+        ("DENIED", State.POLICY_DENIED),
+        ("CONSENT_BLOCKED", State.CONSENT_BLOCKED),
+        ("DNC_BLOCKED", State.DNC_BLOCKED),
+        ("QUARANTINED", State.QUARANTINED),
+        ("FAILED", State.QUARANTINED),
+    ],
+)
+def test_22_all_ack_results_drive_fail_closed_state(ack_result, expected_state):
+    s, e = dispatched()
+    s.receive_result(result())
+    s.odoo_apply_enabled = True
+    response = s.apply_odoo_ack(
+        e["event_id"], full_ack(e["automation_event_id"], ack_result)
+    )
+    assert response["state"] == expected_state
+
+
+def test_23_retryable_failed_ack_and_identical_ack_replay():
+    s, e = dispatched()
+    s.receive_result(result())
+    s.odoo_apply_enabled = True
+    retryable = full_ack(
+        e["automation_event_id"],
+        "FAILED",
+        result_code="TEMPORARY_UNAVAILABLE",
+    )
+    assert s.apply_odoo_ack(e["event_id"], retryable)["state"] == State.RETRY_PENDING
+    assert s.apply_odoo_ack(e["event_id"], retryable)["state"] == State.RETRY_PENDING
+    assert s.odoo_operations == 1
+    event_record = s._find(e["event_id"])
+    s._transition(event_record, State.ODOO_APPLY_PENDING)
+    applied = full_ack(e["automation_event_id"])
+    assert s.apply_odoo_ack(e["event_id"], applied)["state"] == State.COMPLETED
+    assert s.odoo_operations == 2
+
+
 def test_22_n8n_timeout_bounded_retry():
     s = allowed_service()
     e = s.receive(payload())
@@ -309,6 +374,7 @@ def test_29_no_production_database_write():
 
 def test_30_no_recording_system_change():
     import inspect
+
     import app.core.lead_automation as module
 
     text = inspect.getsource(module)

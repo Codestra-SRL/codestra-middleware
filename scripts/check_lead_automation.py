@@ -2,11 +2,10 @@ import hashlib
 import json
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 schemas = ROOT / "schemas/lead-automation"
 manifest = json.loads((schemas / "SHA256SUMS.json").read_text())
-assert manifest["contract_version"] == "1.0" and manifest["schema_count"] == 13
+assert manifest["contract_version"] == "1.0" and manifest["schema_count"] == 14
 for name, digest in manifest["schemas"].items():
     path = schemas / name
     assert path.is_file()
@@ -27,6 +26,37 @@ forbidden = (
 )
 text = "\n".join(path.read_text().lower() for path in schemas.glob("*.json"))
 assert not any(term in text for term in forbidden)
+apply_schema = json.loads((schemas / "lead-odoo-apply-v1.json").read_text())
+assert set(apply_schema["required"]) == {
+    "contract_version",
+    "automation_event_id",
+    "idempotency_key",
+    "environment",
+    "business_unit_key",
+    "campaign_key",
+    "automation_action",
+    "policy_version",
+    "correlation_id",
+    "attributes_schema_key",
+    "attributes",
+    "consent_snapshot",
+    "workflow_execution_id",
+    "result_code",
+}
+assert set(apply_schema["properties"]) - set(apply_schema["required"]) == {
+    "lead_uid",
+    "source_reference",
+}
+ack_schema = json.loads((schemas / "lead-odoo-ack-v1.json").read_text())
+assert ack_schema["properties"]["result"]["enum"] == [
+    "APPLIED",
+    "NO_CHANGE",
+    "DENIED",
+    "CONSENT_BLOCKED",
+    "DNC_BLOCKED",
+    "QUARANTINED",
+    "FAILED",
+]
 config = (ROOT / "app/core/config.py").read_text()
 for setting in (
     "lead_automation_enabled",

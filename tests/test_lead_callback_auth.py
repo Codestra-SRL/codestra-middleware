@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -17,9 +17,7 @@ def headers(body: bytes, secret: bytes = b"synthetic") -> dict[str, str]:
     timestamp = "2026-01-01T00:00:00+00:00"
     nonce = "synthetic-callback-nonce"
     idem = "d" * 64
-    material = "\n".join(
-        (IDENTITY, AUDIENCE, timestamp, nonce, "staging", idem, body_hash)
-    ).encode()
+    material = f"{IDENTITY}\n{AUDIENCE}\n{timestamp}\n{nonce}\nstaging\n{idem}\n{body_hash}".encode()
     return {
         "X-Service-Identity": IDENTITY,
         "X-Service-Audience": AUDIENCE,
@@ -41,7 +39,7 @@ def test_callback_hmac_and_replay_rejection():
         secret=b"synthetic",
         environment="staging",
         used_nonces=used,
-        now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
     )
     with pytest.raises(CallbackAuthenticationError, match="reused"):
         verify_callback(
@@ -50,7 +48,7 @@ def test_callback_hmac_and_replay_rejection():
             secret=b"synthetic",
             environment="staging",
             used_nonces=used,
-            now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            now=datetime(2026, 1, 1, tzinfo=UTC),
         )
 
 
@@ -65,5 +63,5 @@ def test_callback_wrong_signature_denied():
             secret=b"synthetic",
             environment="staging",
             used_nonces=set(),
-            now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            now=datetime(2026, 1, 1, tzinfo=UTC),
         )

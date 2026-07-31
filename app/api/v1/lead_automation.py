@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.core.config import settings
-from app.core.lead_callback_auth import CallbackAuthenticationError, verify_callback
 from app.core.lead_automation import (
     Conflict,
     LeadAutomationError,
     LeadAutomationService,
 )
-
+from app.core.lead_callback_auth import CallbackAuthenticationError, verify_callback
 
 router = APIRouter(tags=["lead-automation"])
 service = LeadAutomationService()
