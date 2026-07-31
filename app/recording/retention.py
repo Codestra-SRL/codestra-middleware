@@ -31,7 +31,7 @@ class RetentionEngine:
     ) -> RetentionDecision:
         current = now or datetime.now(UTC)
         blockers = (
-            (recording.state != RecordingState.RETENTION_PENDING, "ODOO_UNLINKED"),
+            (recording.state != RecordingState.ODOO_LINKED, "ODOO_UNLINKED"),
             (recording.verified_at is None, "UPLOAD_UNVERIFIED"),
             (recording.odoo_linked_at is None, "ODOO_UNLINKED"),
             (recording.state == RecordingState.QUARANTINED, "QUARANTINED"),

@@ -65,7 +65,7 @@ class RecordingObject(Base):
     )
     object_version_id: Mapped[str | None] = mapped_column(String(255))
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     content_type: Mapped[str] = mapped_column(String(128), nullable=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (

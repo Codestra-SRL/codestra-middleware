@@ -11,7 +11,7 @@ class PrivateObjectStorage(Protocol):
         self, opaque_identifier: str, content_type: str, checksum: str, ttl: int
     ) -> tuple[str, datetime]: ...
 
-    def head(self, opaque_identifier: str, version_id: str) -> ObjectHead: ...
+    def head(self, opaque_identifier: str) -> ObjectHead: ...
 
     def presign_read(
         self, opaque_identifier: str, version_id: str, ttl: int
@@ -33,8 +33,14 @@ class MemoryObjectStorage:
             expires,
         )
 
-    def head(self, opaque_identifier: str, version_id: str) -> ObjectHead:
-        return self.objects[(opaque_identifier, version_id)]
+    def head(self, opaque_identifier: str) -> ObjectHead:
+        matches = [
+            head for (identifier, _version), head in self.objects.items()
+            if identifier == opaque_identifier
+        ]
+        if len(matches) != 1:
+            raise KeyError("object HEAD did not resolve exactly one current version")
+        return matches[0]
 
     def presign_read(
         self, opaque_identifier: str, version_id: str, ttl: int

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 
 class AuthenticationError(PermissionError):
@@ -16,6 +17,8 @@ class ExporterIdentity:
     environment: str
     role: str
     audience: str
+    certificate_not_after: datetime | None = None
+    certificate_revoked: bool = False
 
 
 class ReplayGuard:
@@ -43,7 +46,7 @@ class MTLSAuthorizer:
         self,
         mappings: dict[str, str],
         audience: str = "codestra-recording-api",
-        role: str = "server-b-recording-exporter",
+        role: str = "recording-exporter",
     ) -> None:
         self.mappings = mappings
         self.audience = audience
@@ -51,10 +54,14 @@ class MTLSAuthorizer:
 
     def authorize(self, identity: ExporterIdentity) -> None:
         expected_environment = self.mappings.get(identity.certificate_identity)
+        now = datetime.now(UTC)
         if (
             expected_environment is None
             or not hmac.compare_digest(expected_environment, identity.environment)
             or not hmac.compare_digest(identity.role, self.role)
             or not hmac.compare_digest(identity.audience, self.audience)
+            or identity.certificate_not_after is None
+            or identity.certificate_not_after <= now
+            or identity.certificate_revoked
         ):
             raise AuthenticationError("exporter mTLS binding rejected")

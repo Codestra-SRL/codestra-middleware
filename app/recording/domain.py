@@ -7,15 +7,11 @@ from typing import Any
 
 
 class RecordingState(str, Enum):
-    RESERVATION_PENDING = "RESERVATION_PENDING"
-    RESERVED = "RESERVED"
-    UPLOAD_PENDING = "UPLOAD_PENDING"
+    RESERVATION_CREATED = "RESERVATION_CREATED"
+    UPLOADING = "UPLOADING"
     UPLOADED = "UPLOADED"
-    VERIFYING = "VERIFYING"
-    VERIFIED = "VERIFIED"
-    ODOO_LINK_PENDING = "ODOO_LINK_PENDING"
+    SERVER_VERIFIED = "SERVER_VERIFIED"
     ODOO_LINKED = "ODOO_LINKED"
-    RETENTION_PENDING = "RETENTION_PENDING"
     QUARANTINED = "QUARANTINED"
     FAILED = "FAILED"
 
@@ -37,12 +33,20 @@ class Recording:
     call_uid: str
     idempotency_key: str
     sha256: str
-    size_bytes: int
+    file_size_bytes: int
     content_type: str
     opaque_object_identifier: str
     retention_class: str
-    duration_seconds: float | None = None
-    state: RecordingState = RecordingState.RESERVATION_PENDING
+    vicidial_recording_id: str
+    asterisk_uniqueid: str
+    agent_key: str
+    started_at: str
+    duration_seconds: float
+    format: str
+    codec: str
+    channels: int
+    sample_rate_hz: int
+    state: RecordingState = RecordingState.RESERVATION_CREATED
     object_version_id: str | None = None
     verified_at: datetime | None = None
     odoo_linked_at: datetime | None = None

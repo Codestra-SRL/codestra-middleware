@@ -25,6 +25,7 @@ class RecordingService:
         self.retention = RetentionEngine()
         self.recordings: dict[str, Recording] = {}
         self.by_idempotency: dict[tuple[str, str], str] = {}
+        self.reservation_responses: dict[str, dict[str, Any]] = {}
         self.object_versions: dict[str, str] = {}
         self.audit: list[StateAudit] = []
         self.outbox: list[dict[str, Any]] = []
@@ -47,52 +48,58 @@ class RecordingService:
         )
 
     def reserve(self, payload: dict[str, Any]) -> dict[str, Any]:
-        key = (payload["environment"], payload["idempotency_key"])
+        metadata = payload["recording"]
+        key = (metadata["environment"], payload["idempotency_key"])
         if key in self.by_idempotency:
             existing = self.recordings[self.by_idempotency[key]]
-            url, expires = self.storage.reserve_upload(
-                existing.opaque_object_identifier,
-                existing.content_type,
-                existing.sha256,
-                300,
-            )
-            return self._reservation_response(existing, url, expires, True)
+            return dict(self.reservation_responses[existing.recording_uid])
         uid = f"REC-{uuid.uuid4().hex}"
         opaque = uuid.uuid4().hex
         recording = Recording(
             recording_uid=uid,
-            environment=payload["environment"],
-            campaign_key=payload["campaign_key"],
-            call_uid=payload["call_uid"],
+            environment=metadata["environment"],
+            campaign_key=metadata["campaign_key"],
+            call_uid=metadata["vicidial_call_id"],
             idempotency_key=payload["idempotency_key"],
-            sha256=payload["sha256"],
-            size_bytes=payload["size_bytes"],
-            content_type=payload["content_type"],
+            sha256=metadata["sha256"],
+            file_size_bytes=metadata["file_size_bytes"],
+            content_type={
+                "mp3": "audio/mpeg", "wav": "audio/wav", "gsm": "audio/gsm"
+            }[metadata["format"]],
             opaque_object_identifier=opaque,
-            retention_class=payload.get("retention_class", "standard"),
-            duration_seconds=payload.get("duration_seconds"),
+            retention_class=metadata["retention_class"],
+            vicidial_recording_id=metadata["vicidial_recording_id"],
+            asterisk_uniqueid=metadata["asterisk_uniqueid"],
+            agent_key=metadata["agent_key"],
+            started_at=metadata["started_at"],
+            duration_seconds=metadata["duration_seconds"],
+            format=metadata["format"],
+            codec=metadata["codec"],
+            channels=metadata["channels"],
+            sample_rate_hz=metadata["sample_rate_hz"],
         )
         self.recordings[uid] = recording
         self.by_idempotency[key] = uid
-        self._transition(recording, RecordingState.RESERVED, "reservation_created")
-        self._transition(recording, RecordingState.UPLOAD_PENDING, "upload_authorized")
+        self._transition(recording, RecordingState.UPLOADING, "upload_authorized")
         url, expires = self.storage.reserve_upload(
             opaque, recording.content_type, recording.sha256, 300
         )
-        return self._reservation_response(recording, url, expires, False)
+        response = self._reservation_response(recording, url, expires)
+        self.reservation_responses[uid] = response
+        return dict(response)
 
     @staticmethod
     def _reservation_response(
-        recording: Recording, url: str, expires: datetime, duplicate: bool
+        recording: Recording, url: str, expires: datetime
     ) -> dict[str, Any]:
         return {
+            "contract_version": "1.0",
             "recording_uid": recording.recording_uid,
             "upload_url": url,
             "upload_url_expires_at": expires.isoformat(),
             "required_checksum_header": "x-amz-checksum-sha256",
             "required_content_type": recording.content_type,
             "opaque_object_identifier": recording.opaque_object_identifier,
-            "duplicate": duplicate,
         }
 
     def get(self, recording_uid: str) -> Recording:
@@ -105,33 +112,51 @@ class RecordingService:
         self, recording_uid: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
         recording = self.get(recording_uid)
-        version_id = payload["object_version_id"]
+        completion_bindings = {
+            "recording_uid": recording_uid,
+            "idempotency_key": recording.idempotency_key,
+            "environment": recording.environment,
+            "campaign_key": recording.campaign_key,
+            "sha256": recording.sha256,
+            "file_size_bytes": recording.file_size_bytes,
+            "format": recording.format,
+            "duration_seconds": recording.duration_seconds,
+        }
+        mismatched_completion = sorted(
+            key for key, expected in completion_bindings.items()
+            if payload.get(key) != expected
+        )
+        if mismatched_completion:
+            self._transition(
+                recording, RecordingState.QUARANTINED,
+                "completion:" + ",".join(mismatched_completion),
+            )
+            raise RecordingConflict("completion contract conflicts with reservation")
         if (
-            recording.state == RecordingState.RETENTION_PENDING
-            and recording.object_version_id == version_id
+            recording.state == RecordingState.ODOO_LINKED
+            and recording.object_version_id is not None
         ):
             return self._ack(recording, duplicate=True)
         if recording.state not in {
-            RecordingState.UPLOAD_PENDING,
+            RecordingState.UPLOADING,
             RecordingState.UPLOADED,
-            RecordingState.VERIFYING,
-            RecordingState.ODOO_LINK_PENDING,
+            RecordingState.SERVER_VERIFIED,
         }:
             raise RecordingConflict("completion conflicts with recording state")
+        self._transition(recording, RecordingState.UPLOADED, "completion_received")
+        try:
+            head = self.storage.head(recording.opaque_object_identifier)
+        except (KeyError, OSError):
+            self._transition(recording, RecordingState.FAILED, "object_head_failed")
+            raise RecordingConflict("object unavailable")
+        version_id = head.version_id
         owner = self.object_versions.get(version_id)
         if owner is not None and owner != recording_uid:
             self._transition(recording, RecordingState.QUARANTINED, "version_conflict")
             raise RecordingConflict("object version already belongs to another recording")
-        self._transition(recording, RecordingState.UPLOADED, "completion_received")
-        self._transition(recording, RecordingState.VERIFYING, "object_head_requested")
-        try:
-            head = self.storage.head(recording.opaque_object_identifier, version_id)
-        except (KeyError, OSError):
-            self._transition(recording, RecordingState.FAILED, "object_head_failed")
-            raise RecordingConflict("object unavailable")
         expected = {
             "sha256": recording.sha256,
-            "size_bytes": recording.size_bytes,
+            "file_size_bytes": recording.file_size_bytes,
             "content_type": recording.content_type,
             "version_id": version_id,
             "environment": recording.environment,
@@ -141,7 +166,7 @@ class RecordingService:
         }
         actual = {
             "sha256": head.checksum_sha256,
-            "size_bytes": head.size_bytes,
+            "file_size_bytes": head.size_bytes,
             "content_type": head.content_type,
             "version_id": head.version_id,
             "environment": head.metadata.get("environment"),
@@ -159,19 +184,24 @@ class RecordingService:
         recording.object_version_id = version_id
         recording.verified_at = datetime.now(UTC)
         self.object_versions[version_id] = recording_uid
-        self._transition(recording, RecordingState.VERIFIED, "object_verified")
-        self._transition(
-            recording, RecordingState.ODOO_LINK_PENDING, "odoo_upsert_requested"
-        )
+        self._transition(recording, RecordingState.SERVER_VERIFIED, "object_verified")
         metadata = {
+            "contract_version": "1.0",
             "recording_uid": recording.recording_uid,
+            "vicidial_recording_id": recording.vicidial_recording_id,
+            "vicidial_call_id": recording.call_uid,
+            "asterisk_uniqueid": recording.asterisk_uniqueid,
             "environment": recording.environment,
             "campaign_key": recording.campaign_key,
-            "call_uid": recording.call_uid,
+            "agent_key": recording.agent_key,
+            "started_at": recording.started_at,
             "duration_seconds": recording.duration_seconds,
+            "format": recording.format,
+            "codec": recording.codec,
+            "channels": recording.channels,
+            "sample_rate_hz": recording.sample_rate_hz,
             "sha256": recording.sha256,
-            "size_bytes": recording.size_bytes,
-            "content_type": recording.content_type,
+            "file_size_bytes": recording.file_size_bytes,
             "object_version_id": version_id,
             "retention_class": recording.retention_class,
         }
@@ -186,15 +216,13 @@ class RecordingService:
             raise RecordingConflict("Odoo acknowledgement required")
         recording.odoo_linked_at = datetime.now(UTC)
         self._transition(recording, RecordingState.ODOO_LINKED, "odoo_acknowledged")
-        self._transition(
-            recording, RecordingState.RETENTION_PENDING, "retention_calculation_pending"
-        )
         self.outbox.append(self._verified_event(recording))
         return self._ack(recording, duplicate=False)
 
     @staticmethod
     def _ack(recording: Recording, duplicate: bool) -> dict[str, Any]:
         return {
+            "contract_version": "1.0",
             "recording_uid": recording.recording_uid,
             "state": recording.state.value,
             "checksum_verified": recording.verified_at is not None,
@@ -205,19 +233,29 @@ class RecordingService:
     @staticmethod
     def _verified_event(recording: Recording) -> dict[str, Any]:
         return {
-            "binding_key": "n8n.events.ingest",
-            "binding_enabled": False,
-            "event_id": str(uuid.uuid4()),
+            "contract_version": "1.0",
+            "event_id": uuid.uuid4().hex + uuid.uuid4().hex,
             "event_type": "vicidial.recording.verified.v1",
             "occurred_at": datetime.now(UTC).isoformat(),
-            "environment": recording.environment,
-            "recording_uid": recording.recording_uid,
-            "call_uid": recording.call_uid,
-            "campaign_key": recording.campaign_key,
-            "duration_seconds": recording.duration_seconds,
-            "sha256": recording.sha256,
-            "object_version_id": recording.object_version_id,
-            "retention_class": recording.retention_class,
+            "recording": {
+                "contract_version": "1.0",
+                "recording_uid": recording.recording_uid,
+                "vicidial_recording_id": recording.vicidial_recording_id,
+                "vicidial_call_id": recording.call_uid,
+                "asterisk_uniqueid": recording.asterisk_uniqueid,
+                "campaign_key": recording.campaign_key,
+                "agent_key": recording.agent_key,
+                "started_at": recording.started_at,
+                "duration_seconds": recording.duration_seconds,
+                "format": recording.format,
+                "codec": recording.codec,
+                "channels": recording.channels,
+                "sample_rate_hz": recording.sample_rate_hz,
+                "file_size_bytes": recording.file_size_bytes,
+                "sha256": recording.sha256,
+                "environment": recording.environment,
+                "retention_class": recording.retention_class,
+            },
         }
 
     def failure(self, recording_uid: str, code: str) -> dict[str, Any]:
@@ -237,7 +275,7 @@ class RecordingService:
         if not scope_authorized:
             raise PermissionError("playback scope denied")
         if (
-            recording.state != RecordingState.RETENTION_PENDING
+            recording.state != RecordingState.ODOO_LINKED
             or not recording.object_version_id
             or recording.legal_hold
         ):

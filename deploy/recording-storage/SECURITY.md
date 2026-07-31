@@ -1,7 +1,7 @@
 # Security
 
 - Bind only to the internal Docker network; publish no host ports or console.
-- Terminate mutually authenticated TLS on the private service path.
+- Require native storage TLS using externally mounted certificate material.
 - Keep root credentials in mounted secret files and use them only for bootstrap.
 - Assign one least-privilege policy per middleware/worker identity.
 - Never issue a storage identity to Server B.

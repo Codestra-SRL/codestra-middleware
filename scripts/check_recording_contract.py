@@ -1,32 +1,29 @@
 #!/usr/bin/env python3
-"""Fail CI when the recording contract drifts from the vendored PR A fixture."""
+"""Fail CI unless the five schemas match PR A exact head byte-for-byte."""
 
+import hashlib
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ROOT / "schemas" / "recording"
-FIXTURE = SCHEMAS / "fixtures" / "pr-a-recording-contract-v1.json"
+MANIFEST = SCHEMAS / "contract-manifest-v1.json"
 
 
 def main() -> int:
-    contract = json.loads((SCHEMAS / "recording-contract-v1.json").read_text())
-    fixture = json.loads(FIXTURE.read_text())
-    if contract["contract_version"] != "1.0":
-        raise SystemExit("recording contract version must remain 1.0")
-    if contract["source_fixture"] != fixture["source_fixture"]:
-        raise SystemExit("PR A fixture provenance drifted")
-    reservation = json.loads((SCHEMAS / "recording-reservation-v1.json").read_text())
-    exporter_fields = set(fixture["exporter_reservation_fields"])
-    schema_fields = set(reservation["properties"])
-    if not exporter_fields.issubset(schema_fields):
-        raise SystemExit(
-            f"PR A reservation shape drifted: missing {sorted(exporter_fields-schema_fields)}"
-        )
-    for name in contract["schemas"]:
-        schema = json.loads((SCHEMAS / name).read_text())
-        if schema["properties"]["contract_version"].get("const") != "1.0":
-            raise SystemExit(f"{name}: contract version drift")
+    manifest = json.loads(MANIFEST.read_text())
+    if manifest != {
+        "contract_version": "1.0",
+        "source_repository": "Codestra-SRL/telephony-event-gateway",
+        "source_pull_request": 20,
+        "source_head": "817299f2648be9b8c7c29ffd51645bf2e3a5a095",
+        "schemas": manifest["schemas"],
+    }:
+        raise SystemExit("canonical recording provenance drifted")
+    for name, expected in manifest["schemas"].items():
+        actual = hashlib.sha256((SCHEMAS / name).read_bytes()).hexdigest()
+        if actual != expected:
+            raise SystemExit(f"{name}: PR A exact-head SHA-256 mismatch")
     return 0
 
 

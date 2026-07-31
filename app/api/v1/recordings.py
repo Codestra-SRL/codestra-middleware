@@ -1,41 +1,95 @@
 from __future__ import annotations
 
-from typing import Literal
+from datetime import datetime
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.recording.domain import RecordingConflict, RecordingNotFound
 from app.recording.odoo import AcknowledgingOdooClient
 from app.recording.service import RecordingService
+from app.recording.security import (
+    AuthenticationError,
+    ExporterIdentity,
+    MTLSAuthorizer,
+    ReplayGuard,
+)
 from app.recording.storage import MemoryObjectStorage
 
 router = APIRouter(prefix="/api/v1/recordings", tags=["recordings"])
 
 # Runtime composition must replace both adapters. Defaults perform no network or file IO.
 recording_service = RecordingService(MemoryObjectStorage(), AcknowledgingOdooClient())
+exporter_authorizer = MTLSAuthorizer(
+    {"codestra-recording-exporter-server-b": "staging"}
+)
+exporter_replay_guard = ReplayGuard()
+
+
+def require_exporter_mtls(
+    identity: Annotated[str, Header(alias="X-TLS-Client-Identity")] = "",
+    environment: Annotated[str, Header(alias="X-Certificate-Environment")] = "",
+    role: Annotated[str, Header(alias="X-Certificate-Role")] = "",
+    audience: Annotated[str, Header(alias="X-Audience")] = "",
+    not_after: Annotated[str, Header(alias="X-TLS-Client-Not-After")] = "",
+    revoked: Annotated[str, Header(alias="X-TLS-Client-Revoked")] = "true",
+    nonce: Annotated[str, Header(alias="X-Request-Nonce")] = "",
+    timestamp: Annotated[str, Header(alias="X-Request-Timestamp")] = "",
+) -> None:
+    try:
+        expiry = datetime.fromisoformat(not_after.replace("Z", "+00:00"))
+        exporter_authorizer.authorize(
+            ExporterIdentity(
+                identity, environment, role, audience, expiry, revoked != "false"
+            )
+        )
+        exporter_replay_guard.consume(nonce, int(timestamp))
+    except (AuthenticationError, ValueError, TypeError) as exc:
+        raise HTTPException(401, "exporter mTLS binding rejected") from exc
 
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ReservationRequest(StrictModel):
-    environment: Literal["staging", "test", "production"]
-    campaign_key: str = Field(min_length=1, max_length=128)
-    call_uid: str = Field(min_length=1, max_length=144)
-    idempotency_key: str = Field(min_length=16, max_length=255)
+class ReservationRecording(StrictModel):
+    contract_version: Literal["1.0"]
+    vicidial_recording_id: str = Field(pattern=r"^[0-9]+$")
+    vicidial_call_id: str = Field(pattern=r"^[A-Za-z0-9._:-]{1,128}$")
+    asterisk_uniqueid: str = Field(pattern=r"^[A-Za-z0-9._:-]{1,128}$")
+    campaign_key: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    agent_key: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    started_at: str
+    duration_seconds: float = Field(ge=0)
+    format: Literal["mp3", "wav", "gsm"]
+    codec: str = Field(pattern=r"^[A-Za-z0-9._-]{1,32}$")
+    channels: int = Field(ge=1, le=2)
+    sample_rate_hz: int = Field(ge=8000, le=192000)
+    file_size_bytes: int = Field(gt=0, le=5_000_000_000)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    size_bytes: int = Field(gt=0, le=5_000_000_000)
-    content_type: Literal["audio/mpeg", "audio/wav", "audio/gsm"]
+    environment: Literal["staging", "production"]
     retention_class: Literal[
         "synthetic_test", "standard", "high_compliance", "legal_hold"
-    ] = "standard"
-    duration_seconds: float | None = Field(default=None, ge=0)
+    ]
+
+
+class ReservationRequest(StrictModel):
+    contract_version: Literal["1.0"]
+    idempotency_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    recording: ReservationRecording
 
 
 class CompletionRequest(StrictModel):
-    object_version_id: str = Field(min_length=1, max_length=255)
+    contract_version: Literal["1.0"]
+    recording_uid: str = Field(pattern=r"^REC-[0-9a-f]{32}$")
+    idempotency_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    environment: Literal["staging", "production"]
+    campaign_key: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    file_size_bytes: int = Field(gt=0)
+    format: Literal["mp3", "wav", "gsm"]
+    duration_seconds: float = Field(ge=0)
 
 
 class FailureRequest(StrictModel):
@@ -63,20 +117,22 @@ def _translate(exc: Exception) -> HTTPException:
     return HTTPException(409, str(exc))
 
 
-@router.post("/reservations", status_code=201)
+@router.post("/reservations", status_code=201, dependencies=[Depends(require_exporter_mtls)])
 async def reserve(payload: ReservationRequest):
     return recording_service.reserve(payload.model_dump())
 
 
-@router.post("/{recording_uid}/complete")
+@router.post("/{recording_uid}/complete", dependencies=[Depends(require_exporter_mtls)])
 async def complete(recording_uid: str, payload: CompletionRequest):
     try:
+        if payload.recording_uid != recording_uid:
+            raise RecordingConflict("path and payload recording_uid differ")
         return await recording_service.complete(recording_uid, payload.model_dump())
     except (RecordingConflict, RecordingNotFound, KeyError, OSError) as exc:
         raise _translate(exc) from exc
 
 
-@router.post("/{recording_uid}/failure")
+@router.post("/{recording_uid}/failure", dependencies=[Depends(require_exporter_mtls)])
 async def failure(recording_uid: str, payload: FailureRequest):
     try:
         return recording_service.failure(recording_uid, payload.code)
@@ -91,15 +147,11 @@ async def status(recording_uid: str):
     except RecordingNotFound as exc:
         raise _translate(exc) from exc
     return {
+        "contract_version": "1.0",
         "recording_uid": recording.recording_uid,
-        "environment": recording.environment,
-        "campaign_key": recording.campaign_key,
-        "call_uid": recording.call_uid,
         "state": recording.state.value,
         "checksum_verified": recording.verified_at is not None,
         "odoo_linked": recording.odoo_linked_at is not None,
-        "retention_class": recording.retention_class,
-        "legal_hold": recording.legal_hold,
         "failure_code": recording.failure_code,
     }
 

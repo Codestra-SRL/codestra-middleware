@@ -6,6 +6,9 @@ on:
       - "schemas/recording/**"
       - "deploy/recording-storage/**"
       - "tests/recording/**"
+permissions:
+  contents: read
+  pull-requests: read
 jobs:
   recording-gates:
     runs-on: ubuntu-latest
@@ -17,6 +20,10 @@ jobs:
       - run: python scripts/check_recording_contract.py
       - run: python -m pytest -q tests/recording
       - run: ruff check app/recording app/api/v1/recordings.py tests/recording
+      - name: Dependency vulnerability gate
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
       - name: secret and prohibited-data scan
         run: |
           ! git grep -Ei '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16})'

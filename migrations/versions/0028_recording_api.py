@@ -27,7 +27,11 @@ def upgrade() -> None:
           legal_hold boolean NOT NULL DEFAULT false,
           created_at timestamptz NOT NULL DEFAULT now(),
           CONSTRAINT uq_recording_environment_idempotency
-            UNIQUE(environment, idempotency_key)
+            UNIQUE(environment, idempotency_key),
+          CONSTRAINT ck_recording_canonical_state CHECK (state IN (
+            'RESERVATION_CREATED', 'UPLOADING', 'UPLOADED', 'SERVER_VERIFIED',
+            'ODOO_LINKED', 'QUARANTINED', 'FAILED'
+          ))
         )
         """,
         """
@@ -41,7 +45,7 @@ def upgrade() -> None:
         CREATE TABLE recording_objects (
           id uuid PRIMARY KEY, recording_id uuid NOT NULL REFERENCES recordings(id),
           object_version_id varchar(255), checksum_sha256 varchar(64) NOT NULL,
-          size_bytes bigint NOT NULL, content_type varchar(128) NOT NULL,
+          file_size_bytes bigint NOT NULL, content_type varchar(128) NOT NULL,
           verified_at timestamptz
         )
         """,

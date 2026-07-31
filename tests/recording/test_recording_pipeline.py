@@ -19,16 +19,44 @@ SHA = "a" * 64
 
 
 def reservation(**updates):
-    payload = {
-        "environment": "staging",
+    recording = {
+        "contract_version": "1.0",
+        "vicidial_recording_id": "123",
+        "vicidial_call_id": "call-fixture",
+        "asterisk_uniqueid": "asterisk-fixture",
         "campaign_key": "SYNTHETIC",
-        "call_uid": "call-fixture",
-        "idempotency_key": "fixture-idempotency-key",
-        "sha256": SHA,
-        "size_bytes": 123,
-        "content_type": "audio/mpeg",
-        "retention_class": "synthetic_test",
+        "agent_key": "agent-fixture",
+        "started_at": "2026-07-31T00:00:00Z",
         "duration_seconds": 1.5,
+        "format": "mp3",
+        "codec": "mp3",
+        "channels": 1,
+        "sample_rate_hz": 8000,
+        "file_size_bytes": 123,
+        "sha256": SHA,
+        "environment": "staging",
+        "retention_class": "synthetic_test",
+    }
+    recording.update(updates)
+    return {
+        "contract_version": "1.0",
+        "idempotency_key": "a" * 64,
+        "recording": recording,
+    }
+
+
+def completion(service, response, **updates):
+    recording = service.get(response["recording_uid"])
+    payload = {
+        "contract_version": "1.0",
+        "recording_uid": recording.recording_uid,
+        "idempotency_key": recording.idempotency_key,
+        "environment": recording.environment,
+        "campaign_key": recording.campaign_key,
+        "sha256": recording.sha256,
+        "file_size_bytes": recording.file_size_bytes,
+        "format": recording.format,
+        "duration_seconds": recording.duration_seconds,
     }
     payload.update(updates)
     return payload
@@ -54,8 +82,9 @@ def test_mtls_role_audience_environment_and_replay_gate():
         ExporterIdentity(
             "spiffe://codestra/server-b",
             "staging",
-            "server-b-recording-exporter",
+            "recording-exporter",
             "codestra-recording-api",
+            datetime.now(UTC) + timedelta(days=1),
         )
     )
     with pytest.raises(AuthenticationError):
@@ -63,8 +92,9 @@ def test_mtls_role_audience_environment_and_replay_gate():
             ExporterIdentity(
                 "spiffe://codestra/server-b",
                 "production",
-                "server-b-recording-exporter",
+                "recording-exporter",
                 "codestra-recording-api",
+                datetime.now(UTC) + timedelta(days=1),
             )
         )
     replay = ReplayGuard()
@@ -80,18 +110,16 @@ async def test_reservation_verification_odoo_ack_duplicate_and_event():
     first = service.reserve(reservation())
     duplicate = service.reserve(reservation())
     assert duplicate["recording_uid"] == first["recording_uid"]
-    assert duplicate["duplicate"] is True
+    assert duplicate == first
     assert first["upload_url_expires_at"]
     assert "credentials" not in first and "object_key" not in first
     setup_object(service, first)
-    ack = await service.complete(first["recording_uid"], {"object_version_id": "v1"})
+    ack = await service.complete(first["recording_uid"], completion(service, first))
     assert ack["checksum_verified"] and ack["odoo_linked"]
-    assert service.get(first["recording_uid"]).state == RecordingState.RETENTION_PENDING
-    assert service.outbox[0]["binding_enabled"] is False
-    assert "telephone_number" not in service.outbox[0]
-    replay = await service.complete(
-        first["recording_uid"], {"object_version_id": "v1"}
-    )
+    assert service.get(first["recording_uid"]).state == RecordingState.ODOO_LINKED
+    assert service.outbox[0]["event_type"] == "vicidial.recording.verified.v1"
+    assert "telephone_number" not in service.outbox[0]["recording"]
+    replay = await service.complete(first["recording_uid"], completion(service, first))
     assert replay["duplicate"] is True
 
 
@@ -110,7 +138,7 @@ async def test_metadata_mismatch_quarantines(metadata_update):
     response = service.reserve(reservation())
     setup_object(service, response, **metadata_update)
     with pytest.raises(RecordingConflict):
-        await service.complete(response["recording_uid"], {"object_version_id": "v1"})
+        await service.complete(response["recording_uid"], completion(service, response))
     assert service.get(response["recording_uid"]).state == RecordingState.QUARANTINED
 
 
@@ -120,7 +148,6 @@ async def test_size_checksum_content_type_and_version_are_verified():
         ("size_bytes", 124),
         ("checksum_sha256", "b" * 64),
         ("content_type", "audio/wav"),
-        ("version_id", "other"),
     ):
         service = RecordingService(MemoryObjectStorage(), AcknowledgingOdooClient())
         response = service.reserve(reservation())
@@ -140,9 +167,22 @@ async def test_size_checksum_content_type_and_version_are_verified():
         object.__setattr__(head, field, value)
         service.storage.objects[(recording.opaque_object_identifier, "v1")] = head
         with pytest.raises(RecordingConflict):
-            await service.complete(
-                recording.recording_uid, {"object_version_id": "v1"}
-            )
+            await service.complete(recording.recording_uid, completion(service, response))
+
+
+@pytest.mark.asyncio
+async def test_object_version_is_unique_across_recordings():
+    service = RecordingService(MemoryObjectStorage(), AcknowledgingOdooClient())
+    first = service.reserve(reservation())
+    setup_object(service, first)
+    await service.complete(first["recording_uid"], completion(service, first))
+    second_payload = reservation(vicidial_recording_id="124", vicidial_call_id="call-2")
+    second_payload["idempotency_key"] = "b" * 64
+    second = service.reserve(second_payload)
+    setup_object(service, second)
+    with pytest.raises(RecordingConflict):
+        await service.complete(second["recording_uid"], completion(service, second))
+    assert service.get(second["recording_uid"]).state == RecordingState.QUARANTINED
 
 
 class FailingOdoo:
@@ -156,9 +196,9 @@ async def test_odoo_ack_required_and_retry_state_never_links_early():
     response = service.reserve(reservation())
     setup_object(service, response)
     with pytest.raises(RuntimeError):
-        await service.complete(response["recording_uid"], {"object_version_id": "v1"})
+        await service.complete(response["recording_uid"], completion(service, response))
     recording = service.get(response["recording_uid"])
-    assert recording.state == RecordingState.ODOO_LINK_PENDING
+    assert recording.state == RecordingState.SERVER_VERIFIED
     assert recording.odoo_linked_at is None
     assert service.outbox == []
 
@@ -168,7 +208,7 @@ async def test_playback_scope_ttl_nonpersistence_and_retention_gates():
     service = RecordingService(MemoryObjectStorage(), AcknowledgingOdooClient())
     response = service.reserve(reservation())
     setup_object(service, response)
-    await service.complete(response["recording_uid"], {"object_version_id": "v1"})
+    await service.complete(response["recording_uid"], completion(service, response))
     with pytest.raises(PermissionError):
         service.playback_url(
             response["recording_uid"], scope_authorized=False, ttl_seconds=120

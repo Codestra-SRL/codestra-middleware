@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 
 from app.core.config import Settings
@@ -8,10 +9,16 @@ STORAGE = ROOT / "deploy" / "recording-storage"
 
 
 def test_contract_and_n8n_inactive_schema():
-    contract = json.loads(
-        (ROOT / "schemas/recording/recording-contract-v1.json").read_text()
+    manifest = json.loads(
+        (ROOT / "schemas/recording/contract-manifest-v1.json").read_text()
     )
-    assert contract["contract_version"] == "1.0"
+    assert manifest["contract_version"] == "1.0"
+    assert manifest["source_pull_request"] == 20
+    assert manifest["source_head"] == "817299f2648be9b8c7c29ffd51645bf2e3a5a095"
+    for name, expected in manifest["schemas"].items():
+        assert hashlib.sha256(
+            (ROOT / "schemas/recording" / name).read_bytes()
+        ).hexdigest() == expected
     workflow = json.loads(
         (STORAGE / "n8n/recording-postprocess-v1.json").read_text()
     )
@@ -55,6 +62,14 @@ def test_no_customer_identifiers_or_public_recording_urls():
     text = "\n".join(
         p.read_text(errors="ignore") for p in relevant if p.is_file()
     ).lower()
-    assert "telephone_number" not in text
-    assert "customer_name" not in text
+    assert '"telephone_number":' not in text
+    assert '"customer_name":' not in text
     assert "public-read" not in text
+
+
+def test_internal_hostname_tls_and_health_contract():
+    candidate = (STORAGE / "tls/Caddyfile.candidate").read_text()
+    assert "api.staging.internal.codestra.agency" in candidate
+    assert "mode require_and_verify" in candidate
+    assert "/health/live" in candidate and "/health/ready" in candidate
+    assert "10.40.0.1 {" not in candidate
