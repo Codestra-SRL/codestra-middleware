@@ -221,10 +221,8 @@ def test_17_wrong_environment_denied():
 
 
 def test_18_unauthorized_field_denied():
-    assert (
-        allowed_service().receive(payload(attributes={"unapproved": "x"}))["state"]
-        == State.POLICY_DENIED
-    )
+    with pytest.raises(LeadAutomationError, match="attribute schema"):
+        allowed_service().receive(payload(attributes={"unapproved": "x"}))
 
 
 def test_19_unauthorized_stage_change_denied():

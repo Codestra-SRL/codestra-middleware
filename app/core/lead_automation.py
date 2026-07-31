@@ -18,14 +18,60 @@ ACTIONS = {
     "CREATE_INTERNAL_CALLBACK_ACTIVITY",
 }
 ATTRIBUTE_SCHEMA_FIELDS = {
-    "transportation-logistics-lead-v1": {"contact_reference", "shipment_mode", "origin_region", "destination_region", "load_class", "estimated_volume_band"},
-    "web-mobile-ai-lead-v1": {"contact_reference", "solution_type", "company_size_band", "budget_band", "delivery_window"},
-    "senior-citizen-products-lead-v1": {"contact_reference", "product_category", "service_region", "accessibility_support"},
-    "business-loan-lead-v1": {"contact_reference", "loan_purpose", "amount_band", "business_age_band", "industry_key"},
-    "real-estate-lead-v1": {"contact_reference", "transaction_type", "property_type", "region_key", "budget_band"},
-    "fundraising-lead-v1": {"contact_reference", "campaign_type", "interest_band", "region_key"},
-    "trading-ai-lead-v1": {"contact_reference", "experience_band", "product_interest", "risk_profile_reference"},
-    "farming-lead-v1": {"contact_reference", "operation_type", "acreage_band", "region_key", "solution_interest"},
+    "transportation-logistics-lead-v1": {
+        "contact_reference",
+        "shipment_mode",
+        "origin_region",
+        "destination_region",
+        "load_class",
+        "estimated_volume_band",
+    },
+    "web-mobile-ai-lead-v1": {
+        "contact_reference",
+        "solution_type",
+        "company_size_band",
+        "budget_band",
+        "delivery_window",
+    },
+    "senior-citizen-products-lead-v1": {
+        "contact_reference",
+        "product_category",
+        "service_region",
+        "accessibility_support",
+    },
+    "business-loan-lead-v1": {
+        "contact_reference",
+        "loan_purpose",
+        "amount_band",
+        "business_age_band",
+        "industry_key",
+    },
+    "real-estate-lead-v1": {
+        "contact_reference",
+        "transaction_type",
+        "property_type",
+        "region_key",
+        "budget_band",
+    },
+    "fundraising-lead-v1": {
+        "contact_reference",
+        "campaign_type",
+        "interest_band",
+        "region_key",
+    },
+    "trading-ai-lead-v1": {
+        "contact_reference",
+        "experience_band",
+        "product_interest",
+        "risk_profile_reference",
+    },
+    "farming-lead-v1": {
+        "contact_reference",
+        "operation_type",
+        "acreage_band",
+        "region_key",
+        "solution_interest",
+    },
 }
 CONTACT_ELIGIBLE = {"CREATE_INTERNAL_CALLBACK_ACTIVITY"}
 TERMINAL = {
