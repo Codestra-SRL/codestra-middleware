@@ -163,6 +163,13 @@ def validate_exceptions(errors: list[str]) -> None:
     errors.extend(
         collect_exception_errors(document, authority, dt.datetime.now(dt.timezone.utc))
     )
+    inventory_digests = {
+        image["reference"].rsplit("@", 1)[-1]
+        for image in load_json(SECURITY / "images.json")["images"]
+    }
+    for index, item in enumerate(document.get("exceptions", [])):
+        if item.get("image_digest") not in inventory_digests:
+            errors.append(f"exception[{index}]: digest does not match current image inventory")
 
 
 def validate_codeowners(errors: list[str]) -> None:
