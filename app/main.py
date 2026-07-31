@@ -19,6 +19,7 @@ from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.publisher import router as publisher_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.registry import router as registry_router
+from app.api.v1.recordings import router as recordings_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
@@ -42,6 +43,7 @@ app.include_router(telephony_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)
 app.include_router(commands_router)
+app.include_router(recordings_router)
 app.mount("/metrics", make_asgi_app())
 
 SIGNED_WEBHOOK_PATHS = frozenset(

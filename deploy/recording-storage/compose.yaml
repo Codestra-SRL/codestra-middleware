@@ -1,0 +1,33 @@
+name: codestra-recording-storage
+services:
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z@sha256:8cdddb8b53dd8c8e31fb7df305fbf9f4c70a42bd3d6210298c5374f8bb973112
+    command: server /data
+    env_file: .env
+    networks: [recording_private]
+    expose: ["9000"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "/healthchecks/ready.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - recording-data:/data
+      - ./healthchecks:/healthchecks:ro
+  bootstrap:
+    image: quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z@sha256:ae6b744767b663672cfc96ef9e9a2d7ea89814c052a85713194a47f9c44d7193
+    profiles: ["bootstrap-only"]
+    networks: [recording_private]
+    env_file: .env
+    volumes:
+      - ./bucket-bootstrap:/bootstrap:ro
+      - ./policies:/policies:ro
+    entrypoint: ["/bootstrap/bootstrap.sh"]
+networks:
+  recording_private:
+    internal: true
+volumes:
+  recording-data: {}

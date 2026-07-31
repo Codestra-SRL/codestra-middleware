@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codestra.internal/recording/recording-completion-v1.json",
+  "title": "Recording completion v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "recording_uid", "object_version_id"],
+  "properties": {
+    "contract_version": {"const": "1.0"},
+    "recording_uid": {"type": "string", "pattern": "^REC-[0-9a-f]{32}$"},
+    "object_version_id": {"type": "string", "minLength": 1, "maxLength": 255}
+  }
+}

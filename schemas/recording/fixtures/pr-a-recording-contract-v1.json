@@ -1,0 +1,25 @@
+{
+  "contract_version": "1.0",
+  "source_fixture": {
+    "repository": "Codestra-SRL/telephony-event-gateway",
+    "branch": "agent/recording-security-exporter",
+    "commit": "e66424249beb8d079ec64769f3dcccd0a1a502f5",
+    "exporter_module": "src/recording_exporter/exporter.py"
+  },
+  "exporter_reservation_fields": [
+    "environment",
+    "campaign_key",
+    "call_uid",
+    "idempotency_key",
+    "sha256",
+    "size_bytes",
+    "content_type",
+    "duration_seconds"
+  ],
+  "exporter_response_fields": [
+    "recording_uid",
+    "upload_url",
+    "required_checksum_header",
+    "required_content_type"
+  ]
+}

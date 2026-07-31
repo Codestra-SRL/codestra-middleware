@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codestra.internal/recording/recording-reservation-v1.json",
+  "title": "Recording reservation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "environment", "campaign_key", "call_uid", "idempotency_key", "sha256", "size_bytes", "content_type"],
+  "properties": {
+    "contract_version": {"const": "1.0"},
+    "environment": {"enum": ["staging", "test", "production"]},
+    "campaign_key": {"type": "string", "minLength": 1, "maxLength": 128},
+    "call_uid": {"type": "string", "minLength": 1, "maxLength": 144},
+    "idempotency_key": {"type": "string", "minLength": 16, "maxLength": 255},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "size_bytes": {"type": "integer", "minimum": 1},
+    "content_type": {"enum": ["audio/mpeg", "audio/wav", "audio/gsm"]},
+    "duration_seconds": {"type": "number", "minimum": 0},
+    "retention_class": {"enum": ["synthetic_test", "standard", "high_compliance", "legal_hold"]}
+  }
+}

@@ -1,0 +1,23 @@
+name: recording-contract
+on:
+  pull_request:
+    paths:
+      - "app/recording/**"
+      - "schemas/recording/**"
+      - "deploy/recording-storage/**"
+      - "tests/recording/**"
+jobs:
+  recording-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements-test.lock
+      - run: python scripts/check_recording_contract.py
+      - run: pytest -q tests/recording
+      - run: ruff check app/recording app/api/v1/recordings.py tests/recording
+      - name: secret and prohibited-data scan
+        run: |
+          ! git grep -Ei '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16})'
+          ! git grep -Ei '(public-read|telephone_number|customer_name)' -- app/recording deploy/recording-storage

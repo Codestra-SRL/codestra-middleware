@@ -118,6 +118,13 @@ class Settings(BaseSettings):
     odoo_concurrency: int = 4
     n8n_concurrency: int = 8
     recording_concurrency: int = 2
+    retention_worker_enabled: bool = True
+    retention_delete_enabled: bool = False
+    export_upload_enabled: bool = False
+    odoo_recording_write_enabled: bool = False
+    n8n_recording_workflow_enabled: bool = False
+    recording_upload_url_ttl_seconds: int = 300
+    recording_playback_url_ttl_seconds: int = 120
     reconciliation_concurrency: int = 1
     keycloak_issuer: str = ""
     keycloak_audience: str = ""
