@@ -15,7 +15,7 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install -r requirements-test.lock
       - run: python scripts/check_recording_contract.py
-      - run: pytest -q tests/recording
+      - run: python -m pytest -q tests/recording
       - run: ruff check app/recording app/api/v1/recordings.py tests/recording
       - name: secret and prohibited-data scan
         run: |
