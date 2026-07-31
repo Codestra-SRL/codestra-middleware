@@ -1,5 +1,6 @@
 import json
 from copy import deepcopy
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -217,14 +218,19 @@ def test_unknown_schema_and_binding_mismatch_rejected(change: dict) -> None:
 
 
 class ScriptedTransport:
-    def __init__(self, outcomes: list[object]) -> None:
+    def __init__(self, outcomes: list[TransportResponse | BaseException]) -> None:
         self.outcomes = outcomes
         self.calls: list[tuple[str, str, bytes, dict[str, str], float]] = []
 
     def __call__(
-        self, method: str, path: str, body: bytes, headers: object, timeout: float
+        self,
+        method: str,
+        path: str,
+        body: bytes,
+        headers: Mapping[str, str],
+        timeout: float,
     ) -> TransportResponse:
-        self.calls.append((method, path, body, dict(headers), timeout))  # type: ignore[arg-type]
+        self.calls.append((method, path, body, dict(headers), timeout))
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, BaseException):
             raise outcome
@@ -257,7 +263,7 @@ def test_conflicting_apply_replay_is_quarantinable_and_audited() -> None:
 
 
 @pytest.mark.parametrize("retry", [TimeoutError(), 429, 500, 502, 503, 504])
-def test_bounded_retry_then_success(retry: object) -> None:
+def test_bounded_retry_then_success(retry: BaseException | int) -> None:
     first = retry if isinstance(retry, BaseException) else TransportResponse(retry, b"")
     transport = ScriptedTransport([first, response(ack())])
     outcome = OdooLeadApplyClient(secret=SECRET, transport=transport).apply(
