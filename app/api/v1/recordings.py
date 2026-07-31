@@ -214,12 +214,13 @@ async def complete(
 async def failure(
     recording_uid: str,
     payload: FailureRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
     certificate_environment: str = Depends(require_exporter_mtls),
 ):
     try:
         _assert_environment(recording_uid, certificate_environment)
-        return recording_service.failure(recording_uid, payload.code)
-    except RecordingNotFound as exc:
+        return recording_service.failure(recording_uid, payload.code, idempotency_key)
+    except (RecordingConflict, RecordingNotFound) as exc:
         raise _translate(exc) from exc
 
 

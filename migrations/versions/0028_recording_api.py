@@ -114,6 +114,11 @@ def upgrade() -> None:
           BEFORE UPDATE OR DELETE ON recording_state_audit
           FOR EACH ROW EXECUTE FUNCTION recording_audit_immutable()
         """,
+        """
+        CREATE TRIGGER recording_playback_audit_no_update
+          BEFORE UPDATE OR DELETE ON recording_playback_audit
+          FOR EACH ROW EXECUTE FUNCTION recording_audit_immutable()
+        """,
     )
     for statement in statements:
         op.execute(statement)

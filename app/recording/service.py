@@ -31,6 +31,7 @@ class RecordingService:
         self.by_idempotency: dict[tuple[str, str], str] = {}
         self.reservation_responses: dict[str, dict[str, Any]] = {}
         self.object_versions: dict[str, str] = {}
+        self.failure_results: dict[tuple[str, str], dict[str, Any]] = {}
         self.audit: list[StateAudit] = []
         self.outbox: list[dict[str, Any]] = []
         self.playback_urls_persisted = 0
@@ -258,7 +259,6 @@ class RecordingService:
             "recording_uid": recording.recording_uid,
             "storage_status": metadata["storage_status"],
             "retention_class": recording.retention_class,
-            "retention_until": metadata["retention_until"],
             "legal_hold": recording.legal_hold,
         }
         if any(
@@ -266,6 +266,14 @@ class RecordingService:
             for field, expected in acknowledgement_bindings.items()
         ):
             raise RecordingConflict("Odoo acknowledgement binding mismatch")
+        acknowledged_retention = acknowledgement.get("retention_until")
+        expected_retention = metadata["retention_until"]
+        if (acknowledged_retention is None) != (expected_retention is None):
+            raise RecordingConflict("Odoo acknowledgement retention mismatch")
+        if acknowledged_retention is not None and datetime.fromisoformat(
+            str(acknowledged_retention).replace("Z", "+00:00")
+        ) != datetime.fromisoformat(str(expected_retention).replace("Z", "+00:00")):
+            raise RecordingConflict("Odoo acknowledgement retention mismatch")
         recording.odoo_linked_at = datetime.now(UTC)
         self._transition(recording, RecordingState.ODOO_LINKED, "odoo_acknowledged")
         self.outbox.append(self._n8n_projection(recording))
@@ -299,11 +307,20 @@ class RecordingService:
             "retention_class": recording.retention_class,
         }
 
-    def failure(self, recording_uid: str, code: str) -> dict[str, Any]:
+    def failure(
+        self, recording_uid: str, code: str, idempotency_key: str
+    ) -> dict[str, Any]:
         recording = self.get(recording_uid)
+        key = (recording_uid, idempotency_key)
+        if key in self.failure_results:
+            return {**self.failure_results[key], "duplicate": True}
+        if not idempotency_key or idempotency_key != recording.idempotency_key:
+            raise RecordingConflict("failure idempotency binding mismatch")
         recording.failure_code = code
         self._transition(recording, RecordingState.FAILED, code)
-        return self._ack(recording, duplicate=False)
+        result = self._ack(recording, duplicate=False)
+        self.failure_results[key] = result
+        return result
 
     def playback_url(
         self,

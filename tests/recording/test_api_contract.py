@@ -323,20 +323,38 @@ def test_all_six_routes_auth_environment_schema_idempotency_and_failures(
     )
     failed_uid = failed.json()["recording_uid"]
     failure_path = f"/api/v1/recordings/{failed_uid}/failure"
+    failure_headers = {
+        **exporter_headers("http-failure"),
+        "Idempotency-Key": service.get(failed_uid).idempotency_key,
+    }
     assert client.post(failure_path, json={"code": "EXPORT_FAILED"}).status_code == 401
     failure = client.post(
         failure_path,
         json={"code": "EXPORT_FAILED"},
-        headers=exporter_headers("http-failure"),
+        headers=failure_headers,
     )
     assert failure.status_code == 200
     assert failure.json()["state"] == "FAILED"
+    duplicate_headers = {
+        **exporter_headers("http-failure-duplicate"),
+        "Idempotency-Key": service.get(failed_uid).idempotency_key,
+    }
+    duplicate_failure = client.post(
+        failure_path,
+        json={"code": "EXPORT_FAILED"},
+        headers=duplicate_headers,
+    )
+    assert duplicate_failure.status_code == 200
+    assert duplicate_failure.json()["duplicate"] is True
     recording_api.RecordingMutationResponse.model_validate(failure.json())
     assert (
         client.post(
             "/api/v1/recordings/REC-" + "f" * 32 + "/failure",
             json={"code": "EXPORT_FAILED"},
-            headers=exporter_headers("http-not-found"),
+            headers={
+                **exporter_headers("http-not-found"),
+                "Idempotency-Key": "d" * 64,
+            },
         ).status_code
         == 404
     )
