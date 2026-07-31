@@ -1,0 +1,11 @@
+{
+  "image": "quay.io/minio/minio",
+  "tag_observed": "RELEASE.2025-09-07T16-13-09Z",
+  "manifest_digest": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+  "platform": "linux/amd64",
+  "vendor": "MinIO Inc <dev@min.io>",
+  "release_label": "RELEASE.2025-09-07T16-13-09Z",
+  "vcs_ref": "32d8e5209f029a1fb7235308ab32253bface1001",
+  "source_registry": "quay.io/minio/minio",
+  "provenance_policy": "official_registry_digest_and_vendor_vcs_labels"
+}

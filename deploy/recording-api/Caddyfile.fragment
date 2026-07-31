@@ -1,0 +1,15 @@
+# Source-only private recording API mTLS contract.
+api.staging.internal.codestra.agency {
+    @recording path /api/v1/recordings/*
+    handle @recording {
+        tls {
+            client_auth {
+                mode require_and_verify
+                trusted_ca_cert_file /run/secrets/recording_service_ca.pem
+            }
+        }
+        request_header -X-Verified-MTLS-Client-ID
+        request_header X-Verified-MTLS-Client-ID {http.request.tls.client.subject}
+        reverse_proxy codestra-middleware-staging:8000
+    }
+}
