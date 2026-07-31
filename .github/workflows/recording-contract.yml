@@ -21,9 +21,9 @@ jobs:
       - run: python -m pytest -q tests/recording
       - run: ruff check app/recording app/api/v1/recordings.py tests/recording
       - name: Dependency vulnerability gate
-        run: |
-          python -m pip install pip-audit
-          python -m pip_audit --local
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: requirements.lock
       - name: secret and prohibited-data scan
         run: |
           ! git grep -Ei '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16})'
