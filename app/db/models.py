@@ -9,6 +9,7 @@ from sqlalchemy import (
     Computed,
     DateTime,
     ForeignKey,
+    Float,
     Index,
     Integer,
     LargeBinary,
@@ -1561,3 +1562,46 @@ class IntegrationRegistryGeneration(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     published_by: Mapped[str] = mapped_column(String(128), nullable=False)
+
+
+class RecordingReservation(Base):
+    __tablename__ = "recording_reservation"
+
+    recording_uid: Mapped[str] = mapped_column(String(64), primary_key=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    opaque_object_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    vicidial_recording_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    vicidial_call_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    asterisk_uniqueid: Mapped[str] = mapped_column(String(128), nullable=False)
+    expected_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    format: Mapped[str] = mapped_column(String(16), nullable=False)
+    codec: Mapped[str] = mapped_column(String(32), nullable=False)
+    channels: Mapped[int] = mapped_column(Integer, nullable=False)
+    sample_rate_hz: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    object_version: Mapped[str | None] = mapped_column(String(255))
+    odoo_reference: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "environment", "idempotency_key",
+            name="uq_recording_reservation_environment_key",
+        ),
+        UniqueConstraint(
+            "object_version", name="uq_recording_reservation_object_version"
+        ),
+        CheckConstraint(
+            "environment IN ('staging','production')",
+            name="ck_recording_reservation_environment",
+        ),
+    )

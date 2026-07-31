@@ -1,0 +1,68 @@
+services:
+  recording-object-storage:
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server --certs-dir /run/minio/certs /data
+    restart: unless-stopped
+    networks: [recording_private, kms_private]
+    ports: ["10.40.0.1:9000:9000"]
+    environment:
+      RECORDING_DEPLOYMENT_ENVIRONMENT: staging
+      RECORDING_ENCRYPTION_MODE: SSE_S3
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+      # Staging SSE-S3 uses one deployment encryption key through KES.
+      # Production external-KMS configuration is deliberately absent and blocked.
+      MINIO_KMS_KES_ENDPOINT: ${RECORDING_KES_ENDPOINT:?approved KES endpoint required}
+      MINIO_KMS_KES_CERT_FILE: /run/secrets/minio_kes_client_cert
+      MINIO_KMS_KES_KEY_FILE: /run/secrets/minio_kes_client_key
+      MINIO_KMS_KES_KEY_NAME: codestra-recordings
+    secrets:
+      - minio_root_user
+      - minio_root_password
+      - minio_kes_client_cert
+      - minio_kes_client_key
+    volumes:
+      - recording_objects:/data
+      - ./certs:/run/minio/certs:ro
+    read_only: true
+    tmpfs: ["/tmp:size=64m,noexec,nosuid,nodev"]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  recording-retention-worker:
+    build:
+      context: ../..
+      dockerfile: deploy/recording-storage/retention.Dockerfile
+    image: codestra-recording-retention:source-review-only
+    restart: unless-stopped
+    networks: [recording_private]
+    environment:
+      RECORDING_RETENTION_EXECUTION_ENABLED: "false"
+      RECORDING_STORAGE_ENDPOINT: https://recording-object-storage:9000
+      RECORDING_STORAGE_CA_FILE: /run/secrets/recording_storage_ca
+    secrets: [recording_storage_ca, retention_worker_credentials]
+    read_only: true
+    tmpfs: ["/tmp:size=32m,noexec,nosuid,nodev"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+
+networks:
+  recording_private:
+    internal: true
+  kms_private:
+    external: true
+
+volumes:
+  recording_objects:
+
+secrets:
+  minio_root_user: {external: true}
+  minio_root_password: {external: true}
+  minio_kes_client_cert: {external: true}
+  minio_kes_client_key: {external: true}
+  recording_storage_ca: {external: true}
+  retention_worker_credentials: {external: true}
