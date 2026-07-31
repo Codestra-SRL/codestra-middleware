@@ -10,6 +10,7 @@ from app.api.v1.commands import router as commands_router
 from app.api.v1.control import router as control_router
 from app.api.v1.events import router as events_router
 from app.api.v1.lead_reconciliation import router as lead_reconciliation_router
+from app.api.v1.lead_automation import router as lead_automation_router
 from app.api.v1.mappings import router as mappings_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.n8n_target import router as n8n_target_router
@@ -32,6 +33,7 @@ app.include_router(automation_router)
 app.include_router(reports_router)
 app.include_router(operations_router)
 app.include_router(lead_reconciliation_router)
+app.include_router(lead_automation_router)
 app.include_router(orchestration_router)
 app.include_router(mappings_router)
 app.include_router(publisher_router)
@@ -54,6 +56,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v1/n8n/executions",
         "/api/v1/n8n/executions/register",
         "/api/v1/n8n/acknowledgements",
+        "/api/v1/lead-automation/results",
         "/api/v1/registry/resolve",
     }
 )

@@ -171,6 +171,16 @@ class Settings(BaseSettings):
     telephony_reconciliation_enabled: bool = False
     telephony_notifications_enabled: bool = False
     telephony_evidence_enabled: bool = False
+    lead_automation_enabled: bool = False
+    lead_create_enabled: bool = False
+    lead_update_enabled: bool = False
+    lead_assignment_enabled: bool = False
+    lead_status_change_enabled: bool = False
+    lead_callback_create_enabled: bool = False
+    n8n_lead_binding_enabled: bool = False
+    n8n_result_processing_enabled: bool = False
+    odoo_lead_apply_enabled: bool = False
+    lead_automation_hmac_secret: str = ""
 
     def validate_safety(self) -> None:
         broad_event_switches = (
