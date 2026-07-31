@@ -1,0 +1,5 @@
+/deploy/ @appolon1908-hue
+/staging/ @appolon1908-hue
+/docs/security/ @kazan555
+/.security/ @kazan555 @appolon1908-hue
+/.github/workflows/ @appolon1908-hue

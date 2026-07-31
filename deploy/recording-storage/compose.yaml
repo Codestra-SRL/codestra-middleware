@@ -1,7 +1,7 @@
 name: codestra-recording-storage
 services:
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z@sha256:8cdddb8b53dd8c8e31fb7df305fbf9f4c70a42bd3d6210298c5374f8bb973112
+    image: quay.io/minio/minio@sha256:8cdddb8b53dd8c8e31fb7df305fbf9f4c70a42bd3d6210298c5374f8bb973112
     command: server /data --certs-dir /run/tls
     env_file: ${RECORDING_ENV_FILE:-.env}
     networks: [recording_private]
@@ -20,7 +20,7 @@ services:
       - ./healthchecks:/healthchecks:ro
       - ${RECORDING_TLS_DIR:?TLS directory required}:/run/tls:ro
   bootstrap:
-    image: quay.io/minio/mc:RELEASE.2025-07-21T05-28-08Z@sha256:ae6b744767b663672cfc96ef9e9a2d7ea89814c052a85713194a47f9c44d7193
+    image: quay.io/minio/mc@sha256:ae6b744767b663672cfc96ef9e9a2d7ea89814c052a85713194a47f9c44d7193
     profiles: ["bootstrap-only"]
     networks: [recording_private]
     env_file: ${RECORDING_ENV_FILE:-.env}

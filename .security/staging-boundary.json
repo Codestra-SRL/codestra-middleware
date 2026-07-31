@@ -1,0 +1,11 @@
+{
+  "private_network_only": true,
+  "production_routes_denied": true,
+  "production_dns_denied": true,
+  "production_postgres_denied": true,
+  "production_redis_denied": true,
+  "server_b_denied": true,
+  "sip_denied": true,
+  "recording_denied": true,
+  "communications_denied": true
+}

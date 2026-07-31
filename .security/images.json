@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "images": [
+    {
+      "name": "python-runtime",
+      "repository": "docker.io/library/python",
+      "compatible_tag": "3.12.13-alpine3.24",
+      "reference": "docker.io/library/python@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df",
+      "official": true
+    },
+    {
+      "name": "postgres-staging",
+      "repository": "docker.io/library/postgres",
+      "compatible_tag": "17.10-alpine3.24",
+      "reference": "docker.io/library/postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193",
+      "official": true
+    },
+    {
+      "name": "redis-staging",
+      "repository": "docker.io/library/redis",
+      "compatible_tag": "7-alpine",
+      "reference": "docker.io/library/redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2",
+      "official": true
+    },
+    {
+      "name": "n8n-staging",
+      "repository": "docker.io/n8nio/n8n",
+      "compatible_tag": "2.33.3",
+      "reference": "docker.io/n8nio/n8n@sha256:e4804b13ae6e2064fa30e5bbfc14b86d0a52eb8a3aa2c351a227314ac90ff666",
+      "official": true
+    },
+    {
+      "name": "recording-minio",
+      "repository": "quay.io/minio/minio",
+      "compatible_tag": "RELEASE.2025-07-23T15-54-02Z",
+      "reference": "quay.io/minio/minio@sha256:8cdddb8b53dd8c8e31fb7df305fbf9f4c70a42bd3d6210298c5374f8bb973112",
+      "official": true
+    },
+    {
+      "name": "recording-minio-client",
+      "repository": "quay.io/minio/mc",
+      "compatible_tag": "RELEASE.2025-07-21T05-28-08Z",
+      "reference": "quay.io/minio/mc@sha256:ae6b744767b663672cfc96ef9e9a2d7ea89814c052a85713194a47f9c44d7193",
+      "official": true
+    }
+  ]
+}

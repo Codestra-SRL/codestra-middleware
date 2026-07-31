@@ -1,0 +1,7 @@
+{
+  "database_scope": "disposable-only",
+  "production_access": "denied",
+  "sequence": ["upgrade", "test", "rollback", "test", "upgrade", "test"],
+  "backup": {"encrypted": true, "checksum_required": true},
+  "cleanup": "required"
+}
