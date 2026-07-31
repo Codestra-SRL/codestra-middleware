@@ -17,7 +17,14 @@ def test_storage_is_digest_pinned_private_and_console_absent():
 def test_storage_security_contract():
     text = (DEPLOY / "compose.yaml").read_text()
     bootstrap = (DEPLOY / "bootstrap-policy.sh").read_text()
+    readme = (DEPLOY / "README.md").read_text()
+    assert "RECORDING_DEPLOYMENT_ENVIRONMENT: staging" in text
+    assert "RECORDING_ENCRYPTION_MODE: SSE_S3" in text
     assert "MINIO_KMS_KES_ENDPOINT" in text
+    assert 'mc encrypt set sse-s3 "recording/${bucket}"' in bootstrap
+    assert "mc encrypt set sse-kms" not in bootstrap
+    assert "STAGING_ENCRYPTION_MODE=SSE_S3" in readme
+    assert "PRODUCTION_EXTERNAL_KMS_GATE=BLOCKED" in readme
     assert "--with-lock" in bootstrap
     assert "version enable" in bootstrap
     assert "GOVERNANCE 365d" in bootstrap

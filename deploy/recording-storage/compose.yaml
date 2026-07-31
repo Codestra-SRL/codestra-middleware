@@ -6,8 +6,12 @@ services:
     networks: [recording_private, kms_private]
     ports: ["10.40.0.1:9000:9000"]
     environment:
+      RECORDING_DEPLOYMENT_ENVIRONMENT: staging
+      RECORDING_ENCRYPTION_MODE: SSE_S3
       MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
       MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+      # Staging SSE-S3 uses one deployment encryption key through KES.
+      # Production external-KMS configuration is deliberately absent and blocked.
       MINIO_KMS_KES_ENDPOINT: ${RECORDING_KES_ENDPOINT:?approved KES endpoint required}
       MINIO_KMS_KES_CERT_FILE: /run/secrets/minio_kes_client_cert
       MINIO_KMS_KES_KEY_FILE: /run/secrets/minio_kes_client_key
