@@ -1,5 +1,5 @@
-import json
 import hashlib
+import json
 from pathlib import Path
 
 from app.core.config import Settings
@@ -16,19 +16,42 @@ def test_contract_and_n8n_inactive_schema():
     assert manifest["source_pull_request"] == 20
     assert manifest["source_head"] == "817299f2648be9b8c7c29ffd51645bf2e3a5a095"
     for name, expected in manifest["schemas"].items():
-        assert hashlib.sha256(
-            (ROOT / "schemas/recording" / name).read_bytes()
-        ).hexdigest() == expected
-    workflow = json.loads(
-        (STORAGE / "n8n/recording-postprocess-v1.json").read_text()
-    )
+        assert (
+            hashlib.sha256((ROOT / "schemas/recording" / name).read_bytes()).hexdigest()
+            == expected
+        )
+    workflow = json.loads((STORAGE / "n8n/recording-postprocess-v1.json").read_text())
     assert workflow["active"] is False
     assert workflow["meta"]["binding_enabled_default"] is False
     for action in (
-        "email_actions", "sms_actions", "whatsapp_actions", "calendar_actions",
-        "appointment_actions", "crm_lead_actions",
+        "email_actions",
+        "sms_actions",
+        "whatsapp_actions",
+        "calendar_actions",
+        "appointment_actions",
+        "crm_lead_actions",
     ):
         assert workflow["meta"][action] is False
+    projection = json.loads(
+        (ROOT / "schemas/recording/recording-n8n-event-v1.json").read_text()
+    )
+    expected = {
+        "contract_version",
+        "event_id",
+        "event_type",
+        "occurred_at",
+        "environment",
+        "recording_uid",
+        "call_uid",
+        "campaign_key",
+        "duration_seconds",
+        "sha256",
+        "object_version_id",
+        "retention_class",
+    }
+    assert set(projection["required"]) == expected
+    assert set(projection["properties"]) == expected
+    assert projection["additionalProperties"] is False
 
 
 def test_storage_private_lock_versioning_encryption_and_kms_gate():
@@ -51,7 +74,32 @@ def test_all_dangerous_switches_are_disabled():
     assert settings.export_upload_enabled is False
     assert settings.odoo_recording_write_enabled is False
     assert settings.n8n_recording_workflow_enabled is False
+    assert settings.n8n_recording_binding_enabled is False
+    assert settings.n8n_recording_workflow_active is False
     assert settings.recording_playback_url_ttl_seconds <= 120
+
+
+def test_n8n_projection_is_optional_and_not_in_critical_path():
+    service = (ROOT / "app/recording/service.py").read_text()
+    workflow = json.loads((STORAGE / "n8n/recording-postprocess-v1.json").read_text())
+    assert workflow["active"] is False
+    assert workflow["meta"]["binding_enabled_default"] is False
+    assert "_n8n_projection" in service
+    assert "self.outbox.append(self._n8n_projection(recording))" in service
+    assert service.index("RecordingState.ODOO_LINKED") < service.index(
+        "self.outbox.append(self._n8n_projection(recording))"
+    )
+
+
+def test_state_retry_and_rollback_documentation_exists():
+    state = ROOT / "docs/recording/EXPORTER-MIDDLEWARE-STATE-MAPPING.md"
+    retry = ROOT / "docs/recording/RETRYABILITY-CONTRACT.md"
+    rollback = STORAGE / "ROLLBACK.md"
+    assert state.is_file() and retry.is_file() and rollback.is_file()
+    assert "SERVER_VERIFIED" in state.read_text()
+    assert "ODOO_LINKED" in state.read_text()
+    assert "n8n" in retry.read_text().lower()
+    assert "never delete" in rollback.read_text().lower()
 
 
 def test_no_customer_identifiers_or_public_recording_urls():

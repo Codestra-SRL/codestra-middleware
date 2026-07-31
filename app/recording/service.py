@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .domain import (
@@ -15,11 +15,15 @@ from .odoo import OdooRecordingPort
 from .retention import RetentionDecision, RetentionEngine
 from .storage import PrivateObjectStorage
 
+RETENTION_DAYS = {
+    "synthetic_test": 7,
+    "standard": 365,
+    "high_compliance": 1825,
+}
+
 
 class RecordingService:
-    def __init__(
-        self, storage: PrivateObjectStorage, odoo: OdooRecordingPort
-    ) -> None:
+    def __init__(self, storage: PrivateObjectStorage, odoo: OdooRecordingPort) -> None:
         self.storage = storage
         self.odoo = odoo
         self.retention = RetentionEngine()
@@ -39,7 +43,13 @@ class RecordingService:
         self.audit.append(
             StateAudit(
                 recording.recording_uid,
-                len([a for a in self.audit if a.recording_uid == recording.recording_uid])
+                len(
+                    [
+                        a
+                        for a in self.audit
+                        if a.recording_uid == recording.recording_uid
+                    ]
+                )
                 + 1,
                 previous.value,
                 state.value,
@@ -63,9 +73,9 @@ class RecordingService:
             idempotency_key=payload["idempotency_key"],
             sha256=metadata["sha256"],
             file_size_bytes=metadata["file_size_bytes"],
-            content_type={
-                "mp3": "audio/mpeg", "wav": "audio/wav", "gsm": "audio/gsm"
-            }[metadata["format"]],
+            content_type={"mp3": "audio/mpeg", "wav": "audio/wav", "gsm": "audio/gsm"}[
+                metadata["format"]
+            ],
             opaque_object_identifier=opaque,
             retention_class=metadata["retention_class"],
             vicidial_recording_id=metadata["vicidial_recording_id"],
@@ -123,12 +133,14 @@ class RecordingService:
             "duration_seconds": recording.duration_seconds,
         }
         mismatched_completion = sorted(
-            key for key, expected in completion_bindings.items()
+            key
+            for key, expected in completion_bindings.items()
             if payload.get(key) != expected
         )
         if mismatched_completion:
             self._transition(
-                recording, RecordingState.QUARANTINED,
+                recording,
+                RecordingState.QUARANTINED,
                 "completion:" + ",".join(mismatched_completion),
             )
             raise RecordingConflict("completion contract conflicts with reservation")
@@ -153,7 +165,9 @@ class RecordingService:
         owner = self.object_versions.get(version_id)
         if owner is not None and owner != recording_uid:
             self._transition(recording, RecordingState.QUARANTINED, "version_conflict")
-            raise RecordingConflict("object version already belongs to another recording")
+            raise RecordingConflict(
+                "object version already belongs to another recording"
+            )
         expected = {
             "sha256": recording.sha256,
             "file_size_bytes": recording.file_size_bytes,
@@ -185,13 +199,19 @@ class RecordingService:
         recording.verified_at = datetime.now(UTC)
         self.object_versions[version_id] = recording_uid
         self._transition(recording, RecordingState.SERVER_VERIFIED, "object_verified")
+        retention_until = (
+            None
+            if recording.legal_hold or recording.retention_class == "legal_hold"
+            else recording.verified_at
+            + timedelta(days=RETENTION_DAYS[recording.retention_class])
+        )
         metadata = {
             "contract_version": "1.0",
+            "environment": recording.environment,
             "recording_uid": recording.recording_uid,
             "vicidial_recording_id": recording.vicidial_recording_id,
             "vicidial_call_id": recording.call_uid,
             "asterisk_uniqueid": recording.asterisk_uniqueid,
-            "environment": recording.environment,
             "campaign_key": recording.campaign_key,
             "agent_key": recording.agent_key,
             "started_at": recording.started_at,
@@ -203,7 +223,12 @@ class RecordingService:
             "sha256": recording.sha256,
             "file_size_bytes": recording.file_size_bytes,
             "object_version_id": version_id,
+            "storage_status": "verified",
             "retention_class": recording.retention_class,
+            "retention_until": (
+                retention_until.isoformat() if retention_until else None
+            ),
+            "legal_hold": recording.legal_hold,
         }
         try:
             acknowledgement = await self.odoo.upsert(
@@ -212,11 +237,38 @@ class RecordingService:
         except Exception:
             recording.failure_code = "ODOO_UPSERT_FAILED"
             raise
-        if acknowledgement.get("acknowledged") is not True:
-            raise RecordingConflict("Odoo acknowledgement required")
+        required_acknowledgement = {
+            "contract_version",
+            "recording_uid",
+            "odoo_record_id",
+            "call_link_status",
+            "lead_link_status",
+            "campaign_link_status",
+            "agent_link_status",
+            "storage_status",
+            "retention_class",
+            "retention_until",
+            "legal_hold",
+            "updated_at",
+        }
+        if set(acknowledgement) != required_acknowledgement:
+            raise RecordingConflict("canonical Odoo acknowledgement required")
+        acknowledgement_bindings = {
+            "contract_version": "1.0",
+            "recording_uid": recording.recording_uid,
+            "storage_status": metadata["storage_status"],
+            "retention_class": recording.retention_class,
+            "retention_until": metadata["retention_until"],
+            "legal_hold": recording.legal_hold,
+        }
+        if any(
+            acknowledgement.get(field) != expected
+            for field, expected in acknowledgement_bindings.items()
+        ):
+            raise RecordingConflict("Odoo acknowledgement binding mismatch")
         recording.odoo_linked_at = datetime.now(UTC)
         self._transition(recording, RecordingState.ODOO_LINKED, "odoo_acknowledged")
-        self.outbox.append(self._verified_event(recording))
+        self.outbox.append(self._n8n_projection(recording))
         return self._ack(recording, duplicate=False)
 
     @staticmethod
@@ -231,31 +283,20 @@ class RecordingService:
         }
 
     @staticmethod
-    def _verified_event(recording: Recording) -> dict[str, Any]:
+    def _n8n_projection(recording: Recording) -> dict[str, Any]:
         return {
             "contract_version": "1.0",
             "event_id": uuid.uuid4().hex + uuid.uuid4().hex,
             "event_type": "vicidial.recording.verified.v1",
             "occurred_at": datetime.now(UTC).isoformat(),
-            "recording": {
-                "contract_version": "1.0",
-                "recording_uid": recording.recording_uid,
-                "vicidial_recording_id": recording.vicidial_recording_id,
-                "vicidial_call_id": recording.call_uid,
-                "asterisk_uniqueid": recording.asterisk_uniqueid,
-                "campaign_key": recording.campaign_key,
-                "agent_key": recording.agent_key,
-                "started_at": recording.started_at,
-                "duration_seconds": recording.duration_seconds,
-                "format": recording.format,
-                "codec": recording.codec,
-                "channels": recording.channels,
-                "sample_rate_hz": recording.sample_rate_hz,
-                "file_size_bytes": recording.file_size_bytes,
-                "sha256": recording.sha256,
-                "environment": recording.environment,
-                "retention_class": recording.retention_class,
-            },
+            "environment": recording.environment,
+            "recording_uid": recording.recording_uid,
+            "call_uid": recording.call_uid,
+            "campaign_key": recording.campaign_key,
+            "duration_seconds": recording.duration_seconds,
+            "sha256": recording.sha256,
+            "object_version_id": recording.object_version_id,
+            "retention_class": recording.retention_class,
         }
 
     def failure(self, recording_uid: str, code: str) -> dict[str, Any]:

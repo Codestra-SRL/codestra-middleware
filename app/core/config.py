@@ -122,7 +122,11 @@ class Settings(BaseSettings):
     retention_delete_enabled: bool = False
     export_upload_enabled: bool = False
     odoo_recording_write_enabled: bool = False
+    odoo_recording_hmac_secret: str = ""
+    odoo_recording_hmac_secret_file: str = ""
     n8n_recording_workflow_enabled: bool = False
+    n8n_recording_binding_enabled: bool = False
+    n8n_recording_workflow_active: bool = False
     recording_upload_url_ttl_seconds: int = 300
     recording_playback_url_ttl_seconds: int = 120
     reconciliation_concurrency: int = 1
@@ -186,6 +190,10 @@ class Settings(BaseSettings):
             self.allow_live_email,
             self.allow_live_sms,
             self.outbox_worker_enabled,
+            self.odoo_recording_write_enabled,
+            self.n8n_recording_workflow_enabled,
+            self.n8n_recording_binding_enabled,
+            self.n8n_recording_workflow_active,
             self.telephony_provisioning_enabled,
             self.telephony_command_worker_enabled,
             self.vicidial_provisioning_enabled,
@@ -232,6 +240,7 @@ class Settings(BaseSettings):
             ("middleware_secret", self.middleware_secret_file),
             # Ingestion deliberately has no legacy shared-secret fallback.
             ("ingestion_hmac_secret", self.vicidial_callback_hmac_secret_file),
+            ("odoo_recording_hmac_secret", self.odoo_recording_hmac_secret_file),
         )
         for attribute, filename in mappings:
             if filename:

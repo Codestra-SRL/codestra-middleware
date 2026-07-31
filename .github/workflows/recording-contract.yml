@@ -19,6 +19,7 @@ jobs:
       - run: pip install -r requirements-test.lock
       - run: python scripts/check_recording_contract.py
       - run: python -m pytest -q tests/recording
+      - run: python scripts/check_pr_b_recording_remediation.py
       - run: ruff check app/recording app/api/v1/recordings.py tests/recording
       - name: Dependency vulnerability gate
         uses: pypa/gh-action-pip-audit@v1.1.0

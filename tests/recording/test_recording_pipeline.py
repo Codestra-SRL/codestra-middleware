@@ -118,7 +118,21 @@ async def test_reservation_verification_odoo_ack_duplicate_and_event():
     assert ack["checksum_verified"] and ack["odoo_linked"]
     assert service.get(first["recording_uid"]).state == RecordingState.ODOO_LINKED
     assert service.outbox[0]["event_type"] == "vicidial.recording.verified.v1"
-    assert "telephone_number" not in service.outbox[0]["recording"]
+    assert "recording" not in service.outbox[0]
+    assert set(service.outbox[0]) == {
+        "contract_version",
+        "event_id",
+        "event_type",
+        "occurred_at",
+        "environment",
+        "recording_uid",
+        "call_uid",
+        "campaign_key",
+        "duration_seconds",
+        "sha256",
+        "object_version_id",
+        "retention_class",
+    }
     replay = await service.complete(first["recording_uid"], completion(service, first))
     assert replay["duplicate"] is True
 
@@ -167,7 +181,9 @@ async def test_size_checksum_content_type_and_version_are_verified():
         object.__setattr__(head, field, value)
         service.storage.objects[(recording.opaque_object_identifier, "v1")] = head
         with pytest.raises(RecordingConflict):
-            await service.complete(recording.recording_uid, completion(service, response))
+            await service.complete(
+                recording.recording_uid, completion(service, response)
+            )
 
 
 @pytest.mark.asyncio
@@ -190,6 +206,14 @@ class FailingOdoo:
         raise RuntimeError("temporary Odoo failure")
 
 
+class IncompleteAcknowledgementOdoo:
+    async def upsert(self, metadata, idempotency_key):
+        return {
+            "contract_version": "1.0",
+            "recording_uid": metadata["recording_uid"],
+        }
+
+
 @pytest.mark.asyncio
 async def test_odoo_ack_required_and_retry_state_never_links_early():
     service = RecordingService(MemoryObjectStorage(), FailingOdoo())
@@ -201,6 +225,60 @@ async def test_odoo_ack_required_and_retry_state_never_links_early():
     assert recording.state == RecordingState.SERVER_VERIFIED
     assert recording.odoo_linked_at is None
     assert service.outbox == []
+
+
+@pytest.mark.asyncio
+async def test_incomplete_canonical_ack_never_links():
+    service = RecordingService(MemoryObjectStorage(), IncompleteAcknowledgementOdoo())
+    response = service.reserve(reservation())
+    setup_object(service, response)
+    with pytest.raises(RecordingConflict, match="canonical Odoo acknowledgement"):
+        await service.complete(response["recording_uid"], completion(service, response))
+    recording = service.get(response["recording_uid"])
+    assert recording.state == RecordingState.SERVER_VERIFIED
+    assert recording.odoo_linked_at is None
+    assert service.outbox == []
+
+
+class CapturingOdoo(AcknowledgingOdooClient):
+    def __init__(self):
+        self.metadata = None
+
+    async def upsert(self, metadata, idempotency_key):
+        self.metadata = metadata
+        return await super().upsert(metadata, idempotency_key)
+
+
+@pytest.mark.asyncio
+async def test_odoo_upsert_payload_is_complete():
+    odoo = CapturingOdoo()
+    service = RecordingService(MemoryObjectStorage(), odoo)
+    response = service.reserve(reservation())
+    setup_object(service, response)
+    await service.complete(response["recording_uid"], completion(service, response))
+    assert set(odoo.metadata) == {
+        "contract_version",
+        "environment",
+        "recording_uid",
+        "vicidial_recording_id",
+        "vicidial_call_id",
+        "asterisk_uniqueid",
+        "campaign_key",
+        "agent_key",
+        "started_at",
+        "duration_seconds",
+        "format",
+        "codec",
+        "channels",
+        "sample_rate_hz",
+        "file_size_bytes",
+        "sha256",
+        "object_version_id",
+        "storage_status",
+        "retention_class",
+        "retention_until",
+        "legal_hold",
+    }
 
 
 @pytest.mark.asyncio
