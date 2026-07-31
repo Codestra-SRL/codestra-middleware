@@ -98,7 +98,10 @@ def test_state_retry_and_rollback_documentation_exists():
     assert state.is_file() and retry.is_file() and rollback.is_file()
     assert "SERVER_VERIFIED" in state.read_text()
     assert "ODOO_LINKED" in state.read_text()
-    assert "n8n" in retry.read_text().lower()
+    retry_text = retry.read_text().lower()
+    assert "deterministic idempotency key" in retry_text
+    assert "at most three transport attempts" in retry_text
+    assert "`quarantined`" in retry_text
     assert "never delete" in rollback.read_text().lower()
 
 
