@@ -221,6 +221,18 @@ jobs:
             "${PG_IMAGE}" pg_dump \
             -h 127.0.0.1 -U middleware_ci -Fc middleware_rehearsal \
             -f /work/middleware-rehearsal.dump
+          BACKUP_KEY="$(openssl rand -hex 32)"
+          export BACKUP_KEY
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in middleware-rehearsal.dump \
+            -out middleware-rehearsal.dump.enc \
+            -pass env:BACKUP_KEY
+          sha256sum middleware-rehearsal.dump.enc > restoration.sha256
+          rm middleware-rehearsal.dump
+          openssl enc -d -aes-256-cbc -pbkdf2 \
+            -in middleware-rehearsal.dump.enc \
+            -out middleware-rehearsal.dump \
+            -pass env:BACKUP_KEY
           docker run --rm --network host -e PGPASSWORD \
             "${PG_IMAGE}" psql \
             -h 127.0.0.1 -U middleware_ci -d postgres \
@@ -239,7 +251,8 @@ jobs:
           expected_migration_head="$(alembic heads | awk 'NR == 1 {print $1}')"
           test -n "${expected_migration_head}"
           test "${restored_head}" = "${expected_migration_head}"
-          sha256sum middleware-rehearsal.dump > restoration.sha256
+          test -s restoration.sha256
+          rm -f middleware-rehearsal.dump middleware-rehearsal.dump.enc
 
       - name: Application startup and disabled defaults
         shell: bash

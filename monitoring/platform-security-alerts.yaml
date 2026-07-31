@@ -1,0 +1,33 @@
+groups:
+  - name: platform-security
+    rules:
+      - alert: UnexpectedWorkflowActivation
+        expr: n8n_active_workflows{environment="staging"} > 0
+        for: 0m
+      - alert: UnexpectedProductionAccess
+        expr: staging_production_connection_attempts_total > 0
+        for: 0m
+      - alert: UnexpectedCommunicationAttempt
+        expr: staging_communication_attempts_total > 0
+        for: 0m
+      - alert: UnexpectedRecordingAccess
+        expr: staging_recording_access_attempts_total > 0
+        for: 0m
+      - alert: AlembicHeadCountInvalid
+        expr: middleware_alembic_head_count != 1
+        for: 5m
+      - alert: HMACFailureRate
+        expr: increase(hmac_rejections_total[5m]) > 10
+        for: 5m
+      - alert: ReplayOrQuarantineIncrease
+        expr: increase(replay_rejections_total[5m]) + increase(quarantine_total[5m]) > 5
+        for: 5m
+      - alert: UnexpectedWorkflowExecution
+        expr: increase(n8n_workflow_executions_total{environment="staging"}[5m]) > 0
+        for: 0m
+      - alert: OutboxBacklog
+        expr: middleware_outbox_queue_depth{environment="staging"} > 100
+        for: 10m
+      - alert: ReconciliationGap
+        expr: lead_automation_reconciliation_gap{environment="staging"} > 0
+        for: 5m

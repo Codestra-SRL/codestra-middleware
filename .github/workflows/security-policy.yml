@@ -1,0 +1,69 @@
+name: platform-security-policy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Validate platform security policy
+        run: |
+          python3 .security/security_policy.py validate
+          python3 .security/security_policy.py self-test
+      - name: Verify OPA policies with digest-pinned Conftest
+        run: |
+          docker run --rm -v "$PWD:/project" -w /project \
+            openpolicyagent/conftest@sha256:b451f93ec386c25a4ed5aa4b835605dd4aee693374b619f5dc92374afcb6c296 \
+            verify --policy .security/policy
+          docker run --rm -v "$PWD:/project" -w /project \
+            openpolicyagent/conftest@sha256:b451f93ec386c25a4ed5aa4b835605dd4aee693374b619f5dc92374afcb6c296 \
+            test --policy .security/policy .security/policy-input/hardened-compose.yaml
+      - name: Scan every pinned image with independent scanners
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/security-scan
+          python3 - <<'PY' > /tmp/security-scan/images.tsv
+          import json
+          for image in json.load(open('.security/images.json'))['images']:
+              print(f"{image['name']}\t{image['reference']}")
+          PY
+          while IFS=$'\t' read -r name reference; do
+            docker pull "${reference}"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy@sha256:c6e969c5662a546ad5de4a73c2a6b7a7c627f86d916903e175aa623af5b97ada \
+              image --scanners vuln,secret --format json "${reference}" \
+              > "/tmp/security-scan/${name}.trivy.json"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              anchore/grype@sha256:1316f97b106d10ee5d225a5bc189a982d4808cde3c2f727483e7888e62ae15d2 \
+              "${reference}" -o json > "/tmp/security-scan/${name}.grype.json"
+          done < /tmp/security-scan/images.tsv
+          jq -s '{"Results": (map(.Results // []) | add)}' /tmp/security-scan/*.trivy.json > /tmp/security-scan/combined.trivy.json
+          jq -s '{"matches": (map(.matches // []) | add)}' /tmp/security-scan/*.grype.json > /tmp/security-scan/combined.grype.json
+          python3 .security/security_policy.py consolidate \
+            --trivy /tmp/security-scan/combined.trivy.json \
+            --grype /tmp/security-scan/combined.grype.json \
+            --output /tmp/security-scan/SECURITY_VULNERABILITY_REPORT.md
+          python3 .security/security_policy.py scan-gate \
+            --trivy /tmp/security-scan/combined.trivy.json \
+            --grype /tmp/security-scan/combined.grype.json
+      - name: Regenerate scorecard and empty consolidation baseline
+        run: |
+          python3 .security/security_policy.py scorecard
+          args=()
+          test ! -f reports/security/combined.trivy.json || args+=(--trivy reports/security/combined.trivy.json)
+          test ! -f reports/security/combined.grype.json || args+=(--grype reports/security/combined.grype.json)
+          python3 .security/security_policy.py consolidate "${args[@]}"
+          git diff --exit-code -- SECURITY_SCORECARD.md SECURITY_VULNERABILITY_REPORT.md

@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
         env: {POSTGRES_DB: lead_automation_ci, POSTGRES_USER: middleware_ci, POSTGRES_PASSWORD: synthetic-ci-password}
         ports: ["5432:5432"]
         options: --health-cmd "pg_isready -U middleware_ci -d lead_automation_ci" --health-interval 5s --health-timeout 5s --health-retries 20

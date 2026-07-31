@@ -1,0 +1,73 @@
+name: official-image-refresh
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Discover official immutable digests
+        run: python3 .security/image_refresh.py
+      - name: Generate SBOM and scanner evidence
+        run: |
+          mkdir -p reports/security
+          while IFS=$'\t' read -r name reference; do
+            safe_name="${name//[^a-zA-Z0-9_.-]/_}"
+            docker pull "$reference"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              anchore/syft@sha256:5145aaf0384ca6db481c95e093e5c3b31a3b3f3af3dd3aadfb7529df88578019 \
+              "$reference" -o cyclonedx-json > "reports/security/${safe_name}.cdx.json"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              anchore/syft@sha256:5145aaf0384ca6db481c95e093e5c3b31a3b3f3af3dd3aadfb7529df88578019 \
+              "$reference" -o spdx-json > "reports/security/${safe_name}.spdx.json"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy@sha256:c6e969c5662a546ad5de4a73c2a6b7a7c627f86d916903e175aa623af5b97ada \
+              image --scanners vuln,secret --format json "$reference" > "reports/security/${safe_name}.trivy.json"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy@sha256:c6e969c5662a546ad5de4a73c2a6b7a7c627f86d916903e175aa623af5b97ada \
+              image --scanners vuln,secret --format sarif "$reference" > "reports/security/${safe_name}.trivy.sarif"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              anchore/grype@sha256:1316f97b106d10ee5d225a5bc189a982d4808cde3c2f727483e7888e62ae15d2 \
+              "$reference" -o json > "reports/security/${safe_name}.grype.json"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              anchore/grype@sha256:1316f97b106d10ee5d225a5bc189a982d4808cde3c2f727483e7888e62ae15d2 \
+              "$reference" -o sarif > "reports/security/${safe_name}.grype.sarif"
+          done < reports/security/images.tsv
+          jq -s '{"Results": (map(.Results // []) | add)}' reports/security/*.trivy.json > reports/security/combined.trivy.json
+          jq -s '{"matches": (map(.matches // []) | add)}' reports/security/*.grype.json > reports/security/combined.grype.json
+          python3 .security/security_policy.py consolidate \
+            --trivy reports/security/combined.trivy.json \
+            --grype reports/security/combined.grype.json
+          cp SECURITY_VULNERABILITY_REPORT.md reports/security/SECURITY_VULNERABILITY_REPORT.md
+          {
+            echo "# Build provenance"
+            echo
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "source_sha=${GITHUB_SHA}"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            sha256sum reports/security/images.tsv reports/security/*.cdx.json reports/security/*.spdx.json
+          } > reports/security/PROVENANCE.txt
+      - name: Open refresh pull request without merging
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676
+        with:
+          branch: automation/official-image-refresh
+          delete-branch: true
+          commit-message: Refresh official digest-pinned images
+          title: Refresh official digest-pinned images
+          body: |
+            Automated official-image digest refresh. This PR never merges automatically.
+            Review exact digests, SBOMs, Trivy, Grype, consolidated findings, compatibility,
+            rollback, and any structured exception before approval.
