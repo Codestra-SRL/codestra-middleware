@@ -25,6 +25,26 @@ service.action_switches.update(
     }
 )
 used_callback_nonces: set[tuple[str, str]] = set()
+CALLBACK_AUTH_HEADERS = (
+    "X-Service-Identity",
+    "X-Service-Audience",
+    "X-Codestra-Timestamp",
+    "X-Codestra-Nonce",
+    "X-Codestra-Content-SHA256",
+    "X-Codestra-Signature",
+    "Idempotency-Key",
+    "X-Codestra-Environment",
+)
+
+
+def _unique_callback_headers(request: Request) -> dict[str, str]:
+    raw_names = [name.lower() for name, _ in request.scope.get("headers", [])]
+    for name in CALLBACK_AUTH_HEADERS:
+        if raw_names.count(name.lower().encode("ascii")) != 1:
+            raise CallbackAuthenticationError(
+                "missing or duplicate callback authentication header"
+            )
+    return {name: request.headers.get(name, "") for name in CALLBACK_AUTH_HEADERS}
 
 
 @router.post("/api/v1/events/odoo", status_code=202)
@@ -47,20 +67,11 @@ async def receive_result(request: Request):
     body = await request.json()
     try:
         verify_callback(
+            method=request.method,
+            path=request.scope.get("raw_path", b"").decode("ascii", errors="strict"),
+            query_string=request.scope.get("query_string", b""),
             body=raw,
-            headers={
-                name: request.headers.get(name, "")
-                for name in (
-                    "X-Service-Identity",
-                    "X-Service-Audience",
-                    "X-Codestra-Timestamp",
-                    "X-Codestra-Nonce",
-                    "X-Codestra-Content-SHA256",
-                    "X-Codestra-Signature",
-                    "Idempotency-Key",
-                    "X-Codestra-Environment",
-                )
-            },
+            headers=_unique_callback_headers(request),
             secret=settings.lead_automation_hmac_secret.encode(),
             environment=body.get("environment", ""),
             used_nonces=used_callback_nonces,
