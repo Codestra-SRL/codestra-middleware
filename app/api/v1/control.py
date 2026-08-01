@@ -1,5 +1,6 @@
 import hashlib
 import json
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -10,12 +11,15 @@ from app.db.session import get_session
 from app.db.models import (
     AuditEvent,
     EventInbox,
+    IntegrationDelivery,
+    IntegrationEvent,
     IdempotencyRecord,
     OutboxEvent,
     PolicyDecision,
     ReconciliationCheckpoint,
     TransferPolicyDecision,
 )
+from app.core.automation import canonical_hash
 from app.core.reliability import authorize_transfer, redact, sanitize_for_storage
 
 router = APIRouter(prefix="/api/v1", tags=["control-plane"])
@@ -26,6 +30,26 @@ class Envelope(BaseModel):
     event_id: str | None = None
     campaign_id: str | None = None
     payload: dict[str, Any] = {}
+
+
+class CanonicalOdooEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_id: str = Field(min_length=1, max_length=128)
+    event_type: str = Field(pattern=r"^lead\.hot$")
+    event_version: str = Field(pattern=r"^1\.0$")
+    occurred_at: datetime
+    received_at: datetime
+    tenant_id: str = Field(min_length=1, max_length=128)
+    environment: str = Field(pattern=r"^staging$")
+    request_id: str = Field(min_length=1, max_length=128)
+    correlation_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=16, max_length=255)
+    source: str = Field(pattern=r"^odoo$")
+    campaign_id: str = Field(pattern=r"^TEST_SYN$")
+    originating_odoo_outbox_id: str = Field(min_length=1, max_length=128)
+    synthetic: bool
+    references: dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class Callback(BaseModel):
@@ -102,47 +126,88 @@ async def persist(
 @router.post("/events/vicidial", status_code=202)
 async def event(
     request: Request,
-    body: Envelope,
+    body: CanonicalOdooEvent,
     db: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_correlation_id: str | None = Header(None, alias="X-Correlation-ID"),
 ):
-    if body.campaign_id and body.campaign_id != "TEST_SYN":
-        raise HTTPException(403, "production campaigns are disabled")
-    corr = x_correlation_id or str(uuid4())
-    raw = body.model_dump()
+    if not body.synthetic:
+        raise HTTPException(403, "only synthetic staging events are permitted")
+    if x_correlation_id != body.correlation_id:
+        raise HTTPException(409, "correlation header mismatch")
+    if idempotency_key != body.idempotency_key:
+        raise HTTPException(409, "idempotency header mismatch")
+    corr = body.correlation_id
+    raw = body.model_dump(mode="json")
     stored = sanitize_for_storage(raw)
-    key = idempotency_key or body.event_id
-    row, h, kh = await Idem.check(db, key, "events", raw)
+    row, h, kh = await Idem.check(db, body.idempotency_key, "events:odoo:staging", raw)
     if row:
         return row.response
-    eid = body.event_id or str(uuid4())
-    stored["event_id"] = eid
-    stored["correlation_id"] = corr
+    prior = await db.scalar(
+        select(IntegrationEvent).where(
+            IntegrationEvent.original_event_id == body.event_id
+        )
+    )
+    if prior:
+        raise HTTPException(409, "event identity conflict")
+    canonical = IntegrationEvent(
+        idempotency_key=body.idempotency_key,
+        event_type=body.event_type,
+        schema_version=body.event_version,
+        original_event_id=body.event_id,
+        entity_key=str(body.references.get("odoo_record_id") or body.event_id),
+        source_system="odoo",
+        correlation_id=body.correlation_id,
+        environment=body.environment,
+        originating_odoo_outbox_id=body.originating_odoo_outbox_id,
+        payload_json=stored,
+        payload_hash=canonical_hash(stored),
+        state="queued",
+    )
+    db.add(canonical)
+    await db.flush()
     db.add(
         EventInbox(
-            event_id=eid,
-            source="odoo" if request.url.path.endswith("odoo") else "vicidial",
-            event_type="event",
+            integration_event_id=canonical.id,
+            event_id=body.event_id,
+            source="odoo",
+            event_type=body.event_type,
             payload=stored,
             correlation_id=corr,
         )
     )
-    db.add(OutboxEvent(topic="event.accepted", payload=stored, correlation_id=corr))
-    await persist(db, "event.ingest", eid, corr, stored)
+    outbox = OutboxEvent(
+        integration_event_id=canonical.id,
+        topic="event.accepted", payload=stored, correlation_id=corr,
+    )
+    db.add(outbox)
+    db.add_all(
+        [
+            IntegrationDelivery(
+                event_id=canonical.id, target="n8n", status="pending"
+            ),
+            IntegrationDelivery(
+                event_id=canonical.id, target="odoo", status="disabled"
+            ),
+        ]
+    )
+    await db.flush()
+    await persist(db, "event.ingest", body.event_id, corr, stored)
     response = {
         "accepted": True,
-        "event_id": eid,
+        "event_id": body.event_id,
         "status": "queued",
         "correlation_id": corr,
+        "middleware_outbox_id": str(outbox.id),
     }
     db.add(
         IdempotencyRecord(
-            scope="events",
+            scope="events:odoo:staging",
             key_hash=kh,
             request_hash=h,
             response=response,
             status_code=202,
+            event_id=canonical.id,
         )
     )
     await db.commit()
