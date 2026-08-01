@@ -17,11 +17,11 @@ SCHEMA = ROOT / "schemas/security-owner-decision-request.v1.schema.json"
 AUTHORITY = ROOT / "security/governance/security-owner-authority.json"
 HEAD = "a" * 40
 DIGEST = "sha256:" + "b" * 64
-PYTHON_312_PATHS = (
+PYTHON_312_RUNTIME_PATHS: tuple[str, ...] = (
     "/usr/local/bin/python3.12",
     "/usr/local/lib/libpython3.12.so.1.0",
 )
-CSV_FIELDNAMES = (
+VULNERABILITY_MATRIX_FIELDS: tuple[str, ...] = (
     "vulnerability_id",
     "package",
     "installed_version",
@@ -34,23 +34,32 @@ CSV_FIELDNAMES = (
 
 def write_test_vulnerability_matrix(
     stream: TextIO,
-    vuln_id: str = "CVE-2026-1",
+    *,
+    vulnerability_id: str = "CVE-2026-1",
+    package: str = "python",
+    installed_version: str = "3.12.13",
     severity: str = "HIGH",
-    paths: Sequence[str] = PYTHON_312_PATHS,
+    fixed_versions: str = "3.13.14",
+    scanners: str = "Grype",
+    paths: Sequence[str] | None = None,
 ) -> None:
-    """Write standardized runtime vulnerability rows for governance tests."""
-    writer = csv.DictWriter(stream, fieldnames=CSV_FIELDNAMES)
+    """Write a deterministic vulnerability matrix fixture."""
+    runtime_paths = PYTHON_312_RUNTIME_PATHS if paths is None else tuple(paths)
+    if not runtime_paths:
+        raise ValueError("at least one runtime path is required")
+
+    writer = csv.DictWriter(stream, fieldnames=VULNERABILITY_MATRIX_FIELDS)
     writer.writeheader()
-    for runtime_path in paths:
+    for runtime_path in runtime_paths:
         writer.writerow(
             {
-                "vulnerability_id": vuln_id,
-                "package": "python",
-                "installed_version": "3.12.13",
+                "vulnerability_id": vulnerability_id,
+                "package": package,
+                "installed_version": installed_version,
                 "package_path": runtime_path,
                 "severity": severity,
-                "fixed_versions": "3.13.14",
-                "scanners": "Grype",
+                "fixed_versions": fixed_versions,
+                "scanners": scanners,
             }
         )
 
@@ -87,17 +96,39 @@ def validate(common: list[str], output: Path) -> subprocess.CompletedProcess[str
 
 
 def test_exact_same_run_decision_passes(tmp_path: Path) -> None:
-    common, _, output, _ = command(tmp_path)
+    common, files, output, _ = command(tmp_path)
     assert validate(common, output).returncode == 0
+    decision = json.loads(output.read_text(encoding="utf-8"))
+    assert decision["matrix_sha256"] == hashlib.sha256(files["matrix.csv"].read_bytes()).hexdigest()
 
 
-def test_vulnerability_matrix_writer_emits_one_customizable_row_per_path(tmp_path: Path) -> None:
+def test_default_vulnerability_matrix_has_two_unique_runtime_rows(tmp_path: Path) -> None:
+    files = fixture(tmp_path)
+    with files["matrix.csv"].open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+
+    unique_rows = {
+        (
+            row["vulnerability_id"],
+            row["package"],
+            row["installed_version"],
+            row["package_path"],
+        )
+        for row in rows
+    }
+    assert len(rows) == 2
+    assert len(unique_rows) == 2
+    assert {row["package_path"] for row in rows} == set(PYTHON_312_RUNTIME_PATHS)
+    assert len({row["vulnerability_id"] for row in rows}) == 1
+
+
+def test_vulnerability_matrix_writer_supports_custom_critical_finding(tmp_path: Path) -> None:
     matrix = tmp_path / "matrix.csv"
     paths = ("/runtime/python", "/runtime/libpython.so")
     with matrix.open("w", newline="", encoding="utf-8") as stream:
         write_test_vulnerability_matrix(
             stream,
-            vuln_id="CVE-2026-9999",
+            vulnerability_id="CVE-2026-9999",
             severity="CRITICAL",
             paths=paths,
         )
@@ -108,6 +139,32 @@ def test_vulnerability_matrix_writer_emits_one_customizable_row_per_path(tmp_pat
     assert [row["package_path"] for row in rows] == list(paths)
     assert {row["vulnerability_id"] for row in rows} == {"CVE-2026-9999"}
     assert {row["severity"] for row in rows} == {"CRITICAL"}
+
+
+def test_vulnerability_matrix_writer_rejects_empty_paths(tmp_path: Path) -> None:
+    with (
+        (tmp_path / "matrix.csv").open("w", newline="", encoding="utf-8") as stream,
+        pytest.raises(ValueError, match="at least one runtime path is required"),
+    ):
+        write_test_vulnerability_matrix(stream, paths=())
+
+
+def test_vulnerability_matrix_writer_preserves_field_order_and_utf8(tmp_path: Path) -> None:
+    matrix = tmp_path / "matrix.csv"
+    with matrix.open("w", newline="", encoding="utf-8") as stream:
+        write_test_vulnerability_matrix(
+            stream,
+            package="pythön",
+            paths=("/runtime/pythön",),
+        )
+
+    with matrix.open(newline="", encoding="utf-8") as stream:
+        reader = csv.DictReader(stream)
+        rows = list(reader)
+
+    assert tuple(reader.fieldnames or ()) == VULNERABILITY_MATRIX_FIELDS
+    assert rows[0]["package"] == "pythön"
+    assert rows[0]["package_path"] == "/runtime/pythön"
 
 
 @pytest.mark.parametrize("field", ["repository", "pr_number", "pr_head_sha", "image_digest", "build_run_id", "build_run_attempt", "matrix_sha256", "sbom_sha256", "provenance_sha256", "authority_reference"])
