@@ -10,6 +10,10 @@ ENV = ROOT / "staging.env.example"
 COMPOSE = ROOT / "compose.yaml"
 FIXTURES = ROOT / "synthetic-fixtures.json"
 SECURITY_DECISION = ROOT / "security" / "image-security-decision.json"
+DOCKERFILE = ROOT.parents[1] / "Dockerfile"
+MIDDLEWARE_MATRIX = (
+    ROOT / "security" / "scans" / "middleware-vulnerability-remediation-matrix.csv"
+)
 
 required_false = {
     "LEAD_AUTOMATION_ENABLED",
@@ -92,5 +96,18 @@ serialized = json.dumps(fixtures).lower()
 for prohibited in ("@", "phone", "recording", "presigned", "object_storage", "production"):
     assert prohibited not in serialized
 assert fixtures["environment"] == "staging"
+
+dockerfile = DOCKERFILE.read_text()
+for label in (
+    "org.opencontainers.image.source",
+    "org.opencontainers.image.revision",
+    "org.opencontainers.image.created",
+    "org.opencontainers.image.version",
+):
+    assert dockerfile.count(label) == 2, f"missing builder/runtime OCI label: {label}"
+matrix_lines = MIDDLEWARE_MATRIX.read_text().splitlines()
+assert len(matrix_lines) == 11, "expected header plus ten Middleware findings"
 print("lead automation staging preparation gates: PASS")
 print("COMPOSE_SECRET_GRANT_GATE=PASS")
+print("MIDDLEWARE_OCI_LABEL_SOURCE_GATE=PASS")
+print("MIDDLEWARE_VULNERABILITY_MATRIX_GATE=PASS")

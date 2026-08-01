@@ -2,6 +2,8 @@
 ARG PYTHON_BASE=docker.io/library/python@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df
 ARG VCS_REF=unknown
 ARG BUILD_REVISION=unknown
+ARG BUILD_CREATED=unknown
+ARG BUILD_VERSION=unknown
 
 FROM ${PYTHON_BASE} AS python-builder
 USER root
@@ -80,8 +82,12 @@ COPY --from=python-builder /usr/local /usr/local
 FROM patched-python AS builder
 ARG VCS_REF
 ARG BUILD_REVISION
+ARG BUILD_CREATED
+ARG BUILD_VERSION
 LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-middleware" \
       org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_CREATED}" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
       io.codestra.build.revision="${BUILD_REVISION}" \
       io.codestra.python.base.repository="docker.io/library/python" \
       io.codestra.python.base.digest="sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df" \
@@ -107,8 +113,12 @@ ENTRYPOINT ["pytest"]
 FROM patched-python AS runtime
 ARG VCS_REF
 ARG BUILD_REVISION
+ARG BUILD_CREATED
+ARG BUILD_VERSION
 LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-middleware" \
       org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_CREATED}" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
       io.codestra.build.revision="${BUILD_REVISION}" \
       io.codestra.python.base.repository="docker.io/library/python" \
       io.codestra.python.base.digest="sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df" \
