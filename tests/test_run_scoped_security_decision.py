@@ -4,7 +4,9 @@ import csv
 import hashlib
 import json
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
+from typing import TextIO
 
 import pytest
 
@@ -15,18 +17,51 @@ SCHEMA = ROOT / "schemas/security-owner-decision-request.v1.schema.json"
 AUTHORITY = ROOT / "security/governance/security-owner-authority.json"
 HEAD = "a" * 40
 DIGEST = "sha256:" + "b" * 64
+PYTHON_312_PATHS = (
+    "/usr/local/bin/python3.12",
+    "/usr/local/lib/libpython3.12.so.1.0",
+)
+CSV_FIELDNAMES = (
+    "vulnerability_id",
+    "package",
+    "installed_version",
+    "package_path",
+    "severity",
+    "fixed_versions",
+    "scanners",
+)
+
+
+def write_test_vulnerability_matrix(
+    stream: TextIO,
+    vuln_id: str = "CVE-2026-1",
+    severity: str = "HIGH",
+    paths: Sequence[str] = PYTHON_312_PATHS,
+) -> None:
+    """Write standardized runtime vulnerability rows for governance tests."""
+    writer = csv.DictWriter(stream, fieldnames=CSV_FIELDNAMES)
+    writer.writeheader()
+    for runtime_path in paths:
+        writer.writerow(
+            {
+                "vulnerability_id": vuln_id,
+                "package": "python",
+                "installed_version": "3.12.13",
+                "package_path": runtime_path,
+                "severity": severity,
+                "fixed_versions": "3.13.14",
+                "scanners": "Grype",
+            }
+        )
 
 
 def fixture(tmp_path: Path) -> dict[str, Path]:
     files = {name: tmp_path / name for name in ["manifest.json", "matrix.csv", "sbom.json", "trivy.json", "grype.json", "provenance.json"]}
     for name, path in files.items():
         if name != "matrix.csv":
-            path.write_text(json.dumps({"name": name}))
-    with files["matrix.csv"].open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=["vulnerability_id", "package", "installed_version", "package_path", "severity", "fixed_versions", "scanners"])
-        writer.writeheader()
-        for runtime_path in ["/usr/local/bin/python3.12", "/usr/local/lib/libpython3.12.so.1.0"]:
-            writer.writerow({"vulnerability_id": "CVE-2026-1", "package": "python", "installed_version": "3.12.13", "package_path": runtime_path, "severity": "HIGH", "fixed_versions": "3.13.14", "scanners": "Grype"})
+            path.write_text(json.dumps({"name": name}), encoding="utf-8")
+    with files["matrix.csv"].open("w", newline="", encoding="utf-8") as stream:
+        write_test_vulnerability_matrix(stream)
     return files
 
 
@@ -54,6 +89,25 @@ def validate(common: list[str], output: Path) -> subprocess.CompletedProcess[str
 def test_exact_same_run_decision_passes(tmp_path: Path) -> None:
     common, _, output, _ = command(tmp_path)
     assert validate(common, output).returncode == 0
+
+
+def test_vulnerability_matrix_writer_emits_one_customizable_row_per_path(tmp_path: Path) -> None:
+    matrix = tmp_path / "matrix.csv"
+    paths = ("/runtime/python", "/runtime/libpython.so")
+    with matrix.open("w", newline="", encoding="utf-8") as stream:
+        write_test_vulnerability_matrix(
+            stream,
+            vuln_id="CVE-2026-9999",
+            severity="CRITICAL",
+            paths=paths,
+        )
+
+    with matrix.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+
+    assert [row["package_path"] for row in rows] == list(paths)
+    assert {row["vulnerability_id"] for row in rows} == {"CVE-2026-9999"}
+    assert {row["severity"] for row in rows} == {"CRITICAL"}
 
 
 @pytest.mark.parametrize("field", ["repository", "pr_number", "pr_head_sha", "image_digest", "build_run_id", "build_run_attempt", "matrix_sha256", "sbom_sha256", "provenance_sha256", "authority_reference"])
