@@ -49,6 +49,7 @@ def test_reports_and_evidence_fail_closed_before_upload() -> None:
         "candidate.cdx.json",
         "vulnerability-matrix.csv",
         "vulnerability-summary.json",
+        "reconcile-helper.sha256",
         "provenance.json",
         "candidate-image-manifest.json",
         "SHA256SUMS",
@@ -58,6 +59,19 @@ def test_reports_and_evidence_fail_closed_before_upload() -> None:
     assert 'jq -e . "${json_file}"' in workflow[validation:upload]
     assert "sha256sum -c SHA256SUMS" in workflow[validation:upload]
     assert "Reconcile scanner findings" in workflow[:validation]
+
+
+def test_reconciliation_helper_is_staged_from_protected_workflow_revision() -> None:
+    workflow = workflow_text()
+    trusted_checkout = workflow.index("- name: Check out trusted reconciliation helper")
+    trusted_stage = workflow.index("- name: Stage trusted reconciliation helper outside candidate context")
+    candidate_checkout = workflow.index("- name: Check out exact candidate source")
+    reconciliation = workflow.index("- name: Reconcile scanner findings")
+    assert trusted_checkout < trusted_stage < candidate_checkout < reconciliation
+    assert "ref: ${{ github.sha }}" in workflow[trusted_checkout:trusted_stage]
+    assert 'test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"' in workflow[trusted_stage:candidate_checkout]
+    assert re.search(r"^  RECONCILE_HELPER_SHA256: [0-9a-f]{64}$", workflow, re.MULTILINE)
+    assert '"${RUNNER_TEMP}/reconcile_candidate_vulnerabilities.py"' in workflow[reconciliation:]
 
 
 def test_identity_and_operational_boundaries_remain_enforced() -> None:

@@ -45,6 +45,7 @@ env:
   EXPECTED_REPOSITORY: Codestra-SRL/codestra-middleware
   TRIVY_VERSION: v0.72.0
   TRIVY_SHA256: bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea
+  RECONCILE_HELPER_SHA256: ed8cdb9c92064d31daac8bae257dedf6adfacf445171cf422e0d53753fb912ac
   COSIGN_VERSION: v3.1.2
   COSIGN_SHA256: f7622ed3cf22e55e1ae6377c080979ff77a22da9981c11df222a2e444991e7cf
 
@@ -74,6 +75,24 @@ jobs:
           test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .state)" = open
           test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "${SOURCE_SHA}"
           test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.ref)" = main
+
+      - name: Check out trusted reconciliation helper
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Stage trusted reconciliation helper outside candidate context
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          echo "${RECONCILE_HELPER_SHA256}  scripts/reconcile_candidate_vulnerabilities.py" | sha256sum -c -
+          install -m 0755 scripts/reconcile_candidate_vulnerabilities.py \
+            "${RUNNER_TEMP}/reconcile_candidate_vulnerabilities.py"
+          echo "${RECONCILE_HELPER_SHA256}  reconcile_candidate_vulnerabilities.py" \
+            > "${RUNNER_TEMP}/reconcile-helper.sha256"
 
       - name: Check out exact candidate source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -167,7 +186,16 @@ jobs:
             trivy.json >/dev/null
 
       - name: Reconcile scanner findings
-        run: python3 scripts/reconcile_candidate_vulnerabilities.py --trivy trivy.json --grype grype.json --output vulnerability-matrix.csv --summary vulnerability-summary.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${RECONCILE_HELPER_SHA256}  ${RUNNER_TEMP}/reconcile_candidate_vulnerabilities.py" | sha256sum -c -
+          python3 "${RUNNER_TEMP}/reconcile_candidate_vulnerabilities.py" \
+            --trivy trivy.json \
+            --grype grype.json \
+            --output vulnerability-matrix.csv \
+            --summary vulnerability-summary.json
+          cp "${RUNNER_TEMP}/reconcile-helper.sha256" reconcile-helper.sha256
 
       - name: Create provenance and immutable evidence manifest
         env:
@@ -194,7 +222,7 @@ jobs:
             > candidate-image-manifest.json
           jq -e --arg source "${SOURCE_SHA}" '.config.Labels["org.opencontainers.image.source"] == "https://github.com/Codestra-SRL/codestra-middleware" and .config.Labels["org.opencontainers.image.revision"] == $source' \
             < <(docker image inspect "${IMAGE_REPOSITORY}:$(cat candidate-tag.txt)" | jq '.[0]')
-          sha256sum candidate.cdx.json trivy.json trivy-version.txt grype.json vulnerability-matrix.csv vulnerability-summary.json provenance.json candidate-image-manifest.json image-digest.txt candidate-tag.txt > SHA256SUMS
+          sha256sum candidate.cdx.json trivy.json trivy-version.txt grype.json vulnerability-matrix.csv vulnerability-summary.json provenance.json candidate-image-manifest.json image-digest.txt candidate-tag.txt reconcile-helper.sha256 > SHA256SUMS
 
       - name: Validate complete candidate evidence
         shell: bash
@@ -209,6 +237,7 @@ jobs:
           done
           test -s trivy-version.txt
           test -s vulnerability-matrix.csv
+          test -s reconcile-helper.sha256
           test -s image-digest.txt
           test -s candidate-tag.txt
           test -s SHA256SUMS
@@ -235,6 +264,7 @@ jobs:
             grype.json
             vulnerability-matrix.csv
             vulnerability-summary.json
+            reconcile-helper.sha256
             provenance.json
             candidate-image-manifest.json
             image-digest.txt
