@@ -45,10 +45,13 @@ customer_data_gate=blocked
   startup, disabled defaults, static validation, schemas, and Python tests run
   in exact-SHA CI.
 - Odoo source is pinned to authoritative main commit
-  `b0c338cb871c54db93c06cef07fdc807b9fda7e0`. Full UI, JSON-2/API, export,
-  routing, callback, and middleware-service-identity multi-company evidence
-  remains a release-readiness prerequisite and must not be inferred from
-  documentation alone.
+  `f3a51feff8b06021bead395add82a5c5aed45ee5`, including the merged PR #16
+  multi-company isolation repair. Its checksummed isolation evidence is
+  `9bb326f97c5f89dc6dd75f6789a6fdd9815d3d7101c4bea3449316b533b63003`.
+- Middleware source is pinned to authoritative main commit
+  `f48761d35f1c88b3a9960484cc7252f10644916b`, including the merged PR #73
+  caller-scope repair. Its merged-main evidence is recorded under
+  `deploy/lead-automation-staging/security/isolation/`.
 
 ## Exact image subjects
 
@@ -77,11 +80,11 @@ High-or-Critical; Middleware has 10 Grype High-or-Critical. These findings
 cannot qualify a protected-main production release unless remediated or
 covered by an independently signed exception accepted by the release policy.
 
-Additional residual risks are the pending Codestra Middleware image signature,
-unavailable upstream signatures/attestations, missing full Odoo isolation
-coverage, and the fact that the allowlisted decision-signing workflow is not
-yet present on protected main. These conditions keep staging execution and
-release publication blocked.
+Additional residual risks are the pending Codestra Middleware image signature
+and unavailable upstream signatures or attestations. The allowlisted decision
+signing workflow is present on protected main, but no Security Owner decision
+has been signed. These conditions keep staging execution and release
+publication blocked.
 
 ## Required signed decision
 
@@ -98,6 +101,7 @@ The review covers the following complete inventory, including this request:
 
 ```text
 .github/workflows/lead-automation-staging-preparation.yml
+Dockerfile
 app/adapters/odoo/lead_automation.py
 app/core/config.py
 app/core/lead_automation.py
@@ -111,6 +115,10 @@ deploy/lead-automation-staging/scripts/verify-image-signatures.sh
 deploy/lead-automation-staging/security/image-security-decision.json
 deploy/lead-automation-staging/security/image-security-decision.schema.json
 deploy/lead-automation-staging/security/image-verification-policy.json
+deploy/lead-automation-staging/security/isolation/MIDDLEWARE-TENANT-ISOLATION-EVIDENCE.txt
+deploy/lead-automation-staging/security/isolation/MIDDLEWARE-TENANT-ISOLATION-SHA256.txt
+deploy/lead-automation-staging/security/isolation/MIDDLEWARE-TENANT-ISOLATION-TESTS.json
+deploy/lead-automation-staging/security/isolation/ODOO-MULTI-COMPANY-ISOLATION-EVIDENCE.txt
 deploy/lead-automation-staging/security/sbom/README.md
 deploy/lead-automation-staging/security/sbom/SHA256SUMS
 deploy/lead-automation-staging/security/sbom/middleware.cdx.json.gz

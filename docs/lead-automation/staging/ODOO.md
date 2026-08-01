@@ -11,8 +11,8 @@ DNC, idempotency, and acknowledgement classification. The running service may
 start only after these checks pass.
 
 The executable multi-company test is
-`codestra_lead_automation/tests/test_multicompany_isolation.py` at Odoo PR #15
-main head `b0c338cb871c54db93c06cef07fdc807b9fda7e0`. Run it only against an ephemeral
+`codestra_lead_automation/tests/test_multicompany_isolation.py` at merged Odoo
+PR #16, main head `f3a51feff8b06021bead395add82a5c5aed45ee5`. Run it only against an ephemeral
 PostgreSQL database with the digest-pinned Odoo 19 image:
 
 ```sh

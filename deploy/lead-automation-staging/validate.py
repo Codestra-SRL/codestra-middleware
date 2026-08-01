@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -14,6 +15,7 @@ DOCKERFILE = ROOT.parents[1] / "Dockerfile"
 MIDDLEWARE_MATRIX = (
     ROOT / "security" / "scans" / "middleware-vulnerability-remediation-matrix.csv"
 )
+ISOLATION = ROOT / "security" / "isolation"
 
 required_false = {
     "LEAD_AUTOMATION_ENABLED",
@@ -83,6 +85,29 @@ for image in ("POSTGRES_IMAGE", "REDIS_IMAGE", "ODOO_IMAGE", "N8N_IMAGE"):
 
 subprocess.run(["python3", str(ROOT / "security_decision.py")], check=True)
 decision = json.loads(SECURITY_DECISION.read_text())
+middleware_evidence = ISOLATION / "MIDDLEWARE-TENANT-ISOLATION-EVIDENCE.txt"
+middleware_tests = ISOLATION / "MIDDLEWARE-TENANT-ISOLATION-TESTS.json"
+middleware_checksums = ISOLATION / "MIDDLEWARE-TENANT-ISOLATION-SHA256.txt"
+odoo_evidence = ISOLATION / "ODOO-MULTI-COMPANY-ISOLATION-EVIDENCE.txt"
+for evidence_file in (middleware_evidence, middleware_tests, middleware_checksums, odoo_evidence):
+    assert evidence_file.is_file(), f"missing isolation evidence: {evidence_file.name}"
+expected_hashes = {}
+for line in middleware_checksums.read_text().splitlines():
+    digest, filename = line.split("  ", 1)
+    expected_hashes[filename] = digest
+for filename, digest in expected_hashes.items():
+    actual = hashlib.sha256((ISOLATION / filename).read_bytes()).hexdigest()
+    assert actual == digest, f"isolation evidence checksum mismatch: {filename}"
+middleware_results = json.loads(middleware_tests.read_text())
+assert middleware_results["source_sha"] == decision["middleware_source_sha"]
+assert middleware_results["required_ci_result"] == "PASS"
+assert middleware_results["full_test_failure_count"] == 0
+assert set(middleware_results["gates"].values()) <= {"PASS", False}
+odoo_fields = dict(
+    line.split("=", 1) for line in odoo_evidence.read_text().splitlines() if "=" in line
+)
+assert odoo_fields["ODOO_MAIN_SHA"] == decision["odoo_source_sha"]
+assert odoo_fields["ODOO_MULTI_COMPANY_ISOLATION_GATE"] == "PASS"
 counts = json.loads((ROOT / "security" / "vulnerability-counts.json").read_text())
 assert counts["redis"]["digest"] in values["REDIS_IMAGE"]
 assert counts["n8n"]["digest"] in values["N8N_IMAGE"]
@@ -111,3 +136,5 @@ print("lead automation staging preparation gates: PASS")
 print("COMPOSE_SECRET_GRANT_GATE=PASS")
 print("MIDDLEWARE_OCI_LABEL_SOURCE_GATE=PASS")
 print("MIDDLEWARE_VULNERABILITY_MATRIX_GATE=PASS")
+print("MIDDLEWARE_ISOLATION_EVIDENCE_GATE=PASS")
+print("ODOO_ISOLATION_EVIDENCE_GATE=PASS")
