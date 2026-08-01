@@ -61,6 +61,19 @@ assert "profiles: [operations]" in compose
 assert not re.search(
     r"(?m)^[ \t]+[A-Z0-9_]*(PASSWORD|SECRET|TOKEN):[ \t]+[^/$\s{]", compose
 )
+expected_grants = (
+    "secrets: [middleware_postgres_password]",
+    "secrets: [odoo_postgres_password]",
+    "secrets: [redis_password]",
+    "secrets: [middleware_database_url]",
+    "secrets: [middleware_database_url, redis_url, lead_automation_hmac]",
+    "secrets: [odoo_postgres_password, lead_automation_hmac]",
+    "- source: n8n_encryption_key",
+)
+for grant in expected_grants:
+    assert grant in compose
+top_level_secrets = compose.split("\nsecrets:\n", 1)[1]
+assert not re.search(r"(?m)^\s+(uid|gid|mode):", top_level_secrets)
 for image in ("POSTGRES_IMAGE", "REDIS_IMAGE", "ODOO_IMAGE", "N8N_IMAGE"):
     assert "@sha256:" in values[image]
 
@@ -80,3 +93,4 @@ for prohibited in ("@", "phone", "recording", "presigned", "object_storage", "pr
     assert prohibited not in serialized
 assert fixtures["environment"] == "staging"
 print("lead automation staging preparation gates: PASS")
+print("COMPOSE_SECRET_GRANT_GATE=PASS")

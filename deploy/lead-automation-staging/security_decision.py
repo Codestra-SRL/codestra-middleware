@@ -164,6 +164,9 @@ def validate_external(
         "immutable_reference",
         "created_at_utc",
         "updated_at_utc",
+        "signer_identity",
+        "signer_oidc_issuer",
+        "decision_signature_bundle",
     }
     if set(record) != required:
         errors.append("external record fields mismatch")
@@ -189,6 +192,12 @@ def validate_external(
         errors.append("edited external approval rejected")
     if not str(record["immutable_reference"]).startswith("github://"):
         errors.append("immutable audit reference required")
+    if not str(record["signer_identity"]).startswith("https://github.com/Codestra-SRL/"):
+        errors.append("invalid signer identity")
+    if record["signer_oidc_issuer"] != "https://token.actions.githubusercontent.com":
+        errors.append("invalid signer OIDC issuer")
+    if not str(record["decision_signature_bundle"]).endswith(".bundle.json"):
+        errors.append("Cosign decision signature bundle required")
     try:
         decided, expires = (
             timestamp(record["decision_timestamp_utc"]),

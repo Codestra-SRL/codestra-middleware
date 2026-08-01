@@ -74,13 +74,13 @@ jobs:
       - name: Validate host and in-container file-backed secret permissions
         run: |
           secret_dir="${RUNNER_TEMP}/lead-staging-secrets"
-          install -d -m 0700 "${secret_dir}"
+          sudo install -d -o root -g root -m 0700 "${secret_dir}"
           for name in middleware-postgres-password odoo-postgres-password redis-password middleware-database-url redis-url lead-automation-hmac-v2 n8n-encryption-key; do
-            printf 'synthetic-secret-probe-%s' "${name}" > "${secret_dir}/${name}"
-            chmod 0400 "${secret_dir}/${name}"
+            printf 'synthetic-secret-probe-%s' "${name}" > "${RUNNER_TEMP}/${name}"
+            sudo install -o root -g root -m 0400 "${RUNNER_TEMP}/${name}" "${secret_dir}/${name}"
           done
-          STAGING_SECRET_DIRECTORY="${secret_dir}" deploy/lead-automation-staging/scripts/validate-secret-permissions.sh
-          STAGING_SECRET_DIRECTORY="${secret_dir}" deploy/lead-automation-staging/scripts/probe-container-secrets.sh
+          sudo env STAGING_SECRET_DIRECTORY="${secret_dir}" POSTGRES_IMAGE="${POSTGRES_IMAGE}" deploy/lead-automation-staging/scripts/validate-secret-permissions.sh
+          sudo env STAGING_SECRET_DIRECTORY="${secret_dir}" POSTGRES_IMAGE="${POSTGRES_IMAGE}" deploy/lead-automation-staging/scripts/probe-container-secrets.sh
 
   n8n-readonly-startup:
     runs-on: ubuntu-latest
@@ -88,6 +88,19 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with: {persist-credentials: false}
       - run: deploy/lead-automation-staging/scripts/probe-n8n-storage.sh
+
+  default-profile-non-creation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Prove default path excludes profiled services
+        env:
+          MIDDLEWARE_IMAGE: codestra.invalid/middleware@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          ODOO_ADDONS_PATH: /tmp/odoo-addons
+          STAGING_SECRET_DIRECTORY: /tmp/staging-secrets
+          STAGING_BACKUP_DIRECTORY: /tmp/staging-backups
+        run: deploy/lead-automation-staging/scripts/test-default-profile.sh
 
   supply-chain-verification:
     runs-on: ubuntu-latest
@@ -107,6 +120,10 @@ jobs:
         env:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
+          cd deploy/lead-automation-staging/security/sbom
+          sha256sum -c SHA256SUMS
+          gzip -t -- *.cdx.json.gz
+          cd "${GITHUB_WORKSPACE}"
           python3 deploy/lead-automation-staging/verify_supply_chain.py
           set +e
           deploy/lead-automation-staging/scripts/verify-image-signatures.sh
@@ -127,6 +144,7 @@ jobs:
       - security-decision-validation
       - secret-permission-tests
       - n8n-readonly-startup
+      - default-profile-non-creation
       - supply-chain-verification
     runs-on: ubuntu-latest
     steps:
@@ -137,4 +155,5 @@ jobs:
           test "${{ needs.security-decision-validation.result }}" = success
           test "${{ needs.secret-permission-tests.result }}" = success
           test "${{ needs.n8n-readonly-startup.result }}" = success
+          test "${{ needs.default-profile-non-creation.result }}" = success
           test "${{ needs.supply-chain-verification.result }}" = success

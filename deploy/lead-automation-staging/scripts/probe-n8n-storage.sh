@@ -57,6 +57,8 @@ second="$(docker exec "${container}" sha256sum /home/node/.n8n/config | awk '{pr
 test "${first}" = "${second}"
 test -z "$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${container}" | grep -F synthetic-n8n-probe-key || true)"
 echo N8N_DISPOSABLE_STARTUP_GATE=PASS
+echo N8N_READ_ONLY_RUNTIME_GATE=PASS
+echo N8N_TMPFS_BOUNDARY_GATE=PASS
 echo N8N_RESTART_STATE_GATE=PASS
 echo N8N_ENCRYPTION_KEY_PERSISTENCE_GATE=PASS
 echo N8N_WORKFLOW_ACTIVE_COUNT=0

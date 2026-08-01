@@ -117,6 +117,9 @@ class DecisionTests(unittest.TestCase):
             "immutable_reference": "github://review/1",
             "created_at_utc": "2026-07-31T23:00:00Z",
             "updated_at_utc": "2026-07-31T23:00:00Z",
+            "signer_identity": "https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/security-owner-decision-sign.yml@refs/heads/main",
+            "signer_oidc_issuer": "https://token.actions.githubusercontent.com",
+            "decision_signature_bundle": "/evidence/security-decision.bundle.json",
         }
         self.assertTrue(validate_external(record, decision, "a" * 40, self.now))
         record["record_type"] = "security_risk_acceptance"
@@ -155,6 +158,9 @@ class DecisionTests(unittest.TestCase):
             "immutable_reference": "github://security/decision/1",
             "created_at_utc": decision["decision_timestamp_utc"],
             "updated_at_utc": decision["decision_timestamp_utc"],
+            "signer_identity": "https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/security-owner-decision-sign.yml@refs/heads/main",
+            "signer_oidc_issuer": "https://token.actions.githubusercontent.com",
+            "decision_signature_bundle": "/evidence/security-decision.bundle.json",
         }
         self.assertEqual(validate_external(record, decision, "a" * 40, self.now), [])
         for field, replacement in (
@@ -165,6 +171,10 @@ class DecisionTests(unittest.TestCase):
         ):
             changed = copy.deepcopy(record)
             changed[field] = replacement
+            self.assertTrue(validate_external(changed, decision, "a" * 40, self.now))
+        for field in ("signer_identity", "signer_oidc_issuer", "decision_signature_bundle"):
+            changed = copy.deepcopy(record)
+            changed[field] = "invalid"
             self.assertTrue(validate_external(changed, decision, "a" * 40, self.now))
 
 

@@ -19,6 +19,13 @@ ALLOWED = {
 DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
 
 policy = json.loads(POLICY.read_text())
+assert set(policy) == {"schema_version", "allowed_security_decision_signers", "images"}
+assert policy["schema_version"] == 1
+assert policy["allowed_security_decision_signers"]
+for signer in policy["allowed_security_decision_signers"]:
+    assert set(signer) == {"identity", "oidc_issuer"}
+    assert signer["identity"].startswith("https://github.com/Codestra-SRL/")
+    assert signer["oidc_issuer"] == "https://token.actions.githubusercontent.com"
 counts = json.loads((SECURITY / "vulnerability-counts.json").read_text())
 checksum_lines = (SECURITY / "sbom/SHA256SUMS").read_text().splitlines()
 listed = {line.split()[1]: line.split()[0] for line in checksum_lines if line.strip()}
@@ -82,3 +89,4 @@ print("SBOM_IMAGE_SUBJECT_GATE=PASS")
 print("UPSTREAM_DIGEST_IDENTITY_GATE=PASS")
 print("SBOM_ATTESTATION_GATE=NOT_AVAILABLE_WITH_APPROVED_ALTERNATE_CONTROLS")
 print("SUPPLY_CHAIN_SOURCE_POLICY_GATE=PASS")
+print("SECURITY_DECISION_SIGNER_ALLOWLIST_GATE=PASS")
