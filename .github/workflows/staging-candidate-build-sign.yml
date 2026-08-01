@@ -200,10 +200,12 @@ jobs:
       - name: Create provenance and immutable evidence manifest
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
         run: |
           set -euo pipefail
           digest="$(cat image-digest.txt)"
           digest_hex="${digest#sha256:}"
+          created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           jq -n \
             --arg digest "${digest_hex}" \
             --arg source "${SOURCE_SHA}" \
@@ -211,15 +213,33 @@ jobs:
             '{_type:"https://in-toto.io/Statement/v1",subject:[{name:"ghcr.io/codestra-srl/codestra-middleware",digest:{sha256:$digest}}],predicateType:"https://slsa.dev/provenance/v1",predicate:{buildDefinition:{buildType:"https://codestra.example/staging-candidate/v1",externalParameters:{source_sha:$source},resolvedDependencies:[{uri:"git+https://github.com/Codestra-SRL/codestra-middleware",digest:{gitCommit:$source}}]},runDetails:{builder:{id:"https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/staging-candidate-build-sign.yml@refs/heads/main"},metadata:{invocationId:$invocation}}}}' \
             > provenance.json
           jq -n \
-            --arg image "${IMAGE_REPOSITORY}@${digest}" \
-            --arg source "${SOURCE_SHA}" \
+            --arg schema "https://codestra.internal/schemas/candidate-image-manifest.v1.json" \
+            --arg company "Codestra LLC" \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --argjson pr_number "${PR_NUMBER}" \
+            --arg head_sha "${SOURCE_SHA}" \
+            --arg image_repository "${IMAGE_REPOSITORY}" \
+            --arg image_digest "${digest}" \
             --arg sbom "$(sha256sum candidate.cdx.json | awk '{print $1}')" \
             --arg trivy "$(sha256sum trivy.json | awk '{print $1}')" \
             --arg grype "$(sha256sum grype.json | awk '{print $1}')" \
             --arg matrix "$(sha256sum vulnerability-matrix.csv | awk '{print $1}')" \
+            --arg summary "$(sha256sum vulnerability-summary.json | awk '{print $1}')" \
             --arg provenance "$(sha256sum provenance.json | awk '{print $1}')" \
-            '{scope:"server_a_isolated_staging_candidate",production_release_provenance_assigned:false,image:$image,source_sha:$source,sbom_sha256:$sbom,trivy_sha256:$trivy,grype_sha256:$grype,vulnerability_matrix_sha256:$matrix,provenance_sha256:$provenance}' \
+            --arg build_run_id "${GITHUB_RUN_ID}" \
+            --arg build_run_attempt "${GITHUB_RUN_ATTEMPT}" \
+            --arg created_utc "${created}" \
+            '{"$schema":$schema,manifest_version:1,company:$company,repository:$repository,pr_number:$pr_number,head_sha:$head_sha,image_repository:$image_repository,image_digest:$image_digest,candidate_scope:"server_a_isolated_staging_candidate",production_release_provenance_assigned:false,sbom_sha256:$sbom,trivy_sha256:$trivy,grype_sha256:$grype,vulnerability_matrix_sha256:$matrix,vulnerability_summary_sha256:$summary,provenance_sha256:$provenance,build_run_id:$build_run_id,build_run_attempt:$build_run_attempt,created_utc:$created_utc}' \
             > candidate-image-manifest.json
+          python3 scripts/validate_candidate_image_manifest.py \
+            --manifest candidate-image-manifest.json \
+            --schema schemas/candidate-image-manifest.v1.schema.json \
+            --expected-company "Codestra LLC" \
+            --expected-repository "${GITHUB_REPOSITORY}" \
+            --expected-pr-number "${PR_NUMBER}" \
+            --expected-head-sha "${SOURCE_SHA}" \
+            --expected-image-repository "${IMAGE_REPOSITORY}" \
+            --expected-image-digest "${digest}"
           jq -e --arg source "${SOURCE_SHA}" '.Config.Labels["org.opencontainers.image.source"] == "https://github.com/Codestra-SRL/codestra-middleware" and .Config.Labels["org.opencontainers.image.revision"] == $source' \
             < <(docker image inspect "${IMAGE_REPOSITORY}:$(cat candidate-tag.txt)" | jq '.[0]')
           sha256sum candidate.cdx.json trivy.json trivy-version.txt grype.json vulnerability-matrix.csv vulnerability-summary.json provenance.json candidate-image-manifest.json image-digest.txt candidate-tag.txt reconcile-helper.sha256 > SHA256SUMS
@@ -245,8 +265,12 @@ jobs:
             '.ArtifactName == $image and (.Results | type == "array")' \
             trivy.json >/dev/null
           jq -e --arg source "${{ inputs.source_sha }}" \
-            --arg image "${IMAGE_AT_DIGEST}" \
-            '.source_sha == $source and .image == $image' \
+            --arg digest "$(cat image-digest.txt)" \
+            '.repository == "Codestra-SRL/codestra-middleware" and
+             .pr_number == 68 and
+             .head_sha == $source and
+             .image_repository == "ghcr.io/codestra-srl/codestra-middleware" and
+             .image_digest == $digest' \
             candidate-image-manifest.json >/dev/null
           sha256sum -c SHA256SUMS
 
@@ -324,6 +348,15 @@ jobs:
         run: |
           set -euo pipefail
           matrix_sha="$(sha256sum candidate/vulnerability-matrix.csv | awk '{print $1}')"
+          python3 scripts/validate_candidate_image_manifest.py \
+            --manifest candidate/candidate-image-manifest.json \
+            --schema schemas/candidate-image-manifest.v1.schema.json \
+            --expected-company "Codestra LLC" \
+            --expected-repository "${GITHUB_REPOSITORY}" \
+            --expected-pr-number 68 \
+            --expected-head-sha "${SOURCE_SHA}" \
+            --expected-image-repository "${IMAGE_REPOSITORY}" \
+            --expected-image-digest "${IMAGE_DIGEST}"
           now="$(date -u +%s)"
           issued="$(date -u -d "$(jq -r .issued_utc decision/security-owner-decision.json)" +%s)"
           expires="$(date -u -d "$(jq -r .expires_utc decision/security-owner-decision.json)" +%s)"
