@@ -121,4 +121,3 @@ def test_security_decision_path_validates_manifest_first() -> None:
     validator = workflow.index("python3 scripts/validate_candidate_image_manifest.py", sign)
     decision_jq = workflow.index("jq -e", validator)
     assert validator < decision_jq
-
