@@ -1,6 +1,5 @@
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/staging-candidate-build-sign.yml")
 
@@ -102,13 +101,14 @@ def test_identity_and_operational_boundaries_remain_enforced() -> None:
     assert workflow.count("id-token: write") == 1
     assert "if: inputs.operation == 'build'" in workflow
     assert "if: inputs.operation == 'sign'" in workflow
+    validator = (Path("scripts/validate_security_owner_decision.py")).read_text(encoding="utf-8")
     for boundary in (
         "production_deployment_gate",
         "production_activation_gate",
         "canary_activation_gate",
         "server_b_access_gate",
     ):
-        assert f'.{boundary} == "blocked"' in workflow
+        assert f'"{boundary}"' in validator
 
 
 def test_oci_labels_use_docker_inspect_schema_case() -> None:

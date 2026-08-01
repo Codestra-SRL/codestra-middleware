@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = ROOT / "scripts/validate_candidate_image_manifest.py"
@@ -119,5 +118,5 @@ def test_security_decision_path_validates_manifest_first() -> None:
     workflow = (ROOT / ".github/workflows/staging-candidate-build-sign.yml").read_text()
     sign = workflow.index("- name: Verify Security Owner decision binding")
     validator = workflow.index("python3 scripts/validate_candidate_image_manifest.py", sign)
-    decision_jq = workflow.index("jq -e", validator)
-    assert validator < decision_jq
+    decision_validator = workflow.index("python3 scripts/validate_security_owner_decision.py", validator)
+    assert validator < decision_validator
