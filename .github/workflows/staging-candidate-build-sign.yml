@@ -1,0 +1,332 @@
+name: Staging candidate build and sign
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Build evidence or sign an approved candidate
+        required: true
+        type: choice
+        options: [build, sign]
+      pr_number:
+        description: Pull request number
+        required: true
+        type: string
+      source_sha:
+        description: Exact 40-character reviewed PR head
+        required: true
+        type: string
+      image_digest:
+        description: Exact candidate digest (sign operation only)
+        required: false
+        type: string
+      evidence_run_id:
+        description: Exact build-evidence run (sign operation only)
+        required: false
+        type: string
+      decision_artifact:
+        description: Run-scoped unsigned Security Owner decision artifact
+        required: false
+        type: string
+      decision_run_id:
+        description: Exact run containing the unsigned Security Owner decision
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-candidate-${{ inputs.operation }}-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/codestra-srl/codestra-middleware
+  EXPECTED_REPOSITORY: Codestra-SRL/codestra-middleware
+  COSIGN_VERSION: v3.1.2
+  COSIGN_SHA256: f7622ed3cf22e55e1ae6377c080979ff77a22da9981c11df222a2e444991e7cf
+
+jobs:
+  build:
+    if: inputs.operation == 'build' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: read
+    outputs:
+      image_digest: ${{ steps.identity.outputs.image_digest }}
+    steps:
+      - name: Validate exact PR identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REPOSITORY}" = "${EXPECTED_REPOSITORY}"
+          test "${GITHUB_REF}" = refs/heads/main
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .state)" = open
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "${SOURCE_SHA}"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.ref)" = main
+
+      - name: Check out exact candidate source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prove checkout and candidate-only identity
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+          test -f Dockerfile
+          ! git status --porcelain | grep .
+
+      - name: Build and publish staging-only candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          candidate_tag="candidate-pr${{ inputs.pr_number }}-${SOURCE_SHA}"
+          echo "${GH_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          docker build \
+            --build-arg "VCS_REF=${SOURCE_SHA}" \
+            --build-arg "BUILD_REVISION=${SOURCE_SHA}" \
+            --build-arg "BUILD_CREATED=${created}" \
+            --build-arg "BUILD_VERSION=${candidate_tag}" \
+            --tag "${IMAGE_REPOSITORY}:${candidate_tag}" .
+          docker push "${IMAGE_REPOSITORY}:${candidate_tag}"
+          digest="$(docker buildx imagetools inspect "${IMAGE_REPOSITORY}:${candidate_tag}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf '%s' "${digest}" > image-digest.txt
+          printf '%s' "${candidate_tag}" > candidate-tag.txt
+
+      - name: Resolve immutable candidate identity
+        id: identity
+        run: |
+          set -euo pipefail
+          digest="$(cat image-digest.txt)"
+          echo "image_digest=${digest}" >> "${GITHUB_OUTPUT}"
+          echo "IMAGE_AT_DIGEST=${IMAGE_REPOSITORY}@${digest}" >> "${GITHUB_ENV}"
+
+      - name: Generate exact-digest CycloneDX SBOM
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b
+        with:
+          image: ${{ env.IMAGE_AT_DIGEST }}
+          format: cyclonedx-json
+          output-file: candidate.cdx.json
+          upload-artifact: false
+
+      - name: Run Grype without suppressing findings
+        uses: anchore/scan-action@f6601287cdb1efc985d6b765bbf99cb4c0ac29d8
+        with:
+          image: ${{ env.IMAGE_AT_DIGEST }}
+          output-format: json
+          output-file: grype.json
+          fail-build: false
+
+      - name: Run Trivy without suppressing findings
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
+        with:
+          image-ref: ${{ env.IMAGE_AT_DIGEST }}
+          format: json
+          output: trivy.json
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+          ignore-unfixed: false
+
+      - name: Reconcile scanner findings
+        run: python3 scripts/reconcile_candidate_vulnerabilities.py --trivy trivy.json --grype grype.json --output vulnerability-matrix.csv --summary vulnerability-summary.json
+
+      - name: Create provenance and immutable evidence manifest
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          digest="$(cat image-digest.txt)"
+          digest_hex="${digest#sha256:}"
+          jq -n \
+            --arg digest "${digest_hex}" \
+            --arg source "${SOURCE_SHA}" \
+            --arg invocation "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}" \
+            '{_type:"https://in-toto.io/Statement/v1",subject:[{name:"ghcr.io/codestra-srl/codestra-middleware",digest:{sha256:$digest}}],predicateType:"https://slsa.dev/provenance/v1",predicate:{buildDefinition:{buildType:"https://codestra.example/staging-candidate/v1",externalParameters:{source_sha:$source},resolvedDependencies:[{uri:"git+https://github.com/Codestra-SRL/codestra-middleware",digest:{gitCommit:$source}}]},runDetails:{builder:{id:"https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/staging-candidate-build-sign.yml@refs/heads/main"},metadata:{invocationId:$invocation}}}}' \
+            > provenance.json
+          jq -n \
+            --arg image "${IMAGE_REPOSITORY}@${digest}" \
+            --arg source "${SOURCE_SHA}" \
+            --arg sbom "$(sha256sum candidate.cdx.json | awk '{print $1}')" \
+            --arg trivy "$(sha256sum trivy.json | awk '{print $1}')" \
+            --arg grype "$(sha256sum grype.json | awk '{print $1}')" \
+            --arg matrix "$(sha256sum vulnerability-matrix.csv | awk '{print $1}')" \
+            --arg provenance "$(sha256sum provenance.json | awk '{print $1}')" \
+            '{scope:"server_a_isolated_staging_candidate",production_release_provenance_assigned:false,image:$image,source_sha:$source,sbom_sha256:$sbom,trivy_sha256:$trivy,grype_sha256:$grype,vulnerability_matrix_sha256:$matrix,provenance_sha256:$provenance}' \
+            > candidate-image-manifest.json
+          jq -e --arg source "${SOURCE_SHA}" '.config.Labels["org.opencontainers.image.source"] == "https://github.com/Codestra-SRL/codestra-middleware" and .config.Labels["org.opencontainers.image.revision"] == $source' \
+            < <(docker image inspect "${IMAGE_REPOSITORY}:$(cat candidate-tag.txt)" | jq '.[0]')
+          sha256sum candidate.cdx.json trivy.json grype.json vulnerability-matrix.csv vulnerability-summary.json provenance.json candidate-image-manifest.json image-digest.txt candidate-tag.txt > SHA256SUMS
+
+      - name: Upload exact run-scoped candidate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr68-candidate-evidence-${{ inputs.source_sha }}
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+          path: |
+            candidate.cdx.json
+            trivy.json
+            grype.json
+            vulnerability-matrix.csv
+            vulnerability-summary.json
+            provenance.json
+            candidate-image-manifest.json
+            image-digest.txt
+            candidate-tag.txt
+            SHA256SUMS
+
+  sign:
+    if: inputs.operation == 'sign' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: security-owner-staging-candidate
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - name: Check out trusted workflow source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate immutable sign inputs
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          EVIDENCE_RUN_ID: ${{ inputs.evidence_run_id }}
+          DECISION_ARTIFACT: ${{ inputs.decision_artifact }}
+          DECISION_RUN_ID: ${{ inputs.decision_run_id }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REPOSITORY}" = "${EXPECTED_REPOSITORY}"
+          test "${GITHUB_REF}" = refs/heads/main
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "${EVIDENCE_RUN_ID}" =~ ^[0-9]+$ ]]
+          [[ "${DECISION_RUN_ID}" =~ ^[0-9]+$ ]]
+          [[ "${DECISION_ARTIFACT}" =~ ^pr68-security-owner-decision-[0-9a-f]{40}$ ]]
+
+      - name: Download exact candidate evidence and unsigned owner decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir candidate decision
+          gh run download "${{ inputs.evidence_run_id }}" --repo "${GITHUB_REPOSITORY}" --name "pr68-candidate-evidence-${{ inputs.source_sha }}" --dir candidate
+          gh run download "${{ inputs.decision_run_id }}" --repo "${GITHUB_REPOSITORY}" --name "${{ inputs.decision_artifact }}" --dir decision
+          (cd candidate && sha256sum -c SHA256SUMS)
+          test -s decision/security-owner-decision.json
+
+      - name: Verify Security Owner decision binding
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          set -euo pipefail
+          matrix_sha="$(sha256sum candidate/vulnerability-matrix.csv | awk '{print $1}')"
+          now="$(date -u +%s)"
+          issued="$(date -u -d "$(jq -r .issued_utc decision/security-owner-decision.json)" +%s)"
+          expires="$(date -u -d "$(jq -r .expires_utc decision/security-owner-decision.json)" +%s)"
+          jq -e \
+            --arg source "${SOURCE_SHA}" \
+            --arg digest "${IMAGE_DIGEST}" \
+            --arg matrix "${matrix_sha}" \
+            --arg identity "https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/staging-candidate-build-sign.yml@refs/heads/main" '
+              .company == "Codestra LLC" and
+              .repository == "Codestra-SRL/codestra-middleware" and
+              .pr_number == 68 and
+              .pr_head_sha == $source and
+              .image_repository == "ghcr.io/codestra-srl/codestra-middleware" and
+              .image_digest == $digest and
+              .matrix_sha256 == $matrix and
+              .approved_scope == "server_a_isolated_staging" and
+              .production_deployment_gate == "blocked" and
+              .production_activation_gate == "blocked" and
+              .canary_activation_gate == "blocked" and
+              .server_b_access_gate == "blocked" and
+              .customer_data_gate == "blocked" and
+              .oidc_issuer == "https://token.actions.githubusercontent.com" and
+              .signer_identity == $identity and
+              (.authority_reference | type == "string" and length > 0) and
+              (.accepted_vulnerabilities | type == "array" and length == 10) and
+              all(.accepted_vulnerabilities[];
+                .image_digest == $digest and
+                .source_sha == $source and
+                (.vulnerability_id | type == "string" and length > 0) and
+                (.package | type == "string" and length > 0) and
+                (.compensating_controls | type == "array" and length > 0) and
+                (.remediation_owner | type == "string" and length > 0) and
+                (.remediation_deadline | type == "string" and length > 0) and
+                (.exception_expires_utc | type == "string" and length > 0) and
+                (.revocation_conditions | type == "array" and length > 0))
+            ' decision/security-owner-decision.json
+          test "${issued}" -le "${now}"
+          test "${expires}" -gt "${now}"
+
+      - name: Install checksum-pinned Cosign
+        run: |
+          set -euo pipefail
+          curl --fail --location --proto '=https' --tlsv1.2 --output "${RUNNER_TEMP}/cosign" "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+          echo "${COSIGN_SHA256}  ${RUNNER_TEMP}/cosign" | sha256sum -c -
+          chmod 0755 "${RUNNER_TEMP}/cosign"
+
+      - name: Sign decision, candidate digest, SBOM and provenance
+        env:
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          set -euo pipefail
+          subject="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          "${RUNNER_TEMP}/cosign" sign-blob --yes --bundle decision/security-owner-decision.sigstore.json decision/security-owner-decision.json
+          "${RUNNER_TEMP}/cosign" sign --yes --bundle candidate/image-signature.sigstore.json "${subject}"
+          "${RUNNER_TEMP}/cosign" attest --yes --type cyclonedx --predicate candidate/candidate.cdx.json --bundle candidate/sbom-attestation.sigstore.json "${subject}"
+          "${RUNNER_TEMP}/cosign" attest --yes --type slsaprovenance --predicate candidate/provenance.json --bundle candidate/provenance-attestation.sigstore.json "${subject}"
+
+      - name: Independently verify exact workflow identity
+        env:
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          set -euo pipefail
+          subject="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          identity="https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/staging-candidate-build-sign.yml@refs/heads/main"
+          issuer="https://token.actions.githubusercontent.com"
+          "${RUNNER_TEMP}/cosign" verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${subject}"
+          "${RUNNER_TEMP}/cosign" verify-attestation --type cyclonedx --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${subject}"
+          "${RUNNER_TEMP}/cosign" verify-attestation --type slsaprovenance --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${subject}"
+          sha256sum decision/security-owner-decision.json decision/security-owner-decision.sigstore.json candidate/*.sigstore.json > signing-SHA256SUMS
+
+      - name: Upload signing bundles
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr68-candidate-signing-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 90
+          path: |
+            decision/security-owner-decision.json
+            decision/security-owner-decision.sigstore.json
+            candidate/image-signature.sigstore.json
+            candidate/sbom-attestation.sigstore.json
+            candidate/provenance-attestation.sigstore.json
+            signing-SHA256SUMS
