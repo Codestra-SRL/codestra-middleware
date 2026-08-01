@@ -5,6 +5,7 @@ from app.core.lead_automation import (
     Conflict,
     LeadAutomationError,
     LeadAutomationService,
+    TenantScope,
 )
 from app.core.lead_callback_auth import CallbackAuthenticationError, verify_callback
 
@@ -81,7 +82,7 @@ async def receive_result(request: Request):
     except CallbackAuthenticationError as exc:
         raise HTTPException(401, str(exc)) from exc
     try:
-        return service.receive_result(body)
+        return service.receive_result(body, TenantScope.from_payload(body))
     except Conflict as exc:
         raise HTTPException(409, str(exc)) from exc
     except LeadAutomationError as exc:
@@ -89,8 +90,14 @@ async def receive_result(request: Request):
 
 
 @router.get("/api/v1/lead-automation/events/{automation_event_id}")
-def status(automation_event_id: str):
+def status(
+    automation_event_id: str,
+    environment: str = Header(alias="X-Codestra-Environment"),
+    business_unit_key: str = Header(alias="X-Codestra-Business-Unit"),
+    campaign_key: str = Header(alias="X-Codestra-Campaign"),
+):
     try:
-        return service.status(service._find(automation_event_id))
+        scope = TenantScope(environment, business_unit_key, campaign_key)
+        return service.status(service._find(automation_event_id, scope))
     except LeadAutomationError as exc:
         raise HTTPException(404, str(exc)) from exc
