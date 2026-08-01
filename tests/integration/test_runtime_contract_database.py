@@ -214,8 +214,13 @@ async def _scenario(database_url):
             )
             db.add(failure_event)
             await db.flush()
-            db.add(OutboxEvent(id=failure_outbox_id, integration_event_id=failure_event.id,
-                               topic="event.accepted", payload={}, correlation_id=correlation_id))
+            db.add(OutboxEvent(
+                id=failure_outbox_id,
+                integration_event_id=failure_event.id,
+                topic="event.accepted",
+                payload={"event_id": failure_event_id},
+                correlation_id=correlation_id,
+            ))
             failure_execution = N8nExecution(
                 execution_id="execution-failure", event_id=failure_event_id,
                 workflow_key="N8-FAILURE", workflow_version="1.0",

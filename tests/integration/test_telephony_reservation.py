@@ -23,7 +23,7 @@ async def _scenario(database_url: str):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with factory() as session:
-            await session.execute(text("TRUNCATE telephony_extension_reservation"))
+            await session.execute(text("TRUNCATE telephony_extension_reservation CASCADE"))
             pool_id = await session.scalar(text(
                 "SELECT id FROM telephony_extension_pool "
                 "WHERE code='transportation-intro-sales'"

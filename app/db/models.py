@@ -41,7 +41,7 @@ class IntegrationEvent(Base):
     source_system: Mapped[str] = mapped_column(String(50), nullable=False, default="vicidial")
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
     environment: Mapped[str] = mapped_column(String(24), nullable=False, default="staging")
-    originating_odoo_outbox_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    originating_odoo_outbox_id: Mapped[str | None] = mapped_column(String(128))
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
@@ -57,6 +57,10 @@ class IntegrationEvent(Base):
         UniqueConstraint(
             "source_system", "originating_odoo_outbox_id",
             name="uq_integration_event_originating_odoo_outbox",
+        ),
+        CheckConstraint(
+            "source_system <> 'odoo' OR originating_odoo_outbox_id IS NOT NULL",
+            name="ck_integration_event_odoo_outbox_binding",
         ),
     )
 
@@ -335,9 +339,9 @@ class EventInbox(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    integration_event_id: Mapped[int] = mapped_column(
+    integration_event_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("integration_event.id", ondelete="RESTRICT"),
-        nullable=False, unique=True,
+        unique=True,
     )
     event_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     source: Mapped[str] = mapped_column(String(32))
@@ -348,6 +352,12 @@ class EventInbox(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    __table_args__ = (
+        CheckConstraint(
+            "source <> 'odoo' OR integration_event_id IS NOT NULL",
+            name="ck_event_inbox_odoo_event_binding",
+        ),
+    )
 
 
 class OutboxEvent(Base):
@@ -355,9 +365,9 @@ class OutboxEvent(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    integration_event_id: Mapped[int] = mapped_column(
+    integration_event_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("integration_event.id", ondelete="RESTRICT"),
-        nullable=False, index=True,
+        index=True,
     )
     topic: Mapped[str] = mapped_column(String(128))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
@@ -373,6 +383,12 @@ class OutboxEvent(Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "topic <> 'event.accepted' OR integration_event_id IS NOT NULL",
+            name="ck_outbox_event_accepted_event_binding",
+        ),
     )
 
 
