@@ -9,16 +9,24 @@ jq -e . "${policy}" >/dev/null
 
 decision_status="$(jq -r .status "${decision}")"
 pending=0
-while IFS=$'\t' read -r name digest method identity issuer; do
+while IFS=$'\t' read -r name digest method identity issuer attestation_type; do
   case "${name}" in
     middleware) reference="docker.io/codestra/lead-staging-middleware@${digest}" ;;
     postgres|redis|odoo) reference="docker.io/library/${name}@${digest}" ;;
     n8n) reference="docker.io/n8nio/n8n@${digest}" ;;
     *) echo "UNKNOWN_IMAGE=${name}" >&2; exit 1 ;;
   esac
-  if cosign verify --certificate-identity-regexp='.*' --certificate-oidc-issuer-regexp='.*' "${reference}" >/dev/null 2>&1; then
-    echo "IMAGE_SIGNATURE_${name}=PASS"
-    continue
+  if [[ -n "${identity}" && -n "${issuer}" ]]; then
+    if cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${reference}" >/dev/null 2>&1; then
+      echo "IMAGE_SIGNATURE_${name}=PASS"
+      if [[ "${attestation_type}" == cyclonedx ]]; then
+        cosign verify-attestation --type cyclonedx \
+          --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" \
+          "${reference}" >/dev/null
+        echo "CYCLONEDX_ATTESTATION_${name}=PASS"
+      fi
+      continue
+    fi
   fi
   echo "IMAGE_SIGNATURE_${name}=NOT_AVAILABLE"
   if [[ "${name}" == middleware ]]; then
@@ -29,7 +37,7 @@ while IFS=$'\t' read -r name digest method identity issuer; do
   else
     pending=1
   fi
-done < <(jq -r '.images[] | [.image_name,.image_digest,.verification_method,(.cosign_certificate_identity//""),(.cosign_oidc_issuer//"")] | @tsv' "${policy}")
+done < <(jq -r '.images[] | [.image_name,.image_digest,.verification_method,(.cosign_certificate_identity//""),(.cosign_oidc_issuer//""),(.attestation_type//"")] | @tsv' "${policy}")
 
 if [[ "${decision_status}" == approved_for_staging ]]; then
   python3 "${root}/security_decision.py"
@@ -53,6 +61,20 @@ if errors:
     raise SystemExit("\n".join(errors))
 print("SECURITY_DECISION_EXTERNAL_APPROVAL_SEPARATION_GATE=PASS")
 PY
+  signer_identity="$(jq -r .signer_identity "${SECURITY_APPROVAL_RECORD}")"
+  signer_issuer="$(jq -r .signer_oidc_issuer "${SECURITY_APPROVAL_RECORD}")"
+  signature_bundle="$(jq -r .decision_signature_bundle "${SECURITY_APPROVAL_RECORD}")"
+  jq -e --arg identity "${signer_identity}" --arg issuer "${signer_issuer}" \
+    '.allowed_security_decision_signers[] | select(.identity == $identity and .oidc_issuer == $issuer)' \
+    "${policy}" >/dev/null
+  test -f "${signature_bundle}"
+  cosign verify-blob --bundle "${signature_bundle}" \
+    --certificate-identity "${signer_identity}" \
+    --certificate-oidc-issuer "${signer_issuer}" \
+    "${SECURITY_APPROVAL_RECORD}" >/dev/null
+  echo SECURITY_DECISION_SIGNATURE_GATE=PASS
+  echo SECURITY_DECISION_EXACT_HEAD_GATE=PASS
+  echo SECURITY_DECISION_EXPIRY_GATE=PASS
 else
   echo SECURITY_OWNER_ACCEPTANCE_GATE=PENDING
   pending=1

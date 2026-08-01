@@ -7,7 +7,7 @@ test -d "${STAGING_SECRET_DIRECTORY}"
 test ! -L "${STAGING_SECRET_DIRECTORY}"
 test "$(stat -c '%a' "${STAGING_SECRET_DIRECTORY}")" = 700
 owner="$(stat -c '%u' "${STAGING_SECRET_DIRECTORY}")"
-test "${owner}" = 0 || test "${owner}" = "$(id -u)"
+test "${owner}" = 0
 root="$(realpath -e "${STAGING_SECRET_DIRECTORY}")"
 
 files=(middleware-postgres-password odoo-postgres-password redis-password middleware-database-url redis-url lead-automation-hmac-v2 n8n-encryption-key)
@@ -17,13 +17,15 @@ for name in "${files[@]}"; do
   test ! -L "${path}"
   test "$(stat -c '%h' "${path}")" = 1
   mode="$(stat -c '%a' "${path}")"
-  test "${mode}" = 400 || test "${mode}" = 600
+  test "${mode}" = 400
   owner="$(stat -c '%u' "${path}")"
-  test "${owner}" = 0 || test "${owner}" = "$(id -u)"
+  test "${owner}" = 0
   test -s "${path}"
   resolved="$(realpath -e "${path}")"
   case "${resolved}" in "${root}"/*) ;; *) echo "secret escaped approved directory" >&2; exit 1;; esac
 done
+echo HOST_SECRET_PERMISSION_GATE=PASS
+echo HOST_SECRET_PATH_CONTAINMENT_GATE=PASS
 echo HOST_SECRET_DIRECTORY_GATE=PASS
 echo HOST_SECRET_FILE_MODE_GATE=PASS
 echo HOST_SECRET_FILE_OWNER_GATE=PASS

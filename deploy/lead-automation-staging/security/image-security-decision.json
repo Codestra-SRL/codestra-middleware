@@ -4,7 +4,7 @@
   "decision_subject": "lead-automation-server-a-isolated-staging-images",
   "middleware_source_sha": "1d7c72594536d4cd0c47f5e437a6d7e3a42756f4",
   "odoo_source_sha": "b0c338cb871c54db93c06cef07fdc807b9fda7e0",
-  "image_manifest_sha256": "d78f348e3b119b9bbd6fd8655f7aa8e90562d57e05a435fb6d51f383b895ece9",
+  "image_manifest_sha256": "8c94b22ce45a188ff1efe66aa2564cb1cbed192cd055033167ab6f94c0dbc179",
   "production_deployment_gate": "blocked",
   "production_activation_gate": "blocked",
   "server_b_access_gate": "blocked",

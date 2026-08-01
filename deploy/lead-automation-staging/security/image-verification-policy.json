@@ -1,5 +1,11 @@
 {
   "schema_version": 1,
+  "allowed_security_decision_signers": [
+    {
+      "identity": "https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/security-owner-decision-sign.yml@refs/heads/main",
+      "oidc_issuer": "https://token.actions.githubusercontent.com"
+    }
+  ],
   "images": [
     {
       "image_name": "middleware",
