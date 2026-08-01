@@ -4,18 +4,29 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 import json
-from pathlib import Path
 import re
-from typing import Any, cast
-
+from datetime import datetime
+from pathlib import Path
+from typing import Any, NoReturn, cast
 
 PLACEHOLDER = re.compile(r"(?:<[^>]+>|\b(?:unknown|placeholder|tbd|todo)\b)", re.IGNORECASE)
 
 
-def fail(message: str) -> None:
-    raise SystemExit(f"candidate image manifest validation failed: {message}")
+def fail(message: str) -> NoReturn:
+    print(json.dumps({
+        "candidate_manifest_schema_gate": "FAIL",
+        "production_activation_gate": "blocked",
+        "production_deployment_gate": "blocked",
+        "reason": message,
+        "security_owner_acceptance_present": False,
+    }, sort_keys=True, separators=(",", ":")))
+    raise SystemExit(1)
+
+
+class StructuredArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> NoReturn:
+        fail(f"invalid arguments: {message}")
 
 
 def load_object(path: Path, label: str) -> dict[str, Any]:
@@ -61,7 +72,6 @@ def validate(args: argparse.Namespace) -> None:
                 fail(f"{name} does not match schema pattern")
 
     exact = {
-        "company": args.expected_company,
         "repository": args.expected_repository,
         "pr_number": args.expected_pr_number,
         "head_sha": args.expected_head_sha,
@@ -73,6 +83,16 @@ def validate(args: argparse.Namespace) -> None:
             fail(f"{name} does not match the expected build identity")
     if "@sha256:" in manifest["image_repository"] or ":" in manifest["image_repository"].split("/")[-1]:
         fail("image_repository must not contain a tag or digest")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, dict) or set(artifacts) != {"sbom", "provenance", "trivy", "grype"}:
+        fail("artifact bindings are incomplete")
+    for name, artifact in cast(dict[str, Any], artifacts).items():
+        if not isinstance(artifact, dict) or set(artifact) != {"reference", "sha256"}:
+            fail(f"{name} artifact binding is malformed")
+        if not re.fullmatch(r"[A-Za-z0-9._/-]+", str(artifact["reference"])):
+            fail(f"{name} artifact reference is malformed")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(artifact["sha256"])):
+            fail(f"{name} artifact digest is malformed")
     try:
         datetime.fromisoformat(manifest["created_utc"].removesuffix("Z") + "+00:00")
     except ValueError as exc:
@@ -80,10 +100,9 @@ def validate(args: argparse.Namespace) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = StructuredArgumentParser()
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--schema", type=Path, required=True)
-    parser.add_argument("--expected-company", required=True)
     parser.add_argument("--expected-repository", required=True)
     parser.add_argument("--expected-pr-number", type=int, required=True)
     parser.add_argument("--expected-head-sha", required=True)

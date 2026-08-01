@@ -1,6 +1,5 @@
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/staging-candidate-build-sign.yml")
 
@@ -59,35 +58,33 @@ def test_reports_and_evidence_fail_closed_before_upload() -> None:
     assert 'jq -e . "${json_file}"' in workflow[validation:upload]
     assert "sha256sum -c SHA256SUMS" in workflow[validation:upload]
     assert "Reconcile scanner findings" in workflow[:validation]
-    schema_validation = workflow.index("python3 scripts/validate_candidate_image_manifest.py")
+    schema_validation = workflow.index('python3 "${RUNNER_TEMP}/validate_candidate_image_manifest.py"')
     assert schema_validation < validation < upload
 
 
 def test_candidate_manifest_has_explicit_immutable_bindings() -> None:
     workflow = workflow_text()
-    generation = workflow.index("- name: Create provenance and immutable evidence manifest")
+    generation = workflow.index("- name: Generate exact candidate manifest")
     validation = workflow.index("- name: Validate complete candidate evidence")
     block = workflow[generation:validation]
     for binding in (
-        'company:$company',
-        'repository:$repository',
-        'pr_number:$pr_number',
-        'head_sha:$head_sha',
-        'image_repository:$image_repository',
-        'image_digest:$image_digest',
-        'vulnerability_summary_sha256:$summary',
-        'build_run_id:$build_run_id',
-        'build_run_attempt:$build_run_attempt',
+        "CANDIDATE_REPOSITORY",
+        "CANDIDATE_PR_NUMBER",
+        "CANDIDATE_HEAD_SHA",
+        "CANDIDATE_IMAGE_REPOSITORY",
+        "CANDIDATE_IMAGE_DIGEST",
+        "CANDIDATE_WORKFLOW_RUN_ID",
+        "CANDIDATE_WORKFLOW_RUN_ATTEMPT",
     ):
         assert binding in block
-    assert '--argjson pr_number "${PR_NUMBER}"' in block
-    assert "${IMAGE_REPOSITORY}@${digest}" not in block
+    assert '"${RUNNER_TEMP}/generate_candidate_image_manifest.py"' in block
+    assert '"${RUNNER_TEMP}/generate_image_security_decision_request.py"' in block
 
 
 def test_reconciliation_helper_is_staged_from_protected_workflow_revision() -> None:
     workflow = workflow_text()
     trusted_checkout = workflow.index("- name: Check out trusted reconciliation helper")
-    trusted_stage = workflow.index("- name: Stage trusted reconciliation helper outside candidate context")
+    trusted_stage = workflow.index("- name: Stage trusted evidence helpers outside candidate context")
     candidate_checkout = workflow.index("- name: Check out exact candidate source")
     reconciliation = workflow.index("- name: Reconcile scanner findings")
     assert trusted_checkout < trusted_stage < candidate_checkout < reconciliation
