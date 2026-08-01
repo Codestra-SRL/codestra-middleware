@@ -181,6 +181,10 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    ai_platform_enabled: bool = False
+    ai_job_submission_enabled: bool = False
+    ai_result_processing_enabled: bool = False
+    ai_action_decision_enabled: bool = False
 
     def validate_safety(self) -> None:
         broad_event_switches = (

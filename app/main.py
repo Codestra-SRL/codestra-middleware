@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from app.api.v1.automation import router as automation_router
+from app.api.v1.ai_jobs import router as ai_jobs_router
 from app.api.v1.campaign_search import router as campaign_search_router
 from app.api.v1.commands import router as commands_router
 from app.api.v1.control import router as control_router
@@ -30,6 +31,7 @@ app = FastAPI(title="Codestra Middleware", version="0.2.0")
 app.include_router(events_router)
 app.include_router(control_router)
 app.include_router(automation_router)
+app.include_router(ai_jobs_router)
 app.include_router(reports_router)
 app.include_router(operations_router)
 app.include_router(lead_reconciliation_router)
