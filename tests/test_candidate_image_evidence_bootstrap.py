@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]
-
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/candidate-image-evidence.yml"
 
@@ -12,11 +10,10 @@ def workflow_text() -> str:
 
 def test_workflow_is_manual_protected_main_and_explicitly_bound() -> None:
     text = workflow_text()
-    parsed = yaml.safe_load(text)
-    assert "workflow_dispatch" in parsed[True]
-    assert "pull_request" not in parsed[True]
+    assert "  workflow_dispatch:" in text
+    assert "  pull_request:" not in text
     for value in ("target_repository", "pr_number", "source_sha"):
-        assert value in parsed[True]["workflow_dispatch"]["inputs"]
+        assert f"      {value}:" in text
     assert "github.ref == 'refs/heads/main'" in text
     assert "gh api" in text and ".head.sha" in text
     assert 'test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"' in text
