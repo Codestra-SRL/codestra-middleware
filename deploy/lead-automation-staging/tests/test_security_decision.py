@@ -64,6 +64,12 @@ class DecisionTests(unittest.TestCase):
             status="approved_for_staging",
             security_owner_acceptance_present=True,
             approved_scope="server_a_isolated_staging",
+            approved_head_sha="a" * 40,
+            approved_image_digests={k: v["digest"] for k, v in self.counts.items()},
+            issued_utc="2026-07-31T23:00:00Z",
+            expires_utc="2026-08-15T23:00:00Z",
+            signer_identity="https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/security-owner-decision-sign.yml@refs/heads/main",
+            detached_signature_path="security-decision.bundle.json",
             security_owner="owner",
             security_owner_authority_reference="github://org/security-team",
             decision_timestamp_utc="2026-07-31T23:00:00Z",
@@ -82,6 +88,9 @@ class DecisionTests(unittest.TestCase):
             validate_decision(good, self.now, self.policy_sha, self.counts), []
         )
         for field in (
+            "approved_head_sha",
+            "signer_identity",
+            "detached_signature_path",
             "security_owner",
             "security_owner_authority_reference",
             "required_compensating_controls",
@@ -93,6 +102,9 @@ class DecisionTests(unittest.TestCase):
             )
         bad = copy.deepcopy(good)
         bad["accepted_image_digests"]["n8n"] = "n8n:latest"
+        self.assertTrue(validate_decision(bad, self.now, self.policy_sha, self.counts))
+        bad = copy.deepcopy(good)
+        bad["approved_image_digests"]["n8n"] = "n8n:latest"
         self.assertTrue(validate_decision(bad, self.now, self.policy_sha, self.counts))
         bad = copy.deepcopy(good)
         bad["accepted_vulnerability_counts"]["n8n"]["trivy_high"] = 7
@@ -128,6 +140,7 @@ class DecisionTests(unittest.TestCase):
 
     def test_decision_required_cannot_populate_approval_fields(self):
         self.assertTrue(self.errors(security_owner="source-author"))
+        self.assertTrue(self.errors(approved_head_sha="a" * 40))
         self.assertTrue(self.errors(security_owner_acceptance_present=True))
 
     def test_approved_timestamp_order_and_expiry(self):

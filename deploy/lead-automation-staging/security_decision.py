@@ -32,6 +32,12 @@ COMMON = {
     "updated_at_utc",
     "security_owner_acceptance_present",
     "approved_scope",
+    "approved_head_sha",
+    "approved_image_digests",
+    "issued_utc",
+    "expires_utc",
+    "signer_identity",
+    "detached_signature_path",
     "security_owner",
     "security_owner_authority_reference",
     "decision_timestamp_utc",
@@ -94,6 +100,12 @@ def validate_decision(
         errors.append("invalid document timestamps")
     approval_fields = [
         "approved_scope",
+        "approved_head_sha",
+        "approved_image_digests",
+        "issued_utc",
+        "expires_utc",
+        "signer_identity",
+        "detached_signature_path",
         "security_owner",
         "security_owner_authority_reference",
         "decision_timestamp_utc",
@@ -114,7 +126,15 @@ def validate_decision(
             errors.append("approved state requires acceptance")
         if document["approved_scope"] != "server_a_isolated_staging":
             errors.append("approved scope mismatch")
-        for name in approval_fields[1:6]:
+        if not SHA.fullmatch(str(document["approved_head_sha"])):
+            errors.append("approved head SHA invalid")
+        for name in (
+            "signer_identity",
+            "detached_signature_path",
+            "security_owner",
+            "security_owner_authority_reference",
+            "approval_reference",
+        ):
             if not document[name]:
                 errors.append(f"approved state requires {name}")
         digests = document["accepted_image_digests"] or {}
@@ -123,6 +143,8 @@ def validate_decision(
             not DIGEST.fullmatch(str(value)) for value in digests.values()
         ):
             errors.append("accepted image digest mismatch")
+        if document["approved_image_digests"] != expected_digests:
+            errors.append("approved image digest mismatch")
         if document["accepted_vulnerability_counts"] != counts:
             errors.append("accepted vulnerability count mismatch")
         if not document["required_compensating_controls"]:
@@ -138,6 +160,10 @@ def validate_decision(
                 errors.append("expiration must follow decision")
             if expires is not None and expires <= now:
                 errors.append("decision expired")
+            if document["issued_utc"] != document["decision_timestamp_utc"]:
+                errors.append("issued timestamp mismatch")
+            if document["expires_utc"] != document["expiration_timestamp_utc"]:
+                errors.append("expiry timestamp mismatch")
         except (TypeError, ValueError):
             errors.append("invalid approval timestamps")
     return errors
