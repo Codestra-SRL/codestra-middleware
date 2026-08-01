@@ -59,6 +59,29 @@ def test_reports_and_evidence_fail_closed_before_upload() -> None:
     assert 'jq -e . "${json_file}"' in workflow[validation:upload]
     assert "sha256sum -c SHA256SUMS" in workflow[validation:upload]
     assert "Reconcile scanner findings" in workflow[:validation]
+    schema_validation = workflow.index("python3 scripts/validate_candidate_image_manifest.py")
+    assert schema_validation < validation < upload
+
+
+def test_candidate_manifest_has_explicit_immutable_bindings() -> None:
+    workflow = workflow_text()
+    generation = workflow.index("- name: Create provenance and immutable evidence manifest")
+    validation = workflow.index("- name: Validate complete candidate evidence")
+    block = workflow[generation:validation]
+    for binding in (
+        'company:$company',
+        'repository:$repository',
+        'pr_number:$pr_number',
+        'head_sha:$head_sha',
+        'image_repository:$image_repository',
+        'image_digest:$image_digest',
+        'vulnerability_summary_sha256:$summary',
+        'build_run_id:$build_run_id',
+        'build_run_attempt:$build_run_attempt',
+    ):
+        assert binding in block
+    assert '--argjson pr_number "${PR_NUMBER}"' in block
+    assert "${IMAGE_REPOSITORY}@${digest}" not in block
 
 
 def test_reconciliation_helper_is_staged_from_protected_workflow_revision() -> None:
