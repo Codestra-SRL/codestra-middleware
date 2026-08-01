@@ -4,7 +4,6 @@ set -euo pipefail
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 compose="${root}/compose.yaml"
 project="lead-default-profile-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
-
 docker compose --project-name "${project}" -f "${compose}" config >/dev/null
 profiles="$(docker compose --project-name "${project}" -f "${compose}" config --profiles)"
 grep -qx deployment <<<"${profiles}"
