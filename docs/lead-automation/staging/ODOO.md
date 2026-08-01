@@ -12,7 +12,7 @@ start only after these checks pass.
 
 The executable multi-company test is
 `codestra_lead_automation/tests/test_multicompany_isolation.py` at Odoo PR #15
-head `d6d2c6aff858f154eabad38b04203c507552f38e`. Run it only against an ephemeral
+main head `b0c338cb871c54db93c06cef07fdc807b9fda7e0`. Run it only against an ephemeral
 PostgreSQL database with the digest-pinned Odoo 19 image:
 
 ```sh
