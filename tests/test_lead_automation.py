@@ -9,15 +9,17 @@ from app.core.lead_automation import (
     State,
     TenantScope,
 )
+from app.core.config import Settings
 
 
 def payload(**updates):
     value = {
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "event_id": "EVT-synthetic01",
         "event_type": "lead.update.requested.v1",
         "occurred_at": "2026-01-01T00:00:00Z",
         "environment": "staging",
+        "company_key": "COMPANY-1",
         "business_unit_key": "web-mobile-ai",
         "campaign_key": "TEST_LEADS",
         "automation_action": "UPDATE_ALLOWLISTED_FIELDS",
@@ -40,6 +42,17 @@ def payload(**updates):
     }
     value.update(updates)
     return value
+
+
+def test_00_file_backed_hmac_secret_loads_without_environment_value(tmp_path):
+    secret = tmp_path / "lead-automation-hmac-v2"
+    secret.write_text("synthetic-file-backed-secret")
+    settings = Settings(
+        lead_automation_hmac_secret="",
+        lead_automation_hmac_secret_file=str(secret),
+    )
+    settings.load_secret_files()
+    assert settings.lead_automation_hmac_secret == "synthetic-file-backed-secret"
 
 
 def allowed_service(*, consent=False, contact=False):
@@ -149,11 +162,12 @@ def test_12_idempotency_is_isolated_between_tenants():
 
 def result():
     return {
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "event_id": "EVT-synthetic01",
         "workflow_execution_id": "N8N-synthetic01",
         "binding_key": "n8n.leads.ingest",
         "environment": "staging",
+        "company_key": "COMPANY-1",
         "business_unit_key": "web-mobile-ai",
         "campaign_key": "TEST_LEADS",
         "automation_action": "UPDATE_ALLOWLISTED_FIELDS",
@@ -253,9 +267,10 @@ def test_21_ack_mismatch_quarantines():
     s.receive_result(result(), scope())
     s.odoo_apply_enabled = True
     ack = {
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "automation_event_id": e["automation_event_id"],
         "automation_action": "UPDATE_ALLOWLISTED_FIELDS",
+        "company_key": "COMPANY-1",
         "business_unit_key": "wrong",
         "campaign_key": "TEST_LEADS",
         "policy_version": "1.0",
@@ -266,7 +281,7 @@ def test_21_ack_mismatch_quarantines():
 
 def full_ack(automation_event_id, result_code_result="APPLIED", **updates):
     value = {
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "automation_event_id": automation_event_id,
         "automation_action": "UPDATE_ALLOWLISTED_FIELDS",
         "lead_uid": "LEAD-synthetic01",
@@ -277,6 +292,7 @@ def full_ack(automation_event_id, result_code_result="APPLIED", **updates):
         if result_code_result == "NO_CHANGE"
         else [],
         "rejected_fields": [],
+        "company_key": "COMPANY-1",
         "business_unit_key": "web-mobile-ai",
         "campaign_key": "TEST_LEADS",
         "policy_version": "1.0",

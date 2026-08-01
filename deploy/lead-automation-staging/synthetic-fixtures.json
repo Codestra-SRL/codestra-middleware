@@ -1,0 +1,13 @@
+{
+  "environment": "staging",
+  "business_units": [{"key": "synthetic-logistics"}],
+  "campaigns": [{"key": "SYNTHETIC_CAMPAIGN_01", "business_unit_key": "synthetic-logistics"}],
+  "teams": [{"key": "SYNTHETIC_TEAM_01"}],
+  "users": [{"key": "SYNTHETIC_USER_01"}],
+  "stages": ["SYNTHETIC_NEW", "SYNTHETIC_QUALIFIED"],
+  "lead_references": ["LEAD-SYNTHETIC-0001"],
+  "consent_states": ["granted", "denied", "expired", "unknown"],
+  "dnc_states": [true, false],
+  "idempotency_keys": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+  "scenarios": ["authorized", "default_off", "identical_replay", "conflicting_replay", "quarantine"]
+}

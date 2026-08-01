@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "repository": "Codestra-SRL/codestra-middleware",
+  "source_sha": "f48761d35f1c88b3a9960484cc7252f10644916b",
+  "source_pr": 73,
+  "source_pr_head": "af6b33c94e74762c9687b24e779e0505ea418699",
+  "required_ci_run_id": 30710787225,
+  "required_ci_url": "https://github.com/Codestra-SRL/codestra-middleware/actions/runs/30710787225",
+  "required_ci_result": "PASS",
+  "full_test_count": 581,
+  "full_test_failure_count": 0,
+  "focused_test_count_before_main_merge": 133,
+  "focused_test_failure_count": 0,
+  "scope_fields": [
+    "environment",
+    "business_unit_key",
+    "campaign_key"
+  ],
+  "gates": {
+    "scoped_event_lookup": "PASS",
+    "scoped_dispatch_reservation": "PASS",
+    "scoped_result_and_acknowledgement": "PASS",
+    "scoped_retry_and_status": "PASS",
+    "scoped_reconciliation": "PASS",
+    "cross_tenant_read_denial": "PASS",
+    "cross_tenant_write_denial": "PASS",
+    "denied_operation_no_mutation": "PASS",
+    "migration": "PASS",
+    "rollback": "PASS",
+    "default_off": "PASS",
+    "customer_data_used": false
+  },
+  "required_ci_manifest_sha256": "994798c1ea87cfd506d9395a292b4bea1205bda9f45fcc66eeae135dbe3e38dc",
+  "pytest_evidence_sha256": "53820869a4e735179905cba53da4d6a4d76e9ffd56600fb7bfe8d8eaa639c571",
+  "generated_at_utc": "2026-08-01T17:47:38Z"
+}

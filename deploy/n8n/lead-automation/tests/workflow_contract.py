@@ -102,7 +102,7 @@ def validate_event(event: dict[str, Any]) -> None:
     allowed = set(schema["properties"])
     if set(event) - allowed or any(key not in event for key in schema["required"]):
         raise ContractRejected("event envelope")
-    if event["contract_version"] != "1.0" or event["environment"] != "staging":
+    if event["contract_version"] != "1.1" or event["environment"] != "staging":
         raise ContractRejected("version or environment")
     if event["event_type"] not in EVENT_ACTIONS:
         raise ContractRejected("event type")
@@ -110,6 +110,7 @@ def validate_event(event: dict[str, Any]) -> None:
         raise ContractRejected("action escalation")
     checks = (
         (r"^EVT-[A-Za-z0-9_-]{8,64}$", event["event_id"]),
+        (r"^COMPANY-[1-9][0-9]{0,9}$", event["company_key"]),
         (r"^[a-z0-9][a-z0-9-]{1,62}$", event["business_unit_key"]),
         (r"^[A-Z0-9][A-Z0-9_-]{1,63}$", event["campaign_key"]),
         (r"^[A-Fa-f0-9]{64}$", event["idempotency_key"]),
@@ -325,11 +326,12 @@ class WorkflowHarness:
             return deepcopy(ack)
         execution = "N8N-" + _sha(f"{event['event_id']}:{event['idempotency_key']}".encode())[:32]
         result = {
-            "contract_version": "1.0",
+            "contract_version": "1.1",
             "event_id": event["event_id"],
             "workflow_execution_id": execution,
             "binding_key": BINDING_KEY,
             "environment": event["environment"],
+            "company_key": event["company_key"],
             "business_unit_key": event["business_unit_key"],
             "campaign_key": event["campaign_key"],
             "automation_action": event["automation_action"],

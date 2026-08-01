@@ -174,7 +174,8 @@ jobs:
         run: |
           set -euo pipefail
           docker build --target test \
-            --build-arg 'PYTHON_BASE=python@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df' \
+            --pull --no-cache \
+            --build-arg 'PYTHON_BASE=docker.io/library/python:3.12.13-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b' \
             --tag "codestra-middleware-ci:${TARGET_SHA}" . \
             | tee docker-test-build.txt
 

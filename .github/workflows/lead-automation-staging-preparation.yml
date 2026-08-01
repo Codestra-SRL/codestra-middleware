@@ -1,0 +1,159 @@
+name: lead-automation-staging-preparation
+
+on:
+  pull_request:
+    paths:
+      - app/adapters/odoo/lead_automation.py
+      - app/core/config.py
+      - app/core/lead_automation.py
+      - deploy/lead-automation-staging/**
+      - deploy/n8n/lead-automation/**
+      - docs/lead-automation/staging/**
+      - docs/security/**
+      - schemas/lead-automation/**
+      - scripts/check_lead_automation.py
+      - tests/test_lead_automation.py
+      - tests/test_lead_odoo_apply.py
+      - .github/workflows/lead-automation-staging-preparation.yml
+
+permissions:
+  contents: read
+
+env:
+  POSTGRES_IMAGE: postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+  REDIS_IMAGE: redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+  ODOO_IMAGE: odoo@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+  N8N_IMAGE: n8nio/n8n@sha256:e4804b13ae6e2064fa30e5bbfc14b86d0a52eb8a3aa2c351a227314ac90ff666
+
+jobs:
+  staging-preparation-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install exact locked Python test dependencies
+        run: python3 -m pip install --disable-pip-version-check --require-hashes -r requirements-test.lock
+      - name: Validate source, contracts, default-off controls, and regressions
+        run: |
+          python3 deploy/lead-automation-staging/validate.py
+          python3 scripts/check_lead_automation.py
+          python3 -m pytest -q \
+            tests/test_lead_automation.py \
+            tests/test_lead_odoo_apply.py \
+            deploy/n8n/lead-automation/tests/test_workflow_contract.py
+          git diff --check "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          ! git diff --name-only "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" | grep -E '^(app/recording/|tests/recording/|migrations/)'
+
+  compose-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Parse exact isolated manifest without starting services
+        env:
+          MIDDLEWARE_IMAGE: codestra.invalid/middleware@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          ODOO_ADDONS_PATH: /tmp/odoo-addons
+          STAGING_SECRET_DIRECTORY: /tmp/staging-secrets
+          STAGING_BACKUP_DIRECTORY: /tmp/staging-backups
+        run: docker compose -f deploy/lead-automation-staging/compose.yaml --profile deployment --profile operations config -q
+
+  security-decision-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - run: python3 -m unittest discover -s deploy/lead-automation-staging/tests -v
+
+  secret-permission-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Validate host and in-container file-backed secret permissions
+        run: |
+          secret_dir="${RUNNER_TEMP}/lead-staging-secrets"
+          sudo install -d -o root -g root -m 0700 "${secret_dir}"
+          for name in middleware-postgres-password odoo-postgres-password redis-password middleware-database-url redis-url lead-automation-hmac-v2 n8n-encryption-key; do
+            printf 'synthetic-secret-probe-%s' "${name}" > "${RUNNER_TEMP}/${name}"
+            sudo install -o root -g root -m 0400 "${RUNNER_TEMP}/${name}" "${secret_dir}/${name}"
+          done
+          sudo env STAGING_SECRET_DIRECTORY="${secret_dir}" POSTGRES_IMAGE="${POSTGRES_IMAGE}" deploy/lead-automation-staging/scripts/validate-secret-permissions.sh
+          sudo env STAGING_SECRET_DIRECTORY="${secret_dir}" POSTGRES_IMAGE="${POSTGRES_IMAGE}" deploy/lead-automation-staging/scripts/probe-container-secrets.sh
+
+  n8n-readonly-startup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - run: deploy/lead-automation-staging/scripts/probe-n8n-storage.sh
+
+  default-profile-non-creation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Prove default path excludes profiled services
+        env:
+          MIDDLEWARE_IMAGE: codestra.invalid/middleware@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          ODOO_ADDONS_PATH: /tmp/odoo-addons
+          STAGING_SECRET_DIRECTORY: /tmp/staging-secrets
+          STAGING_BACKUP_DIRECTORY: /tmp/staging-backups
+        run: deploy/lead-automation-staging/scripts/test-default-profile.sh
+
+  supply-chain-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Install checksum-pinned Cosign
+        env:
+          COSIGN_VERSION: v3.1.2
+          COSIGN_SHA256: f7622ed3cf22e55e1ae6377c080979ff77a22da9981c11df222a2e444991e7cf
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 --output "${RUNNER_TEMP}/cosign" \
+            "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+          echo "${COSIGN_SHA256}  ${RUNNER_TEMP}/cosign" | sha256sum -c -
+          install -m 0755 "${RUNNER_TEMP}/cosign" /usr/local/bin/cosign
+      - name: Verify SBOM subjects, checksums, image signatures, and decision state
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          cd deploy/lead-automation-staging/security/sbom
+          sha256sum -c SHA256SUMS
+          gzip -t -- *.cdx.json.gz
+          cd "${GITHUB_WORKSPACE}"
+          python3 deploy/lead-automation-staging/verify_supply_chain.py
+          set +e
+          deploy/lead-automation-staging/scripts/verify-image-signatures.sh
+          result=$?
+          set -e
+          status="$(jq -r .status deploy/lead-automation-staging/security/image-security-decision.json)"
+          if test "${status}" = security_owner_decision_required; then
+            test "${result}" = 3
+          else
+            test "${result}" = 0
+          fi
+
+  final-gate-summary:
+    if: always()
+    needs:
+      - staging-preparation-regression
+      - compose-validation
+      - security-decision-validation
+      - secret-permission-tests
+      - n8n-readonly-startup
+      - default-profile-non-creation
+      - supply-chain-verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every exact-head source gate
+        run: |
+          test "${{ needs.staging-preparation-regression.result }}" = success
+          test "${{ needs.compose-validation.result }}" = success
+          test "${{ needs.security-decision-validation.result }}" = success
+          test "${{ needs.secret-permission-tests.result }}" = success
+          test "${{ needs.n8n-readonly-startup.result }}" = success
+          test "${{ needs.default-profile-non-creation.result }}" = success
+          test "${{ needs.supply-chain-verification.result }}" = success
