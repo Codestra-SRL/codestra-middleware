@@ -1,7 +1,26 @@
 # Security Owner decision signing workflow
 
-The workflow accepts only a PR number, exact PR head, and repository-relative paths plus SHA-256 values for a decision request and image manifest. It fetches those files as inert data and never checks out or executes PR-controlled code.
+The protected-main `security-owner-decision-sign.yml` workflow consumes only
+repository-relative paths and SHA-256 values. It fetches the exact PR files as
+inert data and validates them with the validator checked out from protected
+`main`; it never executes PR-controlled code.
 
-Validation code and the workflow are loaded from protected `main`. The signing job has read-only repository permissions plus `id-token: write`, requires independent approval by `kazan555` in `security-owner-signing`, generates timestamps at runtime, creates a keyless Sigstore bundle, and verifies the exact workflow identity and GitHub Actions issuer immediately.
+The workflow requires the `security-owner-signing` environment. It rediscovers
+the open PR and exact head, checks `codestra/required-ci`, confirms evidence
+hashes and isolation gates, creates a canonical decision, signs it through
+GitHub Actions OIDC with pinned Cosign, verifies the exact certificate identity
+and issuer, and uploads a finite-retention evidence bundle.
 
-The signed scope is staging preparation only. Staging deployment, production deployment and activation, Server B, customer data, telephony, recordings, public ingress, and n8n activation remain blocked.
+The decision authorizes staging preparation only. It does not deploy, activate,
+publish images, access Server B, or authorize production.
+
+Run the validator locally with:
+
+```bash
+python scripts/security/validate-security-owner-decision.py request \
+  --request security-owner-decision-request.json \
+  --image-manifest image-manifest.json \
+  --expected-repository Codestra-SRL/codestra-middleware \
+  --expected-pr-number 68 \
+  --expected-pr-head <40-character-sha>
+```

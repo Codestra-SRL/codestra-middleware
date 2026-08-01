@@ -1,5 +1,15 @@
-# Security Owner governance
+# Isolated-staging Security Owner governance
 
-The approval delegate recorded in `SECURITY.md` may accept only digest-bound risks for Server A isolated-staging preparation. Approval does not authorize staging deployment, production deployment or activation, Server B, customer data, telephony, communications, or recordings.
+`kazan555` is the approval delegate for security-risk decisions scoped only to
+Server A isolated staging. `appolon1908-hue` is the requestor and implementation
+operator. The roles must remain separate.
 
-The signing workflow runs only from protected `main`, uses the `security-owner-signing` environment, records the independent environment approval, and signs canonical bytes with GitHub Actions OIDC. Code review, environment approval, and Sigstore verification are separate mandatory records.
+The `security-owner-signing` environment enforces the delegate review, prevents
+self-review, disables administrator bypass, and accepts protected-branch runs
+only. Its approval is necessary but not sufficient: the resulting canonical
+decision must also verify against the exact protected-main workflow identity,
+GitHub Actions OIDC issuer, PR head, evidence hashes, image digests, findings,
+scope, expiry, and negative authorizations.
+
+Production, Server B, telephony, communications, customer data, public ingress,
+and recording access are outside this delegation and remain blocked.
