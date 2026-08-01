@@ -31,11 +31,12 @@ def event(
     action: str = "UPDATE_ALLOWLISTED_FIELDS",
 ) -> dict:
     value = {
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "event_id": "EVT-SYNTHETIC0001",
         "event_type": event_type,
         "occurred_at": NOW.isoformat(),
         "environment": "staging",
+        "company_key": "COMPANY-1",
         "business_unit_key": "web-mobile-ai",
         "campaign_key": "SYNTHETIC_CAMPAIGN",
         "automation_action": action,

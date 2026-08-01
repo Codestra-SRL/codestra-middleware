@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 schemas = ROOT / "schemas/lead-automation"
 manifest = json.loads((schemas / "SHA256SUMS.json").read_text())
-assert manifest["contract_version"] == "1.0" and manifest["schema_count"] == 14
+assert manifest["contract_version"] == "1.1" and manifest["schema_count"] == 14
 for name, digest in manifest["schemas"].items():
     path = schemas / name
     assert path.is_file()
@@ -32,6 +32,7 @@ assert set(apply_schema["required"]) == {
     "automation_event_id",
     "idempotency_key",
     "environment",
+    "company_key",
     "business_unit_key",
     "campaign_key",
     "automation_action",

@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "images": [
+    {
+      "image_name": "middleware",
+      "image_digest": "sha256:c0f4f753d589f473e2cbd1054ae7602eea60a3120585a05d55729f494fe8dd6f",
+      "publisher": "Codestra SRL",
+      "source_repository": "https://github.com/Codestra-SRL/codestra-middleware",
+      "verification_method": "digest_pin_plus_sbom_and_approved_risk_acceptance",
+      "cosign_certificate_identity": null,
+      "cosign_oidc_issuer": null,
+      "cosign_public_key_reference": null,
+      "sbom_path": "sbom/middleware.cdx.json.gz",
+      "sbom_sha256": "3fbf3d1262181b742cbce389854a38164d6cf7cc34e4e463345671371e21fe92",
+      "attestation_type": null,
+      "vulnerability_report_paths": [
+        "scans/middleware-grype-high-critical.json"
+      ],
+      "risk_acceptance_reference": "docs/security/SECURITY_OWNER_DECISION.md"
+    },
+    {
+      "image_name": "n8n",
+      "image_digest": "sha256:e4804b13ae6e2064fa30e5bbfc14b86d0a52eb8a3aa2c351a227314ac90ff666",
+      "publisher": "n8n GmbH",
+      "source_repository": "https://github.com/n8n-io/n8n",
+      "verification_method": "digest_pin_plus_sbom_and_approved_risk_acceptance",
+      "cosign_certificate_identity": null,
+      "cosign_oidc_issuer": null,
+      "cosign_public_key_reference": null,
+      "sbom_path": "sbom/n8n.cdx.json.gz",
+      "sbom_sha256": "d6a49d0071180a84f3dde9282c6de17ae6b287deff9f57d10f789350002b6348",
+      "attestation_type": null,
+      "vulnerability_report_paths": [
+        "docs/security/N8N-STAGING-RISK-ACCEPTANCE.md"
+      ],
+      "risk_acceptance_reference": "docs/security/SECURITY_OWNER_DECISION.md"
+    },
+    {
+      "image_name": "odoo",
+      "image_digest": "sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a",
+      "publisher": "Docker Official Images",
+      "source_repository": "https://github.com/docker-library/odoo",
+      "verification_method": "digest_pin_plus_sbom_and_approved_risk_acceptance",
+      "cosign_certificate_identity": null,
+      "cosign_oidc_issuer": null,
+      "cosign_public_key_reference": null,
+      "sbom_path": "sbom/odoo.cdx.json.gz",
+      "sbom_sha256": "029036e2bf02f1c0b121b8b968a292548797be7951e66f39a7a2552300c73fc8",
+      "attestation_type": null,
+      "vulnerability_report_paths": [],
+      "risk_acceptance_reference": null
+    },
+    {
+      "image_name": "postgres",
+      "image_digest": "sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193",
+      "publisher": "Docker Official Images",
+      "source_repository": "https://github.com/docker-library/postgres",
+      "verification_method": "digest_pin_plus_sbom_and_approved_risk_acceptance",
+      "cosign_certificate_identity": null,
+      "cosign_oidc_issuer": null,
+      "cosign_public_key_reference": null,
+      "sbom_path": "sbom/postgres.cdx.json.gz",
+      "sbom_sha256": "4978f6c84dae4064e928a49418a15d6c15f154187a38504ab798ca86246179b4",
+      "attestation_type": null,
+      "vulnerability_report_paths": [
+        "docs/security/POSTGRES-STAGING-RISK-ACCEPTANCE.md"
+      ],
+      "risk_acceptance_reference": "docs/security/SECURITY_OWNER_DECISION.md"
+    },
+    {
+      "image_name": "redis",
+      "image_digest": "sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2",
+      "publisher": "Docker Official Images",
+      "source_repository": "https://github.com/docker-library/redis",
+      "verification_method": "digest_pin_plus_sbom_and_approved_risk_acceptance",
+      "cosign_certificate_identity": null,
+      "cosign_oidc_issuer": null,
+      "cosign_public_key_reference": null,
+      "sbom_path": "sbom/redis.cdx.json.gz",
+      "sbom_sha256": "f0cc5489133e57e5172fa3b03a3af98ab5e606a0985dc3ade24c37af5ec0838c",
+      "attestation_type": null,
+      "vulnerability_report_paths": [],
+      "risk_acceptance_reference": null
+    }
+  ]
+}

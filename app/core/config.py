@@ -181,6 +181,7 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    lead_automation_hmac_secret_file: str = ""
 
     def validate_safety(self) -> None:
         broad_event_switches = (
@@ -251,6 +252,7 @@ class Settings(BaseSettings):
             # Ingestion deliberately has no legacy shared-secret fallback.
             ("ingestion_hmac_secret", self.vicidial_callback_hmac_secret_file),
             ("odoo_recording_hmac_secret", self.odoo_recording_hmac_secret_file),
+            ("lead_automation_hmac_secret", self.lead_automation_hmac_secret_file),
         )
         for attribute, filename in mappings:
             if filename:

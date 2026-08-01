@@ -78,8 +78,9 @@ assert PROVENANCE["source_repository"] == "Codestra-SRL/codestra-middleware"
 assert PROVENANCE["source_pull_request"] == 65
 assert PROVENANCE["source_head_sha"] == "da215762375614aa617bf838f9e4974ac2ad7c68"
 assert PROVENANCE["callback_auth_source_head"] == "04fa56f4c8bb8caea3e5281816a2986bcb47ba05"
-assert PROVENANCE["odoo_source_head"] == "384d175eb32bc87f34b9c736453db44c2d151b1a"
-assert PROVENANCE["contract_version"] == "1.0"
+assert PROVENANCE["odoo_source_pull_request"] == 15
+assert PROVENANCE["odoo_source_head"] == "d6d2c6aff858f154eabad38b04203c507552f38e"
+assert PROVENANCE["contract_version"] == "1.1"
 for entry in PROVENANCE["schema_files"]:
     schema = ROOT / "schemas" / entry["schema_filename"]
     assert schema.is_file()

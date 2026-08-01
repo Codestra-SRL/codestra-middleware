@@ -1,0 +1,141 @@
+{
+  "scanner": "grype-v0.110.0",
+  "image": "codestra/lead-staging-middleware",
+  "digest": "sha256:c0f4f753d589f473e2cbd1054ae7602eea60a3120585a05d55729f494fe8dd6f",
+  "findings": [
+    {
+      "cve": "CVE-2026-7210",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.13.14",
+        "3.14.6",
+        "3.15.0b2"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    },
+    {
+      "cve": "CVE-2026-11940",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.15.0b4"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    },
+    {
+      "cve": "CVE-2026-6100",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.13.14",
+        "3.14.5rc1",
+        "3.15.0b1"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    },
+    {
+      "cve": "CVE-2026-4224",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.13.13",
+        "3.14.4",
+        "3.15.0a8"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    },
+    {
+      "cve": "CVE-2026-15308",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.15.0"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    },
+    {
+      "cve": "CVE-2026-11972",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.15.0b4"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    },
+    {
+      "cve": "CVE-2026-9669",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.13.14",
+        "3.14.6",
+        "3.15.0b3"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    },
+    {
+      "cve": "CVE-2026-3298",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.13.14",
+        "3.14.5rc1",
+        "3.15.0b1"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    },
+    {
+      "cve": "CVE-2026-3644",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.13.13",
+        "3.14.4",
+        "3.15.0a8"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    },
+    {
+      "cve": "CVE-2026-4786",
+      "severity": "High",
+      "package": "python",
+      "installed_version": "3.12.13",
+      "package_type": "binary",
+      "fix_versions": [
+        "3.13.14",
+        "3.14.5rc1",
+        "3.15.0b1"
+      ],
+      "fix_state": "fixed",
+      "namespace": "nvd:cpe"
+    }
+  ]
+}

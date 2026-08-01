@@ -76,20 +76,23 @@ services:
 
   middleware-migrate:
     <<: *security
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     profiles: [deployment]
     image: ${MIDDLEWARE_IMAGE:?immutable Middleware image digest required}
     read_only: true
-    user: "10001:10001"
+    user: "0:0"
     tmpfs: [/tmp:rw,noexec,nosuid,size=32m]
     command:
       - sh
       - -ec
       - >-
-        export DATABASE_URL="$$(cat /run/secrets/middleware_database_url)";
-        exec alembic upgrade head
+        install -d -m 0700 -o 10001 -g 10001 /tmp/runtime-secrets;
+        install -m 0400 -o 10001 -g 10001 /run/secrets/middleware_database_url
+        /tmp/runtime-secrets/middleware-database-url;
+        exec su app -s /bin/sh -c 'exec alembic upgrade head'
     environment:
       <<: *default-off
-      DATABASE_URL_FILE: /run/secrets/middleware_database_url
+      DATABASE_URL_FILE: /tmp/runtime-secrets/middleware-database-url
       EXPECTED_DATABASE_NAME: codestra_lead_staging
       DENIED_DATABASE_NAMES: postgres,production,codestra
     secrets: [middleware_database_url]
@@ -101,24 +104,29 @@ services:
 
   middleware:
     <<: *security
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     profiles: [deployment]
     image: ${MIDDLEWARE_IMAGE:?immutable Middleware image digest required}
     read_only: true
-    user: "10001:10001"
+    user: "0:0"
     tmpfs: [/tmp:rw,noexec,nosuid,size=32m]
     command:
       - sh
       - -ec
       - >-
-        export DATABASE_URL="$$(cat /run/secrets/middleware_database_url)";
-        export REDIS_URL="$$(cat /run/secrets/redis_url)";
-        export LEAD_AUTOMATION_HMAC_SECRET="$$(cat /run/secrets/lead_automation_hmac)";
-        exec python -m app.entrypoints.integration_api
+        install -d -m 0700 -o 10001 -g 10001 /tmp/runtime-secrets;
+        install -m 0400 -o 10001 -g 10001 /run/secrets/middleware_database_url
+        /tmp/runtime-secrets/middleware-database-url;
+        install -m 0400 -o 10001 -g 10001 /run/secrets/redis_url
+        /tmp/runtime-secrets/redis-url;
+        install -m 0400 -o 10001 -g 10001 /run/secrets/lead_automation_hmac
+        /tmp/runtime-secrets/lead-automation-hmac-v2;
+        exec su app -s /bin/sh -c 'exec python -m app.entrypoints.integration_api'
     environment:
       <<: *default-off
-      DATABASE_URL_FILE: /run/secrets/middleware_database_url
-      REDIS_URL_FILE: /run/secrets/redis_url
-      LEAD_AUTOMATION_HMAC_SECRET_FILE: /run/secrets/lead_automation_hmac
+      DATABASE_URL_FILE: /tmp/runtime-secrets/middleware-database-url
+      REDIS_URL_FILE: /tmp/runtime-secrets/redis-url
+      LEAD_AUTOMATION_HMAC_SECRET_FILE: /tmp/runtime-secrets/lead-automation-hmac-v2
       ENVIRONMENT: staging
     secrets: [middleware_database_url, redis_url, lead_automation_hmac]
     depends_on:
@@ -136,6 +144,7 @@ services:
 
   odoo:
     <<: *security
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     profiles: [deployment]
     image: ${ODOO_IMAGE:?digest-pinned Odoo image required}
     read_only: true
@@ -150,7 +159,7 @@ services:
         umask 077;
         printf '[options]\ndb_host = odoo-postgres\ndb_user = codestra_odoo_lead_staging\ndb_password = %s\ndb_name = codestra_odoo_lead_staging\naddons_path = /mnt/lead-addons,/usr/lib/python3/dist-packages/odoo/addons\nwithout_demo = True\n'
         "$$(cat /run/secrets/odoo_postgres_password)" > /tmp/odoo.conf;
-        exec odoo --config=/tmp/odoo.conf
+        exec gosu odoo odoo --config=/tmp/odoo.conf
     depends_on:
       odoo-postgres: {condition: service_healthy}
     healthcheck:
@@ -164,26 +173,34 @@ services:
 
   n8n:
     <<: *security
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     profiles: [deployment]
     image: ${N8N_IMAGE:?digest-pinned n8n image required}
     read_only: true
-    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    user: "0:0"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /home/node/.cache:rw,noexec,nosuid,nodev,size=64m
     entrypoint: [/bin/sh, -ec]
     command:
       - >-
-        export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)";
-        export LEAD_AUTOMATION_CALLBACK_HMAC_SECRET="$$(cat /run/secrets/lead_automation_hmac)";
-        exec /docker-entrypoint.sh
+        node -e 'const fs=require("fs"); const p="/home/node/.n8n/config";
+        const key=fs.readFileSync("/run/secrets/n8n_encryption_key","utf8").trim();
+        const cfg=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,"utf8")):{};
+        if(cfg.encryptionKey && cfg.encryptionKey!==key)process.exit(78);
+        cfg.encryptionKey=key; fs.writeFileSync(p,JSON.stringify(cfg),{mode:384});
+        fs.chownSync(p,1000,1000);';
+        exec su node -s /bin/sh -c 'exec /docker-entrypoint.sh'
     environment:
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
       N8N_TEMPLATES_ENABLED: "false"
       N8N_SECURE_COOKIE: "true"
-      N8N_ENCRYPTION_KEY_FILE: /run/secrets/n8n_encryption_key
-      LEAD_AUTOMATION_CALLBACK_HMAC_SECRET_FILE: /run/secrets/lead_automation_hmac
       N8N_WORKFLOW_ACTIVE_DEFAULT: "false"
       N8N_BINDING_ENABLED_DEFAULT: "false"
-    secrets: [n8n_encryption_key, lead_automation_hmac]
+    secrets:
+      - source: n8n_encryption_key
+        target: n8n_encryption_key
     volumes:
       - n8n_data:/home/node/.n8n
       - ../n8n/lead-automation:/source/lead-automation:ro

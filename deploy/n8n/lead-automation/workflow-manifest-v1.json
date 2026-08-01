@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0",
+  "contract_version": "1.1",
   "workflow_logical_name": "lead-automation-generic-v1",
   "binding_key": "n8n.leads.ingest",
   "generic_ingress": "/webhook/v1/events",
@@ -25,7 +25,13 @@
     "n8n-nodes-base.webhook"
   ],
   "maximum_callback_attempts": 5,
-  "retryable_http_statuses": [429, 500, 502, 503, 504],
+  "retryable_http_statuses": [
+    429,
+    500,
+    502,
+    503,
+    504
+  ],
   "source_import_placeholder_id": "00000000-0000-4000-8000-000000000013",
   "workflow_id": null,
   "credential_id": null

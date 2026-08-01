@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -63,19 +64,15 @@ assert not re.search(
 for image in ("POSTGRES_IMAGE", "REDIS_IMAGE", "ODOO_IMAGE", "N8N_IMAGE"):
     assert "@sha256:" in values[image]
 
+subprocess.run(["python3", str(ROOT / "security_decision.py")], check=True)
 decision = json.loads(SECURITY_DECISION.read_text())
-assert decision["status"] == "security_owner_decision_required"
-assert decision["security_owner_acceptance_present"] is False
-assert decision["production_deployment_gate"] == "blocked"
-assert decision["production_activation_gate"] == "blocked"
-assert decision["images"]["redis"]["reference"] == values["REDIS_IMAGE"]
-assert decision["images"]["n8n"]["reference"] == values["N8N_IMAGE"]
-assert decision["images"]["postgres"]["reference"] == values["POSTGRES_IMAGE"]
-assert decision["images"]["redis"]["trivy_critical"] == 0
-assert decision["images"]["redis"]["trivy_high"] == 0
-assert decision["images"]["n8n"]["trivy_high"] == 8
-assert decision["images"]["postgres"]["trivy_critical"] == 1
-assert decision["images"]["postgres"]["trivy_high"] == 14
+counts = json.loads((ROOT / "security" / "vulnerability-counts.json").read_text())
+assert counts["redis"]["digest"] in values["REDIS_IMAGE"]
+assert counts["n8n"]["digest"] in values["N8N_IMAGE"]
+assert counts["postgres"]["digest"] in values["POSTGRES_IMAGE"]
+assert "n8n_data:/home/node/.n8n" in compose
+assert "/home/node/.n8n:" not in "\n".join(line for line in compose.splitlines() if "tmpfs" in line)
+assert "n8n_cache:/home/node/.cache" not in compose
 
 fixtures = json.loads(FIXTURES.read_text())
 serialized = json.dumps(fixtures).lower()

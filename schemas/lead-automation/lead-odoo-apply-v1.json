@@ -6,15 +6,16 @@
   "additionalProperties": false,
   "required": [
     "contract_version", "automation_event_id", "idempotency_key", "environment",
-    "business_unit_key", "campaign_key", "automation_action", "policy_version",
+    "company_key", "business_unit_key", "campaign_key", "automation_action", "policy_version",
     "correlation_id", "attributes_schema_key", "attributes", "consent_snapshot",
     "workflow_execution_id", "result_code"
   ],
   "properties": {
-    "contract_version": {"const": "1.0"},
+    "contract_version": {"const": "1.1"},
     "automation_event_id": {"type": "string", "pattern": "^LAE-[A-Za-z0-9_-]{8,64}$", "maxLength": 68},
     "idempotency_key": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
     "environment": {"enum": ["test", "staging", "production"]},
+    "company_key": {"type": "string", "pattern": "^COMPANY-[1-9][0-9]{0,9}$", "maxLength": 18},
     "business_unit_key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}$", "maxLength": 63},
     "campaign_key": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9_-]{1,63}$", "maxLength": 64},
     "automation_action": {"enum": ["CREATE_LEAD", "UPDATE_ALLOWLISTED_FIELDS", "ASSIGN_AUTHORIZED_TEAM", "ASSIGN_AUTHORIZED_USER", "CHANGE_AUTHORIZED_STAGE", "CREATE_INTERNAL_CALLBACK_ACTIVITY"]},

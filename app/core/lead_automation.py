@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -239,6 +240,7 @@ class LeadAutomationService:
             "event_id",
             "event_type",
             "environment",
+            "company_key",
             "business_unit_key",
             "campaign_key",
             "automation_action",
@@ -247,9 +249,10 @@ class LeadAutomationService:
             "consent_snapshot",
         }
         if (
-            payload.get("contract_version") != "1.0"
+            payload.get("contract_version") != "1.1"
             or not required <= payload.keys()
             or payload.get("automation_action") not in ACTIONS
+            or not re.fullmatch(r"COMPANY-[1-9][0-9]{0,9}", payload.get("company_key", ""))
         ):
             raise LeadAutomationError("schema violation")
         schema_key = payload.get("attributes_schema_key")
@@ -335,9 +338,32 @@ class LeadAutomationService:
             return event.result_response or {}
         if not self.result_processing_enabled:
             raise LeadAutomationError("result processing disabled")
+        required = {
+            "contract_version",
+            "event_id",
+            "workflow_execution_id",
+            "binding_key",
+            "environment",
+            "company_key",
+            "business_unit_key",
+            "campaign_key",
+            "automation_action",
+            "result_status",
+            "result_code",
+            "result_payload",
+            "occurred_at",
+            "idempotency_key",
+        }
+        if (
+            set(payload) != required
+            or payload.get("contract_version") != "1.1"
+            or not re.fullmatch(r"COMPANY-[1-9][0-9]{0,9}", payload.get("company_key", ""))
+        ):
+            raise LeadAutomationError("result schema violation")
         original = event.payload
         immutable = (
             "environment",
+            "company_key",
             "business_unit_key",
             "campaign_key",
             "automation_action",
