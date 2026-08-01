@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-UTC = dt.UTC
+UTC = dt.timezone(dt.timedelta())
 
 ROOT = Path(__file__).parent
 SECURITY = ROOT / "security"

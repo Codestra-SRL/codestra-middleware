@@ -3,16 +3,22 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import hashlib
+import importlib.util
 import json
-import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
-sys.path.insert(0, str(ROOT))
-from security_decision import validate_decision, validate_external
+SPEC = importlib.util.spec_from_file_location(
+    "lead_staging_security_decision", ROOT / "security_decision.py"
+)
+assert SPEC is not None and SPEC.loader is not None
+SECURITY_DECISION = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(SECURITY_DECISION)
+validate_decision = SECURITY_DECISION.validate_decision
+validate_external = SECURITY_DECISION.validate_external
 
-UTC = dt.UTC
+UTC = dt.timezone(dt.timedelta())
 
 
 class DecisionTests(unittest.TestCase):
