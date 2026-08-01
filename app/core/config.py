@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     n8n_production_workflows_enabled: bool = False
     automation_actions_enabled: bool = False
     odoo_automation_writes_enabled: bool = False
+    odoo_write_enabled: bool = False
     vicidial_read_enabled: bool = False
     vicidial_write_enabled: bool = False
     transfer_control_enabled: bool = False
@@ -62,6 +63,7 @@ class Settings(BaseSettings):
     ai_enrichment_enabled: bool = False
     report_delivery_enabled: bool = False
     outbox_worker_enabled: bool = False
+    outbox_processing_enabled: bool = False
     outbox_max_attempts: int = 5
     outbox_base_delay_seconds: int = 5
     outbox_max_delay_seconds: int = 300
@@ -82,6 +84,25 @@ class Settings(BaseSettings):
     provisioning_service_ca_file: str = ""
     odoo_identity_lookup_url: str = ""
     odoo_identity_lookup_hmac_file: str = ""
+    n8n_webhook_url: str = ""
+    odoo_results_url: str = ""
+    outbox_signature_key_id: str = ""
+    outbox_signature_secret_file: str = ""
+    outbox_signature_secret: str = ""
+    n8n_internal_auth_header: str = "X-Codestra-Internal-Token"
+    n8n_internal_auth_header_file: str = ""
+    n8n_internal_auth_token: str = ""
+    n8n_internal_auth_token_file: str = ""
+    odoo_token_url: str = ""
+    odoo_client_id: str = ""
+    odoo_client_secret_file: str = ""
+    odoo_client_secret: str = ""
+    odoo_audience: str = ""
+    odoo_scope: str = ""
+    outbox_target_ca_file: str = ""
+    outbox_http_connect_timeout_seconds: float = 5.0
+    outbox_http_request_timeout_seconds: float = 10.0
+    outbox_circuit_failure_threshold: int = 5
     maintenance_interval_seconds: int = 30
     automation_allowed_campaigns: str = "TEST_SYN"
     automation_environment: str = "test"
@@ -112,17 +133,27 @@ class Settings(BaseSettings):
     def validate_safety(self) -> None:
         production_switches = (
             self.live_writes_enabled,
+            self.odoo_writes_active,
             self.allow_non_test_campaigns,
             self.n8n_production_workflows_enabled,
             self.vicidial_write_enabled,
             self.messaging_enabled,
-            self.outbox_worker_enabled,
             self.telephony_provisioning_enabled,
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
+        if self.environment == "production" and self.outbox_processing_active:
+            raise ValueError("external outbox delivery is disabled in production safety mode")
+
+    @property
+    def outbox_processing_active(self) -> bool:
+        return self.outbox_processing_enabled and self.outbox_worker_enabled
+
+    @property
+    def odoo_writes_active(self) -> bool:
+        return self.odoo_write_enabled and self.odoo_automation_writes_enabled
 
     def load_secret_files(self) -> None:
         """Load runtime secrets without placing their values in environment metadata."""
@@ -132,6 +163,10 @@ class Settings(BaseSettings):
             ("middleware_secret", self.middleware_secret_file),
             # Ingestion deliberately has no legacy shared-secret fallback.
             ("ingestion_hmac_secret", self.vicidial_callback_hmac_secret_file),
+            ("outbox_signature_secret", self.outbox_signature_secret_file),
+            ("n8n_internal_auth_header", self.n8n_internal_auth_header_file),
+            ("n8n_internal_auth_token", self.n8n_internal_auth_token_file),
+            ("odoo_client_secret", self.odoo_client_secret_file),
         )
         for attribute, filename in mappings:
             if filename:

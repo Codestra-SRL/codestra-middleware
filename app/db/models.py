@@ -40,13 +40,25 @@ class IntegrationEvent(Base):
     entity_key: Mapped[str | None] = mapped_column(String(256))
     source_system: Mapped[str] = mapped_column(String(50), nullable=False, default="vicidial")
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment: Mapped[str] = mapped_column(String(24), nullable=False, default="staging")
+    originating_odoo_outbox_id: Mapped[str] = mapped_column(String(128), nullable=False)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    __table_args__ = (Index("ix_integration_event_payload_hash", "payload_hash"),)
+    __table_args__ = (
+        Index("ix_integration_event_payload_hash", "payload_hash"),
+        UniqueConstraint(
+            "source_system", "environment", "idempotency_key",
+            name="uq_integration_event_source_environment_idempotency",
+        ),
+        UniqueConstraint(
+            "source_system", "originating_odoo_outbox_id",
+            name="uq_integration_event_originating_odoo_outbox",
+        ),
+    )
 
 
 class IntegrationDelivery(Base):
@@ -72,6 +84,61 @@ class IntegrationDelivery(Base):
     __table_args__ = (
         UniqueConstraint("event_id", "target", name="uq_delivery_event_target"),
     )
+
+
+class N8nExecution(Base):
+    __tablename__ = "n8n_execution"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    execution_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workflow_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="REGISTERED")
+    registration_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("status IN ('REGISTERED','RUNNING','SUCCEEDED','FAILED','CANCELLED','DEAD_LETTERED')", name="ck_n8n_execution_status"),
+        UniqueConstraint("event_id", "workflow_key", name="uq_n8n_execution_event_workflow"),
+    )
+
+
+class N8nAcknowledgement(Base):
+    __tablename__ = "n8n_acknowledgement"
+    acknowledgement_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    execution_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    acknowledgement_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IntegrationResult(Base):
+    __tablename__ = "integration_result"
+    result_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    execution_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IntegrationTrace(Base):
+    __tablename__ = "integration_trace"
+    trace_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    stage: Mapped[str] = mapped_column(String(40), nullable=False)
+    identity: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("correlation_id", "stage", "identity", name="uq_integration_trace_stage"),)
 
 
 class IdempotencyRecord(Base):
@@ -268,6 +335,10 @@ class EventInbox(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
+    integration_event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("integration_event.id", ondelete="RESTRICT"),
+        nullable=False, unique=True,
+    )
     event_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     source: Mapped[str] = mapped_column(String(32))
     event_type: Mapped[str] = mapped_column(String(100))
@@ -284,6 +355,10 @@ class OutboxEvent(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
+    integration_event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("integration_event.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
     topic: Mapped[str] = mapped_column(String(128))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
     correlation_id: Mapped[str | None] = mapped_column(String(128), index=True)
@@ -294,6 +369,8 @@ class OutboxEvent(Base):
     dead_lettered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     replay_count: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(Text)
+    response_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

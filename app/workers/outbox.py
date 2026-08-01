@@ -30,7 +30,8 @@ RETURNING item.id, item.topic, item.payload, item.correlation_id,
 
 ACK_SQL = text("""
 UPDATE outbox_event SET status='delivered', locked_at=NULL, next_attempt_at=NULL,
-last_error=NULL WHERE id=:item_id AND status='processing'
+last_error=NULL, response_json=:response_json, acknowledged_at=:acknowledged_at
+WHERE id=:item_id AND status='processing'
 """)
 
 FAIL_SQL = text("""
@@ -74,8 +75,11 @@ async def claim_batch(session: AsyncSession, *, limit: int, lease_seconds: int) 
     return [dict(row) for row in rows.mappings()]
 
 
-async def acknowledge(session: AsyncSession, item_id: UUID) -> bool:
-    result = cast(CursorResult[Any], await session.execute(ACK_SQL, {"item_id": item_id}))
+async def acknowledge(session: AsyncSession, item_id: UUID, response: dict[str, Any] | None = None) -> bool:
+    result = cast(CursorResult[Any], await session.execute(ACK_SQL, {
+        "item_id": item_id, "response_json": response,
+        "acknowledged_at": datetime.now(timezone.utc),
+    }))
     await session.commit()
     return result.rowcount == 1
 
