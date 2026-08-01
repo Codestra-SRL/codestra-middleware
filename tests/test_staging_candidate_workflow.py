@@ -86,3 +86,10 @@ def test_identity_and_operational_boundaries_remain_enforced() -> None:
         "server_b_access_gate",
     ):
         assert f'.{boundary} == "blocked"' in workflow
+
+
+def test_oci_labels_use_docker_inspect_schema_case() -> None:
+    workflow = workflow_text()
+    assert '.Config.Labels["org.opencontainers.image.source"]' in workflow
+    assert '.Config.Labels["org.opencontainers.image.revision"]' in workflow
+    assert ".config.Labels" not in workflow
