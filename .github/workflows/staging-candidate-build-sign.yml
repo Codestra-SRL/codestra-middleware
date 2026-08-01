@@ -220,7 +220,7 @@ jobs:
             --arg provenance "$(sha256sum provenance.json | awk '{print $1}')" \
             '{scope:"server_a_isolated_staging_candidate",production_release_provenance_assigned:false,image:$image,source_sha:$source,sbom_sha256:$sbom,trivy_sha256:$trivy,grype_sha256:$grype,vulnerability_matrix_sha256:$matrix,provenance_sha256:$provenance}' \
             > candidate-image-manifest.json
-          jq -e --arg source "${SOURCE_SHA}" '.config.Labels["org.opencontainers.image.source"] == "https://github.com/Codestra-SRL/codestra-middleware" and .config.Labels["org.opencontainers.image.revision"] == $source' \
+          jq -e --arg source "${SOURCE_SHA}" '.Config.Labels["org.opencontainers.image.source"] == "https://github.com/Codestra-SRL/codestra-middleware" and .Config.Labels["org.opencontainers.image.revision"] == $source' \
             < <(docker image inspect "${IMAGE_REPOSITORY}:$(cat candidate-tag.txt)" | jq '.[0]')
           sha256sum candidate.cdx.json trivy.json trivy-version.txt grype.json vulnerability-matrix.csv vulnerability-summary.json provenance.json candidate-image-manifest.json image-digest.txt candidate-tag.txt reconcile-helper.sha256 > SHA256SUMS
 
