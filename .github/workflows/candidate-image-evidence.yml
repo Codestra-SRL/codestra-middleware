@@ -1,0 +1,340 @@
+name: Protected candidate-image evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_repository:
+        description: Exact target repository
+        required: true
+        type: string
+      pr_number:
+        description: Pull request number
+        required: true
+        type: string
+      source_sha:
+        description: Exact 40-character live PR head
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: protected-candidate-evidence-${{ inputs.target_repository }}-${{ inputs.pr_number }}-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/codestra-srl/codestra-middleware
+  EXPECTED_REPOSITORY: Codestra-SRL/codestra-middleware
+  TRIVY_VERSION: v0.72.0
+  TRIVY_SHA256: bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea
+  RECONCILE_HELPER_SHA256: ed8cdb9c92064d31daac8bae257dedf6adfacf445171cf422e0d53753fb912ac
+  MANIFEST_GENERATOR_SHA256: a78efb7e18f981e626386ea8325eda803836fbe2505a07a2aea286bac271a6d3
+  MANIFEST_VALIDATOR_SHA256: 887f66535dd3d36734c597703eaebb6eeb7515657432eb64d1007f1953d096ed
+  DECISION_REQUEST_GENERATOR_SHA256: 4305f6252a3b88409d5f1c0c1993ae09d460cf033234a30ac77cd0b7303aa2ff
+  CANDIDATE_MANIFEST_SCHEMA_SHA256: 305795c1f6a9c356d5ddc18674d4aeb01161a191881f22d5b7436d3ae602cc2b
+  DECISION_REQUEST_SCHEMA_SHA256: 2b133963899e1f5a3666d0c58f3a3bf65ced26c019dc69c1b7b0dbd3e8c734bc
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: security-owner-signing
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: read
+    outputs:
+      image_digest: ${{ steps.identity.outputs.image_digest }}
+    steps:
+      - name: Validate exact PR identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "${{ inputs.target_repository }}" = "${EXPECTED_REPOSITORY}"
+          test "${GITHUB_REPOSITORY}" = "${{ inputs.target_repository }}"
+          test "${GITHUB_REF}" = refs/heads/main
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .state)" = open
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "${SOURCE_SHA}"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.ref)" = main
+
+      - name: Check out trusted reconciliation helper
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Stage trusted evidence helpers outside candidate context
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          echo "${RECONCILE_HELPER_SHA256}  scripts/reconcile_candidate_vulnerabilities.py" | sha256sum -c -
+          echo "${MANIFEST_GENERATOR_SHA256}  scripts/generate_candidate_image_manifest.py" | sha256sum -c -
+          echo "${MANIFEST_VALIDATOR_SHA256}  scripts/validate_candidate_image_manifest.py" | sha256sum -c -
+          echo "${DECISION_REQUEST_GENERATOR_SHA256}  scripts/generate_image_security_decision_request.py" | sha256sum -c -
+          echo "${CANDIDATE_MANIFEST_SCHEMA_SHA256}  schemas/candidate-image-manifest.v1.schema.json" | sha256sum -c -
+          echo "${DECISION_REQUEST_SCHEMA_SHA256}  schemas/image-security-decision-request.v1.schema.json" | sha256sum -c -
+          install -m 0755 scripts/reconcile_candidate_vulnerabilities.py scripts/generate_candidate_image_manifest.py \
+            scripts/validate_candidate_image_manifest.py scripts/generate_image_security_decision_request.py "${RUNNER_TEMP}/"
+          install -m 0644 schemas/candidate-image-manifest.v1.schema.json schemas/image-security-decision-request.v1.schema.json "${RUNNER_TEMP}/"
+          echo "${RECONCILE_HELPER_SHA256}  reconcile_candidate_vulnerabilities.py" \
+            > "${RUNNER_TEMP}/reconcile-helper.sha256"
+
+      - name: Check out exact candidate source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prove checkout and candidate-only identity
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+          test -f Dockerfile
+          ! git status --porcelain | grep .
+
+      - name: Build and publish staging-only candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          candidate_tag="candidate-pr${{ inputs.pr_number }}-${SOURCE_SHA}"
+          echo "${GH_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          docker build \
+            --pull \
+            --no-cache \
+            --build-arg "VCS_REF=${SOURCE_SHA}" \
+            --build-arg "BUILD_REVISION=${SOURCE_SHA}" \
+            --build-arg "BUILD_CREATED=${created}" \
+            --build-arg "BUILD_VERSION=${candidate_tag}" \
+            --tag "${IMAGE_REPOSITORY}:${candidate_tag}" .
+          docker push "${IMAGE_REPOSITORY}:${candidate_tag}"
+          digest="$(docker buildx imagetools inspect "${IMAGE_REPOSITORY}:${candidate_tag}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf '%s' "${digest}" > image-digest.txt
+          printf '%s' "${candidate_tag}" > candidate-tag.txt
+
+      - name: Resolve immutable candidate identity
+        id: identity
+        run: |
+          set -euo pipefail
+          digest="$(cat image-digest.txt)"
+          echo "image_digest=${digest}" >> "${GITHUB_OUTPUT}"
+          echo "IMAGE_AT_DIGEST=${IMAGE_REPOSITORY}@${digest}" >> "${GITHUB_ENV}"
+
+      - name: Generate exact-digest CycloneDX SBOM
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b
+        with:
+          image: ${{ env.IMAGE_AT_DIGEST }}
+          format: cyclonedx-json
+          output-file: candidate.cdx.json
+          upload-artifact: false
+
+      - name: Run Grype without suppressing findings
+        uses: anchore/scan-action@f6601287cdb1efc985d6b765bbf99cb4c0ac29d8
+        with:
+          image: ${{ env.IMAGE_AT_DIGEST }}
+          output-format: json
+          output-file: grype.json
+          fail-build: false
+
+      - name: Install checksum-pinned Trivy
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${TRIVY_VERSION#v}"
+          asset="trivy_${version}_Linux-64bit.tar.gz"
+          url="https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/${asset}"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${RUNNER_TEMP}/trivy.tar.gz" "${url}"
+          echo "${TRIVY_SHA256}  ${RUNNER_TEMP}/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/trivy.tar.gz" -C "${RUNNER_TEMP}" trivy
+          chmod 0755 "${RUNNER_TEMP}/trivy"
+          test "$("${RUNNER_TEMP}/trivy" --version | awk 'NR == 1 {print $2}')" = "${version}"
+          "${RUNNER_TEMP}/trivy" --version | tee trivy-version.txt
+
+      - name: Run Trivy without suppressing findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/trivy" image \
+            --format json \
+            --output trivy.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed=false \
+            "${IMAGE_AT_DIGEST}"
+          test -s trivy.json
+          jq -e --arg image "${IMAGE_AT_DIGEST}" \
+            '.ArtifactName == $image and (.Results | type == "array")' \
+            trivy.json >/dev/null
+
+      - name: Reconcile scanner findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${RECONCILE_HELPER_SHA256}  ${RUNNER_TEMP}/reconcile_candidate_vulnerabilities.py" | sha256sum -c -
+          python3 "${RUNNER_TEMP}/reconcile_candidate_vulnerabilities.py" \
+            --trivy trivy.json \
+            --grype grype.json \
+            --output vulnerability-matrix.csv \
+            --summary vulnerability-summary.json
+          cp "${RUNNER_TEMP}/reconcile-helper.sha256" reconcile-helper.sha256
+
+      - name: Create provenance
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          digest="$(cat image-digest.txt)"
+          digest_hex="${digest#sha256:}"
+          jq -n \
+            --arg digest "${digest_hex}" \
+            --arg source "${SOURCE_SHA}" \
+            --arg invocation "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}" \
+            '{_type:"https://in-toto.io/Statement/v1",subject:[{name:"ghcr.io/codestra-srl/codestra-middleware",digest:{sha256:$digest}}],predicateType:"https://slsa.dev/provenance/v1",predicate:{buildDefinition:{buildType:"https://codestra.example/staging-candidate/v1",externalParameters:{source_sha:$source},resolvedDependencies:[{uri:"git+https://github.com/Codestra-SRL/codestra-middleware",digest:{gitCommit:$source}}]},runDetails:{builder:{id:"https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/candidate-image-evidence.yml@refs/heads/main"},metadata:{invocationId:$invocation}}}}' \
+            > provenance.json
+
+      - name: Generate exact candidate manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_REPOSITORY: ${{ github.repository }}
+          CANDIDATE_PR_NUMBER: ${{ inputs.pr_number }}
+          CANDIDATE_HEAD_SHA: ${{ inputs.source_sha }}
+          CANDIDATE_IMAGE_REPOSITORY: ${{ env.IMAGE_REPOSITORY }}
+          CANDIDATE_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          CANDIDATE_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_API_URL: ${{ github.api_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CANDIDATE_IMAGE_DIGEST="$(cat image-digest.txt)"
+          export CANDIDATE_CREATED_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "${MANIFEST_GENERATOR_SHA256}  ${RUNNER_TEMP}/generate_candidate_image_manifest.py" | sha256sum -c -
+          echo "${MANIFEST_VALIDATOR_SHA256}  ${RUNNER_TEMP}/validate_candidate_image_manifest.py" | sha256sum -c -
+          python3 "${RUNNER_TEMP}/generate_candidate_image_manifest.py" \
+            --sbom candidate.cdx.json \
+            --provenance provenance.json \
+            --trivy trivy.json \
+            --grype grype.json \
+            --output candidate-image-manifest.json
+          python3 "${RUNNER_TEMP}/validate_candidate_image_manifest.py" \
+            --manifest candidate-image-manifest.json \
+            --schema "${RUNNER_TEMP}/candidate-image-manifest.v1.schema.json" \
+            --expected-repository "${GITHUB_REPOSITORY}" \
+            --expected-pr-number "${CANDIDATE_PR_NUMBER}" \
+            --expected-head-sha "${CANDIDATE_HEAD_SHA}" \
+            --expected-image-repository "${IMAGE_REPOSITORY}" \
+            --expected-image-digest "${CANDIDATE_IMAGE_DIGEST}"
+          jq -e --arg source "${CANDIDATE_HEAD_SHA}" '.Config.Labels["org.opencontainers.image.source"] == "https://github.com/Codestra-SRL/codestra-middleware" and .Config.Labels["org.opencontainers.image.revision"] == $source' \
+            < <(docker image inspect "${IMAGE_REPOSITORY}:$(cat candidate-tag.txt)" | jq '.[0]')
+
+      - name: Generate unsigned Security Owner decision request
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${DECISION_REQUEST_GENERATOR_SHA256}  ${RUNNER_TEMP}/generate_image_security_decision_request.py" | sha256sum -c -
+          python3 "${RUNNER_TEMP}/generate_image_security_decision_request.py" \
+            --manifest candidate-image-manifest.json \
+            --sbom candidate.cdx.json \
+            --provenance provenance.json \
+            --trivy trivy.json \
+            --grype grype.json \
+            --output image-security-decision.request.json
+          jq -e '
+            .status == "pending_security_owner_review" and
+            .security_owner_acceptance_present == false and
+            .approved_scope == null and
+            .security_owner == null and
+            .signer_identity == null and
+            .production_deployment_gate == "blocked" and
+            .production_activation_gate == "blocked" and
+            .server_b_access_gate == "blocked" and
+            .customer_data_gate == "blocked"
+          ' image-security-decision.request.json >/dev/null
+          sha256sum candidate.cdx.json trivy.json trivy-version.txt grype.json vulnerability-matrix.csv vulnerability-summary.json provenance.json candidate-image-manifest.json image-security-decision.request.json image-digest.txt candidate-tag.txt reconcile-helper.sha256 > SHA256SUMS
+
+      - name: Validate complete candidate evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          for json_file in \
+            trivy.json grype.json candidate.cdx.json vulnerability-summary.json \
+            provenance.json candidate-image-manifest.json image-security-decision.request.json
+          do
+            test -s "${json_file}"
+            jq -e . "${json_file}" >/dev/null
+          done
+          test -s trivy-version.txt
+          test -s vulnerability-matrix.csv
+          test -s reconcile-helper.sha256
+          test -s image-digest.txt
+          test -s candidate-tag.txt
+          test -s SHA256SUMS
+          jq -e --arg image "${IMAGE_AT_DIGEST}" \
+            '.ArtifactName == $image and (.Results | type == "array")' \
+            trivy.json >/dev/null
+          jq -e --arg source "${{ inputs.source_sha }}" \
+            --arg digest "$(cat image-digest.txt)" \
+            --argjson pr_number "${{ inputs.pr_number }}" \
+            '.repository == "Codestra-SRL/codestra-middleware" and
+             .pr_number == $pr_number and
+             .head_sha == $source and
+             .image_repository == "ghcr.io/codestra-srl/codestra-middleware" and
+             .image_digest == $digest' \
+            candidate-image-manifest.json >/dev/null
+          jq -e '
+            .status == "pending_security_owner_review" and
+            .security_owner_acceptance_present == false and
+            .production_deployment_gate == "blocked" and
+            .production_activation_gate == "blocked"
+          ' image-security-decision.request.json >/dev/null
+          sha256sum -c SHA256SUMS
+
+      - name: Upload exact run-scoped candidate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr${{ inputs.pr_number }}-candidate-evidence-${{ inputs.source_sha }}
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+          path: |
+            candidate.cdx.json
+            trivy.json
+            trivy-version.txt
+            grype.json
+            vulnerability-matrix.csv
+            vulnerability-summary.json
+            reconcile-helper.sha256
+            provenance.json
+            candidate-image-manifest.json
+            image-security-decision.request.json
+            image-digest.txt
+            candidate-tag.txt
+            SHA256SUMS
+
+      - name: Publish unambiguous final build status
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          if test "${JOB_STATUS}" = success; then
+            printf '%s\n' '{"candidate_evidence_gate":"PASS","trusted_workflow_sha":"${{ github.sha }}","target_source_sha":"${{ inputs.source_sha }}","candidate_image_digest":"${{ steps.identity.outputs.image_digest }}","deployment_allowed":false,"activation_allowed":false,"security_owner_acceptance_present":false}'
+          else
+            printf '%s\n' '{"candidate_evidence_gate":"FAIL","trusted_workflow_sha":"${{ github.sha }}","target_source_sha":"${{ inputs.source_sha }}","candidate_image_digest":null,"deployment_allowed":false,"activation_allowed":false,"security_owner_acceptance_present":false}'
+            exit 1
+          fi

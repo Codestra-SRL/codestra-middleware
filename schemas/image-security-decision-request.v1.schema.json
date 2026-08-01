@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codestra.internal/schemas/image-security-decision.v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_version", "status", "repository", "pr_number",
+    "head_sha", "image_repository", "image_digest", "evidence",
+    "scanner_counts", "unresolved_findings", "proposed_staging_scope",
+    "compensating_control_template", "revocation_condition_template",
+    "security_owner_acceptance_present", "approved_scope", "security_owner",
+    "security_owner_authority_reference", "signer_identity", "issued_utc",
+    "expires_utc", "detached_signature_reference",
+    "production_deployment_gate", "production_activation_gate",
+    "server_b_access_gate", "customer_data_gate"
+  ],
+  "properties": {
+    "$schema": {"const": "https://codestra.internal/schemas/image-security-decision.v1.json"},
+    "schema_version": {"const": "1.0"},
+    "status": {"const": "pending_security_owner_review"},
+    "repository": {"const": "Codestra-SRL/codestra-middleware"},
+    "pr_number": {"type": "integer", "minimum": 1},
+    "head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "image_repository": {"const": "ghcr.io/codestra-srl/codestra-middleware"},
+    "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sbom", "provenance", "trivy", "grype"],
+      "properties": {
+        "sbom": {"$ref": "#/$defs/evidence"}, "provenance": {"$ref": "#/$defs/evidence"},
+        "trivy": {"$ref": "#/$defs/evidence"}, "grype": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "scanner_counts": {
+      "type": "object", "additionalProperties": false, "required": ["trivy", "grype"],
+      "properties": {"trivy": {"$ref": "#/$defs/counts"}, "grype": {"$ref": "#/$defs/counts"}}
+    },
+    "unresolved_findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "proposed_staging_scope": {"const": "server_a_isolated_staging"},
+    "compensating_control_template": {"type": "array", "minItems": 1},
+    "revocation_condition_template": {"type": "array", "minItems": 1},
+    "security_owner_acceptance_present": {"const": false},
+    "approved_scope": {"type": "null"},
+    "security_owner": {"type": "null"},
+    "security_owner_authority_reference": {"type": "null"},
+    "signer_identity": {"type": "null"},
+    "issued_utc": {"type": "null"},
+    "expires_utc": {"type": "null"},
+    "detached_signature_reference": {"type": "null"},
+    "production_deployment_gate": {"const": "blocked"},
+    "production_activation_gate": {"const": "blocked"},
+    "server_b_access_gate": {"const": "blocked"},
+    "customer_data_gate": {"const": "blocked"}
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object", "additionalProperties": false, "required": ["reference", "sha256"],
+      "properties": {
+        "reference": {"type": "string", "pattern": "^[A-Za-z0-9._/-]+$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "counts": {
+      "type": "object", "additionalProperties": false, "required": ["critical", "high"],
+      "properties": {"critical": {"type": "integer", "minimum": 0}, "high": {"type": "integer", "minimum": 0}}
+    },
+    "finding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scanner", "cve", "package", "installed_version", "fixed_version", "fix_availability", "severity", "runtime_relevance", "remediation_status"],
+      "properties": {
+        "scanner": {"enum": ["trivy", "grype"]}, "cve": {"type": "string", "minLength": 1},
+        "package": {"type": "string", "minLength": 1}, "installed_version": {"type": "string", "minLength": 1},
+        "fixed_version": {}, "fix_availability": {"type": "boolean"},
+        "severity": {"enum": ["HIGH", "CRITICAL"]},
+        "runtime_relevance": {"const": "requires_security_owner_assessment"},
+        "remediation_status": {"const": "unresolved"}
+      }
+    }
+  }
+}
