@@ -168,6 +168,21 @@ class Policy:
     enabled: bool = False
 
 
+@dataclass(frozen=True)
+class TenantScope:
+    environment: str
+    business_unit_key: str
+    campaign_key: str
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> TenantScope:
+        return cls(
+            environment=str(payload.get("environment", "")),
+            business_unit_key=str(payload.get("business_unit_key", "")),
+            campaign_key=str(payload.get("campaign_key", "")),
+        )
+
+
 @dataclass
 class Event:
     automation_event_id: str
@@ -196,8 +211,10 @@ class LeadAutomationService:
         self.odoo_apply_enabled = False
         self.action_switches = {action: False for action in ACTIONS}
         self.policies: dict[tuple[str, ...], Policy] = {}
-        self.events: dict[tuple[str, str], Event] = {}
-        self.idempotency: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
+        self.events: dict[tuple[str, str, str, str], Event] = {}
+        self.idempotency: dict[
+            tuple[str, str, str, str], tuple[str, dict[str, Any]]
+        ] = {}
         self.workflow_ids: set[tuple[str, str]] = set()
         self.outbox: list[dict[str, Any]] = []
         self.quarantine: list[dict[str, str]] = []
@@ -222,10 +239,11 @@ class LeadAutomationService:
 
     def receive(self, payload: dict[str, Any]) -> dict[str, Any]:
         environment = payload.get("environment", "")
+        scope = TenantScope.from_payload(payload)
         event_id = payload.get("event_id", "")
         idem = payload.get("idempotency_key", "")
         digest = canonical_hash(payload)
-        idem_key = (environment, idem)
+        idem_key = (*self._scope_key(scope), idem)
         if idem_key in self.idempotency:
             previous_hash, response = self.idempotency[idem_key]
             if previous_hash != digest:
@@ -260,7 +278,7 @@ class LeadAutomationService:
         ):
             raise LeadAutomationError("business-unit attribute schema violation")
         event = Event("LAE-" + uuid4().hex, payload, digest)
-        self.events[(environment, event_id)] = event
+        self.events[(*self._scope_key(scope), event_id)] = event
         self._transition(event, State.SCHEMA_VALIDATED)
         self._transition(event, State.POLICY_EVALUATING)
         policy_key = (
@@ -294,6 +312,9 @@ class LeadAutomationService:
                 {
                     "automation_event_id": event.automation_event_id,
                     "binding_key": "n8n.leads.ingest",
+                    "environment": scope.environment,
+                    "business_unit_key": scope.business_unit_key,
+                    "campaign_key": scope.campaign_key,
                     "enabled": self.binding_enabled,
                     "attempts": 0,
                 }
@@ -302,8 +323,8 @@ class LeadAutomationService:
         self.idempotency[idem_key] = (digest, response)
         return response
 
-    def reserve_dispatch(self, event_id: str) -> bool:
-        event = self._find(event_id)
+    def reserve_dispatch(self, event_id: str, scope: TenantScope) -> bool:
+        event = self._find(event_id, scope)
         if (
             event.state != State.OUTBOX_PENDING
             or not self.enabled
@@ -313,14 +334,18 @@ class LeadAutomationService:
         self._transition(event, State.DISPATCH_RESERVED)
         return True
 
-    def mark_dispatched(self, event_id: str) -> None:
-        self._transition(self._find(event_id), State.DISPATCHED)
+    def mark_dispatched(self, event_id: str, scope: TenantScope) -> None:
+        self._transition(self._find(event_id, scope), State.DISPATCHED)
 
-    def acknowledge_n8n(self, event_id: str) -> None:
-        self._transition(self._find(event_id), State.N8N_ACKNOWLEDGED)
+    def acknowledge_n8n(self, event_id: str, scope: TenantScope) -> None:
+        self._transition(self._find(event_id, scope), State.N8N_ACKNOWLEDGED)
 
-    def receive_result(self, payload: dict[str, Any]) -> dict[str, Any]:
-        event = self._find(payload.get("event_id", ""))
+    def receive_result(
+        self, payload: dict[str, Any], scope: TenantScope
+    ) -> dict[str, Any]:
+        if scope != TenantScope.from_payload(payload):
+            raise LeadAutomationError("event not found")
+        event = self._find(payload.get("event_id", ""), scope)
         digest = canonical_hash(payload)
         if event.result_hash:
             if event.result_hash != digest:
@@ -386,8 +411,10 @@ class LeadAutomationService:
         event.result_payload = dict(payload)
         return response
 
-    def apply_odoo_ack(self, event_id: str, ack: dict[str, Any]) -> dict[str, Any]:
-        event = self._find(event_id)
+    def apply_odoo_ack(
+        self, event_id: str, ack: dict[str, Any], scope: TenantScope
+    ) -> dict[str, Any]:
+        event = self._find(event_id, scope)
         if not self.odoo_apply_enabled:
             raise LeadAutomationError("Odoo apply disabled")
         if event.odoo_ack is not None:
@@ -446,9 +473,13 @@ class LeadAutomationService:
         return self.status(event)
 
     def record_retry(
-        self, event_id: str, attempts: int, maximum_attempts: int = 5
+        self,
+        event_id: str,
+        scope: TenantScope,
+        attempts: int,
+        maximum_attempts: int = 5,
     ) -> State:
-        event = self._find(event_id)
+        event = self._find(event_id, scope)
         target = (
             State.FAILED_TERMINAL
             if attempts >= maximum_attempts
@@ -459,9 +490,11 @@ class LeadAutomationService:
         self._transition(event, target)
         return event.state
 
-    def reconcile(self) -> list[str]:
+    def reconcile(self, scope: TenantScope) -> list[str]:
         gaps = []
         for event in self.events.values():
+            if TenantScope.from_payload(event.payload) != scope:
+                continue
             has_outbox = any(
                 row["automation_event_id"] == event.automation_event_id
                 for row in self.outbox
@@ -477,8 +510,14 @@ class LeadAutomationService:
                 gaps.append(f"{event.automation_event_id}:missing_acknowledgement")
         return gaps
 
-    def _find(self, event_id: str) -> Event:
-        for (_, candidate_id), event in self.events.items():
+    @staticmethod
+    def _scope_key(scope: TenantScope) -> tuple[str, str, str]:
+        return scope.environment, scope.business_unit_key, scope.campaign_key
+
+    def _find(self, event_id: str, scope: TenantScope) -> Event:
+        for (*candidate_scope, candidate_id), event in self.events.items():
+            if tuple(candidate_scope) != self._scope_key(scope):
+                continue
             if candidate_id == event_id or event.automation_event_id == event_id:
                 return event
         raise LeadAutomationError("event not found")
