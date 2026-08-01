@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_type", "repository", "pr_number", "pr_head_sha", "middleware_main_sha", "odoo_main_sha", "created_at_utc", "requested_expiration_utc", "approved_scope", "image_manifest_sha256", "image_digests", "vulnerability_findings", "compensating_controls", "odoo_isolation_evidence", "middleware_isolation_evidence", "limitations", "negative_authorizations", "revocation_conditions"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "request_type": {"const": "security_owner_decision_request"},
+    "repository": {"const": "Codestra-SRL/codestra-middleware"},
+    "pr_number": {"const": 68},
+    "pr_head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "middleware_main_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "odoo_main_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "created_at_utc": {"type": "string", "format": "date-time"},
+    "requested_expiration_utc": {"type": "string", "format": "date-time"},
+    "approved_scope": {"const": "server_a_isolated_staging"},
+    "image_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "image_digests": {"type": "object", "minProperties": 1},
+    "vulnerability_findings": {"type": "array"},
+    "compensating_controls": {"$ref": "#/$defs/evidence"},
+    "odoo_isolation_evidence": {"$ref": "#/$defs/evidence"},
+    "middleware_isolation_evidence": {"$ref": "#/$defs/evidence"},
+    "limitations": {"type": "array"},
+    "negative_authorizations": {"type": "object"},
+    "revocation_conditions": {"type": "array", "minItems": 1}
+  },
+  "$defs": {"evidence": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+}

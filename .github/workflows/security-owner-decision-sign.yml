@@ -3,58 +3,32 @@ name: Sign security-owner decision
 on:
   workflow_dispatch:
     inputs:
-      approved_head_sha:
-        description: Exact reviewed middleware commit SHA
+      pr_number:
+        description: Pull request number containing inert decision data
         required: true
         type: string
-      approved_scope:
-        description: Must be server_a_isolated_staging
+      pr_head_sha:
+        description: Exact frozen pull request head SHA
         required: true
         type: string
-      decision_expiration:
-        description: UTC expiration in YYYY-MM-DDTHH:MM:SSZ format
+      decision_request_path:
+        description: Repository-relative decision request JSON path
         required: true
         type: string
-      security_owner_authority_reference:
-        description: Independently verifiable security-owner authority artifact reference
+      decision_request_sha256:
+        description: SHA-256 of the exact decision request bytes
         required: true
         type: string
-      middleware_digest:
-        description: Immutable middleware image digest
+      image_manifest_path:
+        description: Repository-relative image manifest JSON path
         required: true
         type: string
-      n8n_digest:
-        description: Immutable n8n image digest
-        required: true
-        type: string
-      odoo_digest:
-        description: Immutable Odoo image digest
-        required: true
-        type: string
-      postgresql_digest:
-        description: Immutable PostgreSQL image digest
-        required: true
-        type: string
-      redis_digest:
-        description: Immutable Redis image digest
-        required: true
-        type: string
-      security_finding_exception_reference:
-        description: Exact exception artifact reference, or an explicit no-exception policy reference
-        required: true
-        type: string
-      security_findings_json:
-        description: Non-empty JSON array of digest-bound security findings
-        required: true
-        type: string
-      compensating_controls_json:
-        description: Non-empty JSON array of compensating controls and remediation deadlines
+      image_manifest_sha256:
+        description: SHA-256 of the exact image manifest bytes
         required: true
         type: string
 
-permissions:
-  contents: read
-  id-token: write
+permissions: {}
 
 concurrency:
   group: security-owner-decision-sign-main
@@ -64,32 +38,32 @@ jobs:
   sign-decision:
     if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: security-owner-decision-signing
+    environment: security-owner-signing
     timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      id-token: write
+      pull-requests: read
     env:
       EXPECTED_ISSUER: https://token.actions.githubusercontent.com
       EXPECTED_IDENTITY: https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/security-owner-decision-sign.yml@refs/heads/main
-      APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
-      APPROVED_SCOPE: ${{ inputs.approved_scope }}
-      DECISION_EXPIRATION: ${{ inputs.decision_expiration }}
-      SECURITY_OWNER_AUTHORITY_REFERENCE: ${{ inputs.security_owner_authority_reference }}
-      MIDDLEWARE_DIGEST: ${{ inputs.middleware_digest }}
-      N8N_DIGEST: ${{ inputs.n8n_digest }}
-      ODOO_DIGEST: ${{ inputs.odoo_digest }}
-      POSTGRESQL_DIGEST: ${{ inputs.postgresql_digest }}
-      REDIS_DIGEST: ${{ inputs.redis_digest }}
-      SECURITY_FINDING_EXCEPTION_REFERENCE: ${{ inputs.security_finding_exception_reference }}
-      SECURITY_FINDINGS_JSON: ${{ inputs.security_findings_json }}
-      COMPENSATING_CONTROLS_JSON: ${{ inputs.compensating_controls_json }}
+      INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+      INPUT_PR_HEAD_SHA: ${{ inputs.pr_head_sha }}
+      INPUT_DECISION_REQUEST_PATH: ${{ inputs.decision_request_path }}
+      INPUT_DECISION_REQUEST_SHA256: ${{ inputs.decision_request_sha256 }}
+      INPUT_IMAGE_MANIFEST_PATH: ${{ inputs.image_manifest_path }}
+      INPUT_IMAGE_MANIFEST_SHA256: ${{ inputs.image_manifest_sha256 }}
     steps:
-      - name: Check out protected main workflow revision
+      - name: Check out protected main validator only
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Validate protected context and decision inputs
+      - name: Validate protected context and inert-data claims
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -98,131 +72,119 @@ jobs:
           test "${GITHUB_REPOSITORY}" = "Codestra-SRL/codestra-middleware"
           test "${GITHUB_REF}" = "refs/heads/main"
           test "${GITHUB_SHA}" = "$(git rev-parse HEAD)"
-          test "${APPROVED_SCOPE}" = "server_a_isolated_staging"
-          [[ "${APPROVED_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          for digest in \
-            "${MIDDLEWARE_DIGEST}" \
-            "${N8N_DIGEST}" \
-            "${ODOO_DIGEST}" \
-            "${POSTGRESQL_DIGEST}" \
-            "${REDIS_DIGEST}"; do
-            [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "${INPUT_PR_NUMBER}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${INPUT_PR_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${INPUT_DECISION_REQUEST_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${INPUT_IMAGE_MANIFEST_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          for path in "${INPUT_DECISION_REQUEST_PATH}" "${INPUT_IMAGE_MANIFEST_PATH}"; do
+            [[ "${path}" =~ ^[A-Za-z0-9._/-]+$ ]]
+            [[ "${path}" != /* && "${path}" != *..* ]]
           done
-          [[ "${DECISION_EXPIRATION}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
-          expiration_epoch=$(date -u --date="${DECISION_EXPIRATION}" +%s)
-          now_epoch=$(date -u +%s)
-          maximum_epoch=$((now_epoch + 90 * 24 * 60 * 60))
-          (( expiration_epoch > now_epoch ))
-          (( expiration_epoch <= maximum_epoch ))
-          for required_text in \
-            "${SECURITY_OWNER_AUTHORITY_REFERENCE}" \
-            "${SECURITY_FINDING_EXCEPTION_REFERENCE}" \
-            "${SECURITY_FINDINGS_JSON}" \
-            "${COMPENSATING_CONTROLS_JSON}"; do
-            [[ "${required_text}" =~ [^[:space:]] ]]
-          done
-          jq -ce 'select(type == "array" and length > 0)' \
-            <<<"${SECURITY_FINDINGS_JSON}" > security-findings.json
-          jq -ce 'select(type == "array" and length > 0)' \
-            <<<"${COMPENSATING_CONTROLS_JSON}" > compensating-controls.json
-          api_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/git/commits/${APPROVED_HEAD_SHA}"
-          curl --fail --silent --show-error --location \
-            --proto '=https' --tlsv1.2 \
+
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          headers=(--header 'Accept: application/vnd.github+json' --header "Authorization: Bearer ${GH_TOKEN}" --header 'X-GitHub-Api-Version: 2022-11-28')
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "${headers[@]}" --output pr.json "${api}/pulls/${INPUT_PR_NUMBER}"
+          test "$(jq -r .state pr.json)" = open
+          test "$(jq -r .head.sha pr.json)" = "${INPUT_PR_HEAD_SHA}"
+
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "${headers[@]}" --output status.json "${api}/commits/${INPUT_PR_HEAD_SHA}/status"
+          jq -e '.statuses | any(.context == "codestra/required-ci" and .state == "success")' status.json >/dev/null
+
+          fetch_inert() {
+            local path="$1" output="$2"
+            curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "${headers[@]}" \
+              --output content.json "${api}/contents/${path}?ref=${INPUT_PR_HEAD_SHA}"
+            test "$(jq -r .type content.json)" = file
+            jq -r .content content.json | tr -d '\n' | base64 --decode > "${output}"
+          }
+          fetch_inert "${INPUT_DECISION_REQUEST_PATH}" decision-request.json
+          fetch_inert "${INPUT_IMAGE_MANIFEST_PATH}" image-manifest.json
+          echo "${INPUT_DECISION_REQUEST_SHA256}  decision-request.json" | sha256sum -c -
+          echo "${INPUT_IMAGE_MANIFEST_SHA256}  image-manifest.json" | sha256sum -c -
+          python3 scripts/security/validate-security-owner-decision.py request \
+            decision-request.json image-manifest.json "${INPUT_PR_NUMBER}" "${INPUT_PR_HEAD_SHA}"
+
+      - name: Audit protected-environment human approval
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/approvals"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
             --header 'Accept: application/vnd.github+json' \
             --header "Authorization: Bearer ${GH_TOKEN}" \
             --header 'X-GitHub-Api-Version: 2022-11-28' \
-            --output approved-commit.json \
-            "${api_url}"
-          test "$(jq -r '.sha' approved-commit.json)" = "${APPROVED_HEAD_SHA}"
+            --output approvals.json "${api}"
+          jq -ce '[.[] | select(.state == "approved" and .user.login == "kazan555" and any(.environments[]; .name == "security-owner-signing"))] | if length == 1 then .[0] else error("exact authorized environment approval required") end' \
+            approvals.json > security-owner-approval-audit.json
+          test "$(jq -r .user.login security-owner-approval-audit.json)" != "${GITHUB_ACTOR}"
+          sha256sum security-owner-approval-audit.json > security-owner-approval-audit.sha256
 
-      - name: Generate canonical deterministic decision document
+      - name: Generate canonical runtime decision envelope
         shell: bash
         run: |
           set -euo pipefail
-          jq -cnS \
-            --arg approved_head_sha "${APPROVED_HEAD_SHA}" \
-            --arg approved_scope "${APPROVED_SCOPE}" \
-            --arg decision_expiration "${DECISION_EXPIRATION}" \
-            --arg authority_reference "${SECURITY_OWNER_AUTHORITY_REFERENCE}" \
-            --arg middleware_digest "${MIDDLEWARE_DIGEST}" \
-            --arg n8n_digest "${N8N_DIGEST}" \
-            --arg odoo_digest "${ODOO_DIGEST}" \
-            --arg postgresql_digest "${POSTGRESQL_DIGEST}" \
-            --arg redis_digest "${REDIS_DIGEST}" \
-            --arg exception_reference "${SECURITY_FINDING_EXCEPTION_REFERENCE}" \
-            --slurpfile findings security-findings.json \
-            --slurpfile controls compensating-controls.json \
+          signed_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          approval_id=$(jq -r .id security-owner-approval-audit.json)
+          approver=$(jq -r .user.login security-owner-approval-audit.json)
+          jq -cS \
+            --arg request_sha "${INPUT_DECISION_REQUEST_SHA256}" \
+            --arg approver "${approver}" \
+            --arg approval_id "${approval_id}" \
+            --arg workflow_sha "${GITHUB_SHA}" \
+            --arg workflow_run_id "${GITHUB_RUN_ID}" \
+            --arg workflow_run_attempt "${GITHUB_RUN_ATTEMPT}" \
+            --arg signed_at_utc "${signed_at_utc}" \
             '{
-              schema: "codestra.security-owner-decision/v1",
-              decision: "SECURITY_OWNER_REVIEW",
-              approved_head_sha: $approved_head_sha,
-              approved_scope: $approved_scope,
-              expires_utc: $decision_expiration,
-              security_owner_authority_reference: $authority_reference,
-              image_digests: {
-                middleware: $middleware_digest,
-                n8n: $n8n_digest,
-                odoo: $odoo_digest,
-                postgresql: $postgresql_digest,
-                redis: $redis_digest
-              },
-              security_finding_exception_reference: $exception_reference,
-              security_findings: $findings[0],
-              compensating_controls: $controls[0],
-              gates: {
-                production_deployment: "BLOCKED",
-                production_activation: "BLOCKED",
-                server_b_access: "BLOCKED",
-                customer_data_access: "BLOCKED"
-              }
-            }' > security-owner-decision.json
-          jq -ceS . security-owner-decision.json > canonical-decision.json
-          cmp --silent security-owner-decision.json canonical-decision.json
-          mv canonical-decision.json security-owner-decision.json
-          sha256sum security-owner-decision.json > security-owner-decision.json.sha256
+              schema_version: .schema_version,
+              decision_status: "approved_for_staging_preparation",
+              decision_request_sha256: $request_sha,
+              repository, pr_number, pr_head_sha, middleware_main_sha, odoo_main_sha,
+              approved_scope,
+              approved_image_digests: .image_digests,
+              accepted_vulnerability_findings: .vulnerability_findings,
+              compensating_controls_sha256: .compensating_controls.sha256,
+              odoo_isolation_evidence_sha256: .odoo_isolation_evidence.sha256,
+              middleware_isolation_evidence_sha256: .middleware_isolation_evidence.sha256,
+              security_owner_approver_login: $approver,
+              security_owner_authority_reference: "SECURITY.md#security-owner-approval-delegation",
+              environment_name: "security-owner-signing",
+              environment_approval_record_id: $approval_id,
+              workflow_repository: "Codestra-SRL/codestra-middleware",
+              workflow_path: ".github/workflows/security-owner-decision-sign.yml",
+              workflow_ref: "refs/heads/main",
+              workflow_sha: $workflow_sha,
+              workflow_run_id: $workflow_run_id,
+              workflow_run_attempt: $workflow_run_attempt,
+              signed_at_utc: $signed_at_utc,
+              expires_at_utc: .requested_expiration_utc,
+              negative_authorizations,
+              revocation_conditions
+            }' decision-request.json > security-owner-decision.json
+          python3 scripts/security/validate-security-owner-decision.py decision security-owner-decision.json
+          sha256sum security-owner-decision.json > security-owner-decision.sha256
 
-      - name: Install checksum-pinned Cosign
-        shell: bash
-        env:
-          COSIGN_VERSION: v3.1.2
-          COSIGN_SHA256: f7622ed3cf22e55e1ae6377c080979ff77a22da9981c11df222a2e444991e7cf
-        run: |
-          set -euo pipefail
-          url="https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
-          curl --fail --location --proto '=https' --tlsv1.2 \
-            --output "${RUNNER_TEMP}/cosign" "${url}"
-          echo "${COSIGN_SHA256}  ${RUNNER_TEMP}/cosign" | sha256sum -c -
-          install -m 0755 "${RUNNER_TEMP}/cosign" "${RUNNER_TEMP}/bin-cosign"
-          "${RUNNER_TEMP}/bin-cosign" version > cosign-version.txt
+      - name: Install pinned Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.2
 
-      - name: Sign canonical decision with keyless Sigstore
+      - name: Sign and verify exact decision bytes
         shell: bash
         run: |
           set -euo pipefail
-          "${RUNNER_TEMP}/bin-cosign" sign-blob \
-            --yes \
-            --bundle security-owner-decision.sigstore.json \
-            security-owner-decision.json
-
-      - name: Verify exact signer identity issuer and bundle
-        shell: bash
-        run: |
-          set -euo pipefail
-          "${RUNNER_TEMP}/bin-cosign" verify-blob \
+          cosign version > cosign-version.txt
+          cosign sign-blob --yes --bundle security-owner-decision.sigstore.json security-owner-decision.json
+          cosign verify-blob \
             --bundle security-owner-decision.sigstore.json \
             --certificate-identity "${EXPECTED_IDENTITY}" \
             --certificate-oidc-issuer "${EXPECTED_ISSUER}" \
-            security-owner-decision.json \
-            > security-owner-decision.verification.txt
-          sha256sum -c security-owner-decision.json.sha256
-          sha256sum \
-            security-owner-decision.json \
-            security-owner-decision.json.sha256 \
-            security-owner-decision.sigstore.json \
-            security-owner-decision.verification.txt \
-            cosign-version.txt \
-            .github/workflows/security-owner-decision-sign.yml \
-            > signed-decision-artifacts.sha256
+            security-owner-decision.json > verification-result.txt
+          sha256sum -c security-owner-decision.sha256
+          sha256sum security-owner-decision.json security-owner-decision.sha256 \
+            security-owner-decision.sigstore.json security-owner-approval-audit.json \
+            security-owner-approval-audit.sha256 verification-result.txt > SHA256SUMS
 
       - name: Upload immutable run-scoped decision evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -230,12 +192,13 @@ jobs:
           name: security-owner-decision-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           overwrite: false
-          retention-days: 30
+          retention-days: 90
           path: |
             security-owner-decision.json
-            security-owner-decision.json.sha256
+            security-owner-decision.sha256
             security-owner-decision.sigstore.json
-            security-owner-decision.verification.txt
-            signed-decision-artifacts.sha256
+            security-owner-approval-audit.json
+            security-owner-approval-audit.sha256
+            verification-result.txt
+            SHA256SUMS
             cosign-version.txt
-            .github/workflows/security-owner-decision-sign.yml
