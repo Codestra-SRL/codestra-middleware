@@ -9,7 +9,7 @@ import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
 EXPECTED_REPOSITORIES = (
@@ -67,7 +67,7 @@ def emit_result(status: str, reason: str) -> None:
 
 
 class GateArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         emit_result(BLOCKED, f"invalid evaluator invocation: {message}")
         raise SystemExit(2)
 
