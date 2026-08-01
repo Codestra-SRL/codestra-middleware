@@ -25,8 +25,8 @@ def fixture(tmp_path: Path) -> dict[str, Path]:
     with files["matrix.csv"].open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=["vulnerability_id", "package", "installed_version", "package_path", "severity", "fixed_versions", "scanners"])
         writer.writeheader()
-        for path in ["/usr/local/bin/python3.12", "/usr/local/lib/libpython3.12.so.1.0"]:
-            writer.writerow({"vulnerability_id": "CVE-2026-1", "package": "python", "installed_version": "3.12.13", "package_path": path, "severity": "HIGH", "fixed_versions": "3.13.14", "scanners": "Grype"})
+        for runtime_path in ["/usr/local/bin/python3.12", "/usr/local/lib/libpython3.12.so.1.0"]:
+            writer.writerow({"vulnerability_id": "CVE-2026-1", "package": "python", "installed_version": "3.12.13", "package_path": runtime_path, "severity": "HIGH", "fixed_versions": "3.13.14", "scanners": "Grype"})
     return files
 
 
