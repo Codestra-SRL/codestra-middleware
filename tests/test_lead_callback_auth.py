@@ -245,7 +245,7 @@ def test_duplicate_authentication_headers_are_denied_before_result_processing(
 ):
     processed = 0
 
-    def must_not_process(_body):
+    def must_not_process(_body, _scope):
         nonlocal processed
         processed += 1
         raise AssertionError("result processing must not run")
@@ -262,7 +262,7 @@ def test_duplicate_authentication_headers_are_denied_before_result_processing(
 def test_route_authentication_rejection_causes_no_state_transition(monkeypatch):
     processed = 0
 
-    def must_not_process(_body):
+    def must_not_process(_body, _scope):
         nonlocal processed
         processed += 1
         raise AssertionError("result processing must not run")
@@ -280,7 +280,7 @@ def test_route_authentication_rejection_causes_no_state_transition(monkeypatch):
 def test_method_override_header_does_not_change_signed_method(monkeypatch):
     processed = 0
 
-    def process(_body):
+    def process(_body, _scope):
         nonlocal processed
         processed += 1
         return {"accepted": True}
