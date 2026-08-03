@@ -1,0 +1,16 @@
+import crypto from 'node:crypto';
+export const states=['accepted','media_uploaded','scheduled','publishing','published','partially_published','failed','cancelled','unknown_requires_reconciliation'];
+export class MockPostlyAdapter {
+  constructor({apiKey='test-key', organizationId='org-codestra', now=()=>Date.now(), maxBytes=10_000_000}={}) { this.apiKey=apiKey; this.organizationId=organizationId; this.now=now; this.maxBytes=maxBytes; this.requests=new Map(); this.posts=new Map(); this.replays=new Set(); }
+  authorize(key, org) { if (key!==this.apiKey) throw this.err('AUTH_INVALID','authentication',false,401); if(org!==this.organizationId) throw this.err('ORG_FORBIDDEN','authorization',false,403); }
+  err(code,category,retryable,status=400) { return Object.assign(new Error(code),{code,category,retryable,status}); }
+  duplicateKey(c) { return [c.organization_id,c.content_job_id,c.content_version,...c.integration_ids,c.scheduled_at].join('|'); }
+  submit(c,{key='test-key'}={}) { this.authorize(key,c.organization_id); if(new Date(c.scheduled_at).getTime()<=this.now()) throw this.err('SCHEDULE_IN_PAST','validation',false); const dk=this.duplicateKey(c); if(this.requests.has(dk)) return this.requests.get(dk); const r={event_id:c.event_id,correlation_id:c.correlation_id,state:'scheduled',occurred_at:new Date(this.now()).toISOString(),postly_group_id:crypto.randomUUID(),provider_results:c.integration_ids.map(integration_id=>({integration_id,state:'scheduled',provider_release_id:null,error:null})),error:null}; this.requests.set(dk,r); this.posts.set(r.postly_group_id,r); return r; }
+  upload({mime_type,size_bytes}) { if(!['image/jpeg','image/png','image/gif','image/webp','image/avif','video/mp4'].includes(mime_type)) throw this.err('MEDIA_UNSUPPORTED','validation',false); if(size_bytes>this.maxBytes) throw this.err('MEDIA_TOO_LARGE','validation',false,413); return {state:'media_uploaded'}; }
+  callback({callback_id,timestamp,signature,body},secret) { if(Math.abs(this.now()-Date.parse(timestamp))>300000) throw this.err('CALLBACK_STALE','authorization',false,401); if(this.replays.has(callback_id)) throw this.err('CALLBACK_REPLAY','conflict',false,409); const expected=crypto.createHmac('sha256',secret).update(timestamp+'.'+body).digest('hex'); if(!crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(signature))) throw this.err('CALLBACK_SIGNATURE','authentication',false,401); this.replays.add(callback_id); return true; }
+  normalize(error) { return {code:error.code||'UPSTREAM_UNKNOWN',category:error.category||'unknown',retryable:!!error.retryable,message:'Upstream operation failed',upstream_status:error.status||null}; }
+  reconcile(groupId) { return this.posts.get(groupId) || {state:'unknown_requires_reconciliation'}; }
+  combine(results) { const ok=results.filter(x=>x.state==='published').length; return ok===results.length?'published':ok?'partially_published':results.some(x=>x.state==='publishing')?'publishing':'failed'; }
+  async withRetry(fn,{attempts=3}={}) { let last; for(let i=0;i<attempts;i++){try{return await fn(i)}catch(e){last=e;if(!e.retryable)throw e}} throw last; }
+  redact(value) { return JSON.stringify(value).replace(/(authorization|api[_-]?key|token|caption|post_content)\"?:\"[^\"]*/gi,'$1":"[REDACTED]'); }
+}

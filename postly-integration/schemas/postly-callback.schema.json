@@ -1,0 +1,2 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://codestra.co/schemas/postly-callback-v1.json","title":"PostlyProviderEvent","allOf":[{"$ref":"postly-result.schema.json"},{"type":"object","required":["callback_id","attempt"],"properties":{"callback_id":{"type":"string","format":"uuid"},"attempt":{"type":"integer","minimum":1}}}]}

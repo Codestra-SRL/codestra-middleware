@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "integration": "postly-social",
+  "bindings": [
+    {"key":"social.content.generate","environment":"staging","workflow_reference":"postly-content-generation-v1","result_schema":"schemas/n8n-generated-content.schema.json","enabled":false},
+    {"key":"social.content.translate.en","environment":"staging","workflow_reference":"postly-translation-en-v1","result_schema":"schemas/n8n-translation.schema.json","enabled":false},
+    {"key":"social.content.translate.es","environment":"staging","workflow_reference":"postly-translation-es-v1","result_schema":"schemas/n8n-translation.schema.json","enabled":false},
+    {"key":"social.content.translate.fr","environment":"staging","workflow_reference":"postly-translation-fr-v1","result_schema":"schemas/n8n-translation.schema.json","enabled":false},
+    {"key":"social.content.translate.ht","environment":"staging","workflow_reference":"postly-translation-ht-v1","result_schema":"schemas/n8n-translation.schema.json","enabled":false},
+    {"key":"social.media.prepare","environment":"staging","workflow_reference":"postly-media-preparation-v1","result_schema":"schemas/n8n-media-manifest.schema.json","enabled":false},
+    {"key":"social.brand.validate","environment":"staging","workflow_reference":"postly-brand-validation-v1","result_schema":"schemas/n8n-brand-validation.schema.json","enabled":false},
+    {"key":"social.approval.notify","environment":"staging","workflow_reference":"postly-approval-notification-v1","result_schema":"schemas/n8n-approval-notification.schema.json","enabled":false},
+    {"key":"social.workflow.failure","environment":"staging","workflow_reference":"postly-workflow-failure-v1","result_schema":"schemas/n8n-workflow-failure.schema.json","enabled":false}
+  ],
+  "forbidden_credentials": ["postly_api_key", "social_oauth_token", "database_url", "middleware_signing_secret"]
+}

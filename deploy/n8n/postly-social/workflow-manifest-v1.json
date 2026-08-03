@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "environment": "staging",
+  "activation": "disabled",
+  "ingress_endpoint_key": "n8n.social.events.staging",
+  "callback_endpoint_key": "middleware.social.n8n_results.staging",
+  "workflow_references": [
+    "postly-content-generation-v1",
+    "postly-translation-en-v1",
+    "postly-translation-es-v1",
+    "postly-translation-fr-v1",
+    "postly-translation-ht-v1",
+    "postly-media-preparation-v1",
+    "postly-brand-validation-v1",
+    "postly-approval-notification-v1",
+    "postly-workflow-failure-v1"
+  ],
+  "direct_postly_access": false,
+  "production_activation": false
+}

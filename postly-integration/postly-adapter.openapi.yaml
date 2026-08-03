@@ -1,0 +1,100 @@
+openapi: 3.1.0
+info:
+  title: Codestra Postly Adapter
+  version: 1.0.0
+  description: Middleware-facing contract. It is not the raw Postiz API and never accepts OAuth tokens.
+servers:
+  - url: https://postly.internal.invalid/api/v1
+    description: Placeholder private vSwitch endpoint; must not resolve publicly
+security:
+  - middlewareAuth: []
+paths:
+  /integrations:
+    get:
+      operationId: listIntegrations
+      parameters: [{$ref: '#/components/parameters/Organization'}, {$ref: '#/components/parameters/Workspace'}, {$ref: '#/components/parameters/Correlation'}]
+      responses: {'200': {$ref: '#/components/responses/Result'}, '401': {$ref: '#/components/responses/Error'}}
+  /integrations/{integration_id}/settings:
+    get:
+      operationId: getIntegrationSettings
+      parameters: [{$ref: '#/components/parameters/Integration'}, {$ref: '#/components/parameters/Organization'}, {$ref: '#/components/parameters/Workspace'}, {$ref: '#/components/parameters/Correlation'}]
+      responses: {'200': {$ref: '#/components/responses/Result'}, '404': {$ref: '#/components/responses/Error'}}
+  /integrations/{integration_id}/available-slot:
+    get:
+      operationId: findAvailableSlot
+      parameters: [{$ref: '#/components/parameters/Integration'}, {$ref: '#/components/parameters/Organization'}, {$ref: '#/components/parameters/Workspace'}, {$ref: '#/components/parameters/Correlation'}]
+      responses: {'200': {$ref: '#/components/responses/Result'}}
+  /media:
+    post:
+      operationId: uploadMedia
+      parameters: [{$ref: '#/components/parameters/Correlation'}, {$ref: '#/components/parameters/Idempotency'}]
+      requestBody: {required: true, content: {multipart/form-data: {schema: {type: object, required: [command, file], properties: {command: {$ref: '#/components/schemas/Command'}, file: {type: string, format: binary}}}}}}
+      responses: {'201': {$ref: '#/components/responses/Result'}, '400': {$ref: '#/components/responses/Error'}, '413': {$ref: '#/components/responses/Error'}}
+  /posts:
+    get:
+      operationId: listPosts
+      parameters: [{$ref: '#/components/parameters/Organization'}, {$ref: '#/components/parameters/Workspace'}, {$ref: '#/components/parameters/Correlation'}, {name: start_at, in: query, required: true, schema: {type: string, format: date-time}}, {name: end_at, in: query, required: true, schema: {type: string, format: date-time}}]
+      responses: {'200': {$ref: '#/components/responses/Result'}}
+    post:
+      operationId: scheduleApprovedPost
+      parameters: [{$ref: '#/components/parameters/Correlation'}, {$ref: '#/components/parameters/Idempotency'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Command'}}}}
+      responses: {'202': {$ref: '#/components/responses/Result'}, '400': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Result'}, '429': {$ref: '#/components/responses/Error'}}
+  /posts/{post_id}:
+    get:
+      operationId: getPost
+      parameters: [{$ref: '#/components/parameters/Post'}, {$ref: '#/components/parameters/Organization'}, {$ref: '#/components/parameters/Workspace'}, {$ref: '#/components/parameters/Correlation'}]
+      responses: {'200': {$ref: '#/components/responses/Result'}, '404': {$ref: '#/components/responses/Error'}}
+    delete:
+      operationId: cancelScheduledPost
+      parameters: [{$ref: '#/components/parameters/Post'}, {$ref: '#/components/parameters/Correlation'}, {$ref: '#/components/parameters/Idempotency'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Command'}}}}
+      responses: {'200': {$ref: '#/components/responses/Result'}, '409': {$ref: '#/components/responses/Error'}}
+  /analytics/accounts/{integration_id}:
+    get:
+      operationId: getAccountAnalytics
+      parameters: [{$ref: '#/components/parameters/Integration'}, {$ref: '#/components/parameters/Organization'}, {$ref: '#/components/parameters/Workspace'}, {$ref: '#/components/parameters/Correlation'}]
+      responses: {'200': {$ref: '#/components/responses/Result'}}
+  /analytics/posts/{post_id}:
+    get:
+      operationId: getPostAnalytics
+      parameters: [{$ref: '#/components/parameters/Post'}, {$ref: '#/components/parameters/Organization'}, {$ref: '#/components/parameters/Workspace'}, {$ref: '#/components/parameters/Correlation'}]
+      responses: {'200': {$ref: '#/components/responses/Result'}}
+  /reconciliation/release-ids:
+    post:
+      operationId: reconcileMissingProviderReleaseIds
+      parameters: [{$ref: '#/components/parameters/Correlation'}, {$ref: '#/components/parameters/Idempotency'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Command'}}}}
+      responses: {'200': {$ref: '#/components/responses/Result'}, '202': {$ref: '#/components/responses/Result'}}
+  /provider-events:
+    post:
+      operationId: receiveProviderEvent
+      description: Future signed callback; disabled until private networking and replay storage pass.
+      security: [{callbackHmac: []}]
+      parameters:
+        - {name: X-Postly-Timestamp, in: header, required: true, schema: {type: string, format: date-time}}
+        - {name: X-Postly-Callback-Id, in: header, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Callback'}}}}
+      responses: {'202': {description: Accepted}, '401': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+components:
+  securitySchemes:
+    middlewareAuth: {type: http, scheme: bearer, bearerFormat: opaque-service-token}
+    callbackHmac: {type: apiKey, in: header, name: X-Postly-Signature, description: HMAC-SHA256(timestamp + '.' + raw body)}
+  parameters:
+    Organization: {name: X-Organization-ID, in: header, required: true, schema: {type: string}}
+    Workspace: {name: X-Workspace-ID, in: header, required: true, schema: {type: string}}
+    Correlation: {name: X-Correlation-ID, in: header, required: true, schema: {type: string, maxLength: 128}}
+    Idempotency: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 16, maxLength: 256}}
+    Integration: {name: integration_id, in: path, required: true, schema: {type: string}}
+    Post: {name: post_id, in: path, required: true, schema: {type: string}}
+  schemas:
+    Command: {$ref: './schemas/postly-command.schema.json'}
+    Result: {$ref: './schemas/postly-result.schema.json'}
+    Callback: {$ref: './schemas/postly-callback.schema.json'}
+    Error:
+      type: object
+      required: [code, category, retryable, message]
+      properties: {code: {type: string}, category: {type: string}, retryable: {type: boolean}, message: {type: string}, correlation_id: {type: string}}
+  responses:
+    Result: {description: Normalized adapter result, content: {application/json: {schema: {$ref: '#/components/schemas/Result'}}}}
+    Error: {description: Normalized safe error, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}

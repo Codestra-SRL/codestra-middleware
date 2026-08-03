@@ -20,3 +20,16 @@ DLQ_DEPTH = Gauge("codestra_dlq_depth", "Dead-letter queue depth", ["target"])
 RECONCILIATION_GAPS = Gauge(
     "codestra_reconciliation_gaps", "Report-only reconciliation gaps", ["category"]
 )
+SOCIAL_PUBLICATIONS = Gauge(
+    "codestra_social_publications", "Social publications by safe state", ["state"]
+)
+SOCIAL_DEAD_LETTERS = Counter(
+    "codestra_social_dead_letters_total", "Social publications dead-lettered"
+)
+SOCIAL_RECONCILIATION_OLDEST = Gauge(
+    "codestra_social_reconciliation_oldest_seconds",
+    "Age of the oldest unresolved social reconciliation item",
+)
+SOCIAL_RETRIES = Counter(
+    "codestra_social_retries_total", "Social delivery retries", ["category"]
+)

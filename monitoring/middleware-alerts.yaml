@@ -1,4 +1,26 @@
 groups:
+  - name: codestra-social-postly
+    rules:
+      - alert: SocialPublicationBacklog
+        expr: codestra_social_publications{state=~"queued|retry_wait"} > 25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Social publication backlog exceeds the staging threshold"
+      - alert: SocialPublicationDeadLetters
+        expr: increase(codestra_social_dead_letters_total[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "A social publication entered dead-letter handling"
+      - alert: SocialReconciliationStalled
+        expr: codestra_social_reconciliation_oldest_seconds > 900
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Social publication reconciliation is stalled"
   - name: codestra-middleware-fast-ack
     rules:
       - alert: MiddlewareFastAckP99High

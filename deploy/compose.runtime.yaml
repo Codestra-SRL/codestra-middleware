@@ -66,6 +66,13 @@ x-runtime: &runtime
     TELEPHONY_RECONCILIATION_ENABLED: "false"
     TELEPHONY_NOTIFICATIONS_ENABLED: "false"
     TELEPHONY_EVIDENCE_ENABLED: "false"
+    SOCIAL_CONTROL_PLANE_ENABLED: "false"
+    SOCIAL_MOCK_ADAPTER_ENABLED: "false"
+    POSTLY_ADAPTER_ENABLED: "false"
+    POSTLY_CALLBACK_ENABLED: "false"
+    SOCIAL_DELIVERY_WORKER_ENABLED: "false"
+    SOCIAL_DEAD_LETTER_REPLAY_ENABLED: "false"
+    SOCIAL_RECONCILIATION_WORKER_ENABLED: "false"
   healthcheck:
     test:
       - CMD
@@ -214,6 +221,39 @@ services:
       OUTBOX_WORKER_ENABLED: "false"
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-scheduler-database-url:/run/secrets/database_url:ro
+
+  middleware-social-delivery-worker:
+    <<: *worker
+    profiles: [social-staging-disabled]
+    command: [python, -m, app.entrypoints.social_delivery_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-social-delivery-worker
+      QUEUE_NAME: middleware.social.delivery.v1
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-social-delivery-worker-database-url:/run/secrets/database_url:ro
+
+  middleware-social-dead-letter-worker:
+    <<: *worker
+    profiles: [social-staging-disabled]
+    command: [python, -m, app.entrypoints.social_dead_letter_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-social-dead-letter-worker
+      QUEUE_NAME: middleware.social.dead-letter.v1
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-social-dead-letter-worker-database-url:/run/secrets/database_url:ro
+
+  middleware-social-reconciliation-worker:
+    <<: *worker
+    profiles: [social-staging-disabled]
+    command: [python, -m, app.entrypoints.social_reconciliation_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-social-reconciliation-worker
+      QUEUE_NAME: middleware.social.reconciliation.v1
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-social-reconciliation-worker-database-url:/run/secrets/database_url:ro
 
   middleware-odoo-result-worker:
     <<: *worker

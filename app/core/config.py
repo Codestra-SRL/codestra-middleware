@@ -149,6 +149,16 @@ class Settings(BaseSettings):
     environment: str = "preproduction"
     publisher_hmac_keys_file: str = ""
     publisher_canary_enabled: bool = False
+    social_control_plane_enabled: bool = False
+    social_mock_adapter_enabled: bool = False
+    postly_adapter_enabled: bool = False
+    postly_api_base_url: str = ""
+    postly_api_key_file: str = ""
+    postly_callback_enabled: bool = False
+    postly_callback_hmac_file: str = ""
+    social_delivery_worker_enabled: bool = False
+    social_dead_letter_replay_enabled: bool = False
+    social_reconciliation_worker_enabled: bool = False
     quarantine_encryption_key_file: str = ""
     quarantine_encryption_key_version: str = "v1"
     quarantine_fingerprint_secret_file: str = ""
