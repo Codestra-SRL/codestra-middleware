@@ -42,7 +42,9 @@ def redact(value: Any) -> Any:
             r"\1=[REDACTED]",
             value,
         )
-        value = re.sub(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", value)
+        value = re.sub(
+            r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", value
+        )
     return value
 
 

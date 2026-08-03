@@ -1,10 +1,12 @@
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -16,7 +18,14 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import (
+    INT4RANGE,
+    JSONB,
+    ExcludeConstraint,
+)
+from sqlalchemy.dialects.postgresql import (
+    UUID as PGUUID,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -24,15 +33,265 @@ class Base(DeclarativeBase):
     pass
 
 
+class TelephonyCommandJournal(Base):
+    __tablename__ = "telephony_command_journal"
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    command_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, unique=True, default=lambda: f"CMD-{uuid4().hex}"
+    )
+    command_type: Mapped[str] = mapped_column(String(96), nullable=False)
+    aggregate_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregate_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    aggregate_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    business_unit_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    campaign_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    idempotency_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    causation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_decision_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    policy_decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    request_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    __table_args__ = (
+        CheckConstraint("aggregate_version >= 1", name="ck_telephony_command_version"),
+        CheckConstraint(
+            "environment IN ('staging','test','production')",
+            name="ck_telephony_command_environment",
+        ),
+        UniqueConstraint(
+            "environment",
+            "aggregate_type",
+            "aggregate_public_id",
+            "aggregate_version",
+            name="uq_telephony_command_aggregate_version",
+        ),
+        Index(
+            "ix_telephony_command_aggregate",
+            "aggregate_type",
+            "aggregate_public_id",
+            "aggregate_version",
+        ),
+        Index("ix_telephony_command_correlation", "correlation_id"),
+    )
+
+
+class TelephonyOperationJournal(Base):
+    __tablename__ = "telephony_operation_journal"
+    operation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    operation_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, unique=True, default=lambda: f"OPR-{uuid4().hex}"
+    )
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_command_journal.command_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    adapter_service_key: Mapped[str] = mapped_column(
+        String(144), nullable=False, default="telephony-adapter"
+    )
+    adapter_operation_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, default=""
+    )
+    target_system: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    target_resource_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=""
+    )
+    target_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, default=""
+    )
+    desired_state_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )
+    idempotency_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, default=lambda: uuid4().hex
+    )
+    transition_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    readback_endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    target_configuration_checksum: Mapped[str] = mapped_column(
+        String(71), nullable=False
+    )
+    target_attested: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    desired_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actual_hash: Mapped[str | None] = mapped_column(String(64))
+    readback_matches: Mapped[bool | None] = mapped_column(Boolean)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    response_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "(readback_matches IS NOT TRUE) OR (actual_hash IS NOT NULL)",
+            name="ck_telephony_operation_readback_hash",
+        ),
+        Index("ix_telephony_operation_correlation", "correlation_id"),
+    )
+
+
+class TelephonyOperationTransition(Base):
+    __tablename__ = "telephony_operation_transition"
+    transition_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    operation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_operation_journal.operation_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_command_journal.command_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    transition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "operation_id", "sequence", name="uq_telephony_transition_sequence"
+        ),
+        UniqueConstraint(
+            "operation_id",
+            "transition_hash",
+            name="uq_telephony_transition_hash",
+        ),
+    )
+
+
+class TelephonyTerminalResult(Base):
+    __tablename__ = "telephony_terminal_result"
+    result_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    result_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, unique=True, default=lambda: f"RES-{uuid4().hex}"
+    )
+    operation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_operation_journal.operation_id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    command_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_command_journal.command_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    application_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    readback_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_system: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    requested_state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    applied_state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    observed_state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    application_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    readback_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    adapter_service_key: Mapped[str] = mapped_column(String(144), nullable=False)
+    adapter_configuration_checksum: Mapped[str] = mapped_column(
+        String(71), nullable=False
+    )
+    safe_summary: Mapped[str] = mapped_column(String(512), nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    readback_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    odoo_callback_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="PENDING"
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    reconciliation_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    immutable_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "result_hash", "operation_id", name="uq_telephony_result_binding"
+        ),
+        Index("ix_telephony_result_correlation", "correlation_id"),
+    )
+
+
+class TelephonyReconciliationRun(Base):
+    __tablename__ = "telephony_reconciliation_run"
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    run_public_id: Mapped[str] = mapped_column(
+        String(144), nullable=False, unique=True, default=lambda: f"REC-{uuid4().hex}"
+    )
+    command_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_command_journal.command_id", ondelete="RESTRICT"),
+    )
+    environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    aggregate_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregate_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    target_system: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    evidence_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        Index("ix_telephony_reconciliation_correlation", "correlation_id"),
+    )
+
+
 class IntegrationEvent(Base):
     __tablename__ = "integration_event"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    schema_version: Mapped[str] = mapped_column(String(16), nullable=False, default="1.0")
-    original_event_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    schema_version: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="1.0"
+    )
+    original_event_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True
+    )
     entity_key: Mapped[str | None] = mapped_column(String(256))
-    source_system: Mapped[str] = mapped_column(String(50), nullable=False, default="vicidial")
+    source_system: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="vicidial"
+    )
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -50,7 +309,8 @@ class IntegrationDelivery(Base):
     )
     event_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("integration_event.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("integration_event.id", ondelete="CASCADE"),
+        nullable=False,
     )
     target: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="disabled")
@@ -65,6 +325,208 @@ class IntegrationDelivery(Base):
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     __table_args__ = (
         UniqueConstraint("event_id", "target", name="uq_delivery_event_target"),
+    )
+
+
+class BroadEventDelivery(Base):
+    __tablename__ = "broad_event_delivery"
+    delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("integration_event.id"), nullable=False
+    )
+    workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="RESERVED")
+    reserved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    response_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_class: Mapped[str | None] = mapped_column(String(64))
+    response_hash: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id",
+            "workflow_id",
+            "workflow_version",
+            "idempotency_key",
+            name="uq_broad_event_delivery_scope",
+        ),
+    )
+
+
+class N8nTargetAttestation(Base):
+    __tablename__ = "n8n_target_attestation"
+    attestation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    target_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    canonical_host: Mapped[str] = mapped_column(String(255), nullable=False)
+    image_digest: Mapped[str] = mapped_column(String(71), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    workflow_package_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_nonce: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    result: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class N8nExecutionRegistration(Base):
+    __tablename__ = "n8n_execution_registration"
+    execution_registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False, unique=True
+    )
+    delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("broad_event_delivery.delivery_id"),
+        unique=True,
+    )
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    execution_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="REGISTERED"
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    registered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    response_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class N8nExecutionTransition(Base):
+    __tablename__ = "n8n_execution_transition"
+    transition_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("n8n_execution_registration.registration_id"),
+        nullable=False,
+    )
+    from_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    persisted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "registration_id",
+            "to_status",
+            name="uq_n8n_transition_registration_status",
+        ),
+    )
+
+
+class N8nAcknowledgement(Base):
+    __tablename__ = "n8n_acknowledgement"
+    acknowledgement_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True
+    )
+    registration_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("n8n_execution_registration.registration_id"),
+        nullable=False,
+    )
+    delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("broad_event_delivery.delivery_id"),
+        unique=True,
+    )
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    execution_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    execution_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    result_classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    persisted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class OdooResultDelivery(Base):
+    __tablename__ = "odoo_result_delivery"
+    result_delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    acknowledgement_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("n8n_acknowledgement.acknowledgement_id"),
+        nullable=False,
+        unique=True,
+    )
+    result_public_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False, unique=True, default=uuid4
+    )
+    originating_outbox_public_id: Mapped[str] = mapped_column(
+        String(128), nullable=False
+    )
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    odoo_result_inbox_id: Mapped[str | None] = mapped_column(String(64))
+    response_hash: Mapped[str | None] = mapped_column(String(64))
+    last_error_class: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 
@@ -95,7 +557,9 @@ class PublisherNonce(Base):
     key_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     nonce: Mapped[str] = mapped_column(String(128), primary_key=True)
     signed_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
 
 
 class PublisherAcknowledgement(Base):
@@ -116,7 +580,9 @@ class PublisherAcknowledgement(Base):
 
 class SecurityRejection(Base):
     __tablename__ = "security_rejection"
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     claimed_publisher: Mapped[str | None] = mapped_column(String(128))
     authentication_state: Mapped[str] = mapped_column(
@@ -139,7 +605,9 @@ class SecurityRejection(Base):
 
 class InvalidEventQuarantine(Base):
     __tablename__ = "invalid_event_quarantine"
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     server_correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
     client_correlation_id: Mapped[str | None] = mapped_column(String(128))
     claimed_source: Mapped[str | None] = mapped_column(String(64))
@@ -147,7 +615,9 @@ class InvalidEventQuarantine(Base):
     authenticated_publisher_id: Mapped[str] = mapped_column(String(128), nullable=False)
     authentication_state: Mapped[str] = mapped_column(String(24), nullable=False)
     authentication_key_id: Mapped[str | None] = mapped_column(String(64))
-    original_signature_verification: Mapped[str] = mapped_column(String(24), nullable=False)
+    original_signature_verification: Mapped[str] = mapped_column(
+        String(24), nullable=False
+    )
     payload_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     encrypted_payload: Mapped[bytes | None] = mapped_column(LargeBinary)
     encryption_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
@@ -155,7 +625,9 @@ class InvalidEventQuarantine(Base):
     sanitized_preview: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
     business_unit: Mapped[str | None] = mapped_column(String(16))
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING_REVIEW")
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="PENDING_REVIEW"
+    )
     review_owner: Mapped[str | None] = mapped_column(String(128))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_by: Mapped[str | None] = mapped_column(String(128))
@@ -167,7 +639,9 @@ class InvalidEventQuarantine(Base):
     occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     legal_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     retention_policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    retention_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retention_deadline: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -181,7 +655,9 @@ class InvalidEventQuarantine(Base):
     __table_args__ = (
         CheckConstraint("replay_count >= 0", name="ck_quarantine_replay_count"),
         CheckConstraint("occurrence_count >= 1", name="ck_quarantine_occurrence_count"),
-        CheckConstraint("retention_deadline > received_at", name="ck_quarantine_retention"),
+        CheckConstraint(
+            "retention_deadline > received_at", name="ck_quarantine_retention"
+        ),
         CheckConstraint("record_version >= 1", name="ck_quarantine_record_version"),
         CheckConstraint(
             "(review_owner IS NULL) = (reviewed_at IS NULL)",
@@ -215,7 +691,11 @@ class InvalidEventQuarantine(Base):
             name="ck_quarantine_encryption_fields",
         ),
         Index("ix_quarantine_status_received", "status", "received_at"),
-        Index("ix_quarantine_publisher_received", "authenticated_publisher_id", "received_at"),
+        Index(
+            "ix_quarantine_publisher_received",
+            "authenticated_publisher_id",
+            "received_at",
+        ),
         Index("ix_quarantine_correlation", "server_correlation_id"),
         Index(
             "ix_quarantine_retention_active",
@@ -228,7 +708,9 @@ class InvalidEventQuarantine(Base):
 
 class QuarantineCorrection(Base):
     __tablename__ = "quarantine_correction"
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     quarantine_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("invalid_event_quarantine.id", ondelete="RESTRICT"),
@@ -248,7 +730,8 @@ class QuarantineCorrection(Base):
     )
     __table_args__ = (
         UniqueConstraint(
-            "quarantine_id", "correction_version",
+            "quarantine_id",
+            "correction_version",
             name="uq_quarantine_correction_version",
         ),
         CheckConstraint(
@@ -364,9 +847,13 @@ class OrchestrationRequest(Base):
     campaign_references: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     requested_resources: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    idempotency_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    idempotency_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="disabled")
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -385,9 +872,13 @@ class CredentialGrant(Base):
     credential_type: Mapped[str] = mapped_column(String(32), nullable=False)
     vault_reference: Mapped[str] = mapped_column(String(255), nullable=False)
     secret_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
-    retrieval_token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    retrieval_token_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -403,7 +894,9 @@ class LeadSyncRequest(Base):
     list_reference: Mapped[str] = mapped_column(String(128), nullable=False)
     canonical_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    idempotency_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    idempotency_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="disabled")
     created_at: Mapped[datetime] = mapped_column(
@@ -453,7 +946,9 @@ class SystemHealthSnapshot(Base):
 
 class TelephonyExtensionPool(Base):
     __tablename__ = "telephony_extension_pool"
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     business_unit: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     role_class: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -462,14 +957,210 @@ class TelephonyExtensionPool(Base):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     __table_args__ = (
         CheckConstraint("range_start >= 6100", name="ck_telephony_pool_start"),
-        CheckConstraint("range_end <= 6999", name="ck_telephony_pool_end"),
+        CheckConstraint("range_end <= 9999", name="ck_telephony_pool_end"),
         CheckConstraint("range_start <= range_end", name="ck_telephony_pool_order"),
+    )
+
+
+class CampaignExtensionAllocation(Base):
+    """Authoritative immutable campaign extension-block ledger."""
+
+    __tablename__ = "campaign_extension_allocation"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    campaign_number: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    allocation_public_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
+    extension_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    extension_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    extension_range: Mapped[Any] = mapped_column(
+        INT4RANGE,
+        Computed(
+            "int4range(extension_start, extension_end, '[]')",
+            persisted=True,
+        ),
+        nullable=False,
+    )
+    allocation_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default="PROPOSED"
+    )
+    allocated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_change_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "extension_start >= 6100",
+            name="ck_campaign_extension_allocation_start",
+        ),
+        CheckConstraint(
+            "extension_end <= 9999",
+            name="ck_campaign_extension_allocation_end",
+        ),
+        CheckConstraint(
+            "extension_start <= extension_end",
+            name="ck_campaign_extension_allocation_order",
+        ),
+        CheckConstraint(
+            "campaign_number > 0 AND campaign_number % 100 = 0",
+            name="ck_campaign_extension_allocation_number",
+        ),
+        CheckConstraint(
+            "allocation_status IN "
+            "('PROPOSED','RESERVED_DISABLED','ACTIVE','PAUSED','RETIRED')",
+            name="ck_campaign_extension_allocation_status",
+        ),
+        ExcludeConstraint(
+            ("extension_range", "&&"),
+            using="gist",
+            name="ex_campaign_extension_allocation_no_overlap",
+        ),
+    )
+
+
+class CampaignRegistry(Base):
+    __tablename__ = "campaign_registry"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    campaign_number: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    campaign_code: Mapped[str] = mapped_column(String(3), nullable=False, unique=True)
+    campaign_public_id: Mapped[str] = mapped_column(
+        String(32), nullable=False, unique=True
+    )
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    vicidial_campaign_id: Mapped[str] = mapped_column(
+        String(8), nullable=False, unique=True
+    )
+    agent_group: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    dialplan_context: Mapped[str] = mapped_column(
+        String(80), nullable=False, unique=True
+    )
+    parent_campaign_number: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number")
+    )
+    extension_allocation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("campaign_extension_allocation.id"),
+        nullable=False,
+        unique=True,
+    )
+    registry_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="PROPOSED_DISABLED"
+    )
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_change_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CampaignObjectIdentity(Base):
+    __tablename__ = "campaign_object_identity"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    campaign_number: Mapped[int] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number"), nullable=False
+    )
+    identity_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    sequence_value: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    public_id: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    full_alias: Mapped[str | None] = mapped_column(String(112), unique=True)
+    source_system: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_object_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    identity_state: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default="ID_ASSIGNED"
+    )
+    dialing_state: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default="NOT_ELIGIBLE"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "campaign_number",
+            "identity_type",
+            "sequence_value",
+            name="uq_campaign_object_identity_sequence",
+        ),
+        UniqueConstraint(
+            "source_system",
+            "source_object_id",
+            "identity_type",
+            name="uq_campaign_object_identity_source",
+        ),
+    )
+
+
+class CampaignSearchAlias(Base):
+    __tablename__ = "campaign_search_alias"
+    alias: Mapped[str] = mapped_column(String(160), primary_key=True)
+    campaign_number: Mapped[int] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number"), nullable=False
+    )
+    object_identity_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("campaign_object_identity.id")
+    )
+    alias_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CampaignFeatureGate(Base):
+    __tablename__ = "campaign_feature_gate"
+    campaign_number: Mapped[int] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number"), primary_key=True
+    )
+    feature_name: Mapped[str] = mapped_column(String(48), primary_key=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="DISABLED"
+    )
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CampaignActivationAudit(Base):
+    __tablename__ = "campaign_activation_audit"
+    activation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    campaign_number: Mapped[int] = mapped_column(
+        Integer, ForeignKey("campaign_registry.campaign_number"), nullable=False
+    )
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
 class TelephonyExtensionReservation(Base):
     __tablename__ = "telephony_extension_reservation"
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     extension: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     employee_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     request_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -477,12 +1168,16 @@ class TelephonyExtensionReservation(Base):
         PGUUID(as_uuid=True), ForeignKey("telephony_extension_pool.id"), nullable=False
     )
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="RESERVED")
-    idempotency_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    idempotency_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
     evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     reserved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -514,7 +1209,9 @@ class TelephonyExtensionReservation(Base):
 
 class TelephonyProvisioningSaga(Base):
     __tablename__ = "telephony_provisioning_saga"
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     request_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     employee_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     business_unit: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -522,21 +1219,49 @@ class TelephonyProvisioningSaga(Base):
     role: Mapped[str] = mapped_column(String(64), nullable=False)
     extension: Mapped[int | None] = mapped_column(Integer)
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT")
-    idempotency_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
-    approved_odoo_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    idempotency_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True
+    )
+    correlation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True
+    )
+    record_environment: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="PRODUCTION"
+    )
+    test_run_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    causation_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    policy_hash: Mapped[str | None] = mapped_column(String(64))
+    approved_odoo_request: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     credential_reference: Mapped[str | None] = mapped_column(String(255))
-    completed_steps: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    completed_steps: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
     last_error_code: Mapped[str | None] = mapped_column(String(64))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
     __table_args__ = (
         CheckConstraint("version >= 1", name="ck_telephony_saga_version"),
+        CheckConstraint(
+            "record_environment IN ('PRODUCTION','STAGING','TEST')",
+            name="ck_telephony_saga_environment",
+        ),
+        CheckConstraint(
+            "(record_environment = 'PRODUCTION' AND test_run_id IS NULL) OR "
+            "(record_environment IN ('STAGING','TEST') AND "
+            "test_run_id IS NOT NULL AND causation_id IS NOT NULL AND "
+            "policy_hash IS NOT NULL)",
+            name="ck_telephony_saga_test_binding",
+        ),
         CheckConstraint(
             "state IN ('DRAFT','PENDING_APPROVAL','APPROVED','INVENTORY_CHECK','RESERVED',"
             "'PROVISIONING','DISABLED_READY','ACTIVATION_PENDING','ACTIVE','FAILED',"
@@ -544,3 +1269,295 @@ class TelephonyProvisioningSaga(Base):
             name="ck_telephony_saga_state",
         ),
     )
+
+
+class TelephonyCallLifecycle(Base):
+    __tablename__ = "telephony_call_lifecycle"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    correlation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True
+    )
+    linked_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    primary_unique_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="STARTED"
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disposition: Mapped[str | None] = mapped_column(String(64))
+    hangup_cause: Mapped[str | None] = mapped_column(String(64))
+    source_extension: Mapped[str] = mapped_column(String(32), nullable=False)
+    destination: Mapped[str] = mapped_column(String(64), nullable=False)
+    dialplan_context: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle_state IN ('STARTED','CONNECTED','ENDED')",
+            name="ck_telephony_call_lifecycle_state",
+        ),
+    )
+
+
+class TelephonyCallLifecycleEvent(Base):
+    __tablename__ = "telephony_call_lifecycle_event"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    call_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telephony_call_lifecycle.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    integration_event_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("integration_event.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    original_event_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True
+    )
+    unique_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    channel: Mapped[str] = mapped_column(String(255), nullable=False)
+    incoming_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_state: Mapped[str | None] = mapped_column(String(16))
+    resulting_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    transition_applied: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class IntegrationService(Base):
+    __tablename__ = "integration_service"
+    service_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    service_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class IntegrationCredentialReference(Base):
+    __tablename__ = "integration_credential_reference"
+    credential_reference_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    reference_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class IntegrationEndpoint(Base):
+    __tablename__ = "integration_endpoint"
+    endpoint_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    service_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("integration_service.service_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    api_version: Mapped[str] = mapped_column(String(16), nullable=False, default="v1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "service_id", "endpoint_key", "api_version", name="uq_endpoint_identity"
+        ),
+    )
+
+
+class IntegrationEndpointVersion(Base):
+    __tablename__ = "integration_endpoint_version"
+    endpoint_version_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    endpoint_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("integration_endpoint.endpoint_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    configuration_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    path_template: Mapped[str] = mapped_column(String(512), nullable=False)
+    http_method: Mapped[str] = mapped_column(String(10), nullable=False)
+    content_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="application/json"
+    )
+    authentication_mode: Mapped[str] = mapped_column(String(64), nullable=False)
+    required_audience: Mapped[str] = mapped_column(String(128), nullable=False)
+    required_scopes: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    credential_reference_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    tls_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    timeout_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=10000)
+    connection_timeout_ms: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3000
+    )
+    rate_limit_per_minute: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    concurrency_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    idempotency_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    retry_class: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="NO_RETRY"
+    )
+    retry_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    redirects_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    target_attestation_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    stale_read_safe: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    kill_switch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    configuration_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    effective_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "endpoint_id",
+            "configuration_version",
+            name="uq_endpoint_configuration_version",
+        ),
+        CheckConstraint("configuration_version >= 1", name="ck_endpoint_version"),
+        CheckConstraint("timeout_ms > 0", name="ck_endpoint_timeout"),
+        CheckConstraint(
+            "connection_timeout_ms > 0", name="ck_endpoint_connection_timeout"
+        ),
+        CheckConstraint("retry_limit >= 0", name="ck_endpoint_retry_limit"),
+        CheckConstraint(
+            "retry_class IN ('NO_RETRY','BOUNDED_TRANSIENT_RETRY','MANUAL_REPLAY_ONLY')",
+            name="ck_endpoint_retry_class",
+        ),
+    )
+
+
+class IntegrationRouteBinding(Base):
+    __tablename__ = "integration_route_binding"
+    binding_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    endpoint_version_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("integration_endpoint_version.endpoint_version_id"),
+        nullable=False,
+    )
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    organization_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    business_unit_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    campaign_scope: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    workflow_scope: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    event_type_scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "environment",
+            "endpoint_version_id",
+            "organization_scope",
+            "business_unit_scope",
+            "campaign_scope",
+            "workflow_scope",
+            "event_type_scope",
+            name="uq_route_binding_scope",
+        ),
+        Index(
+            "ix_route_binding_lookup",
+            "environment",
+            "organization_scope",
+            "business_unit_scope",
+            "campaign_scope",
+        ),
+    )
+
+
+class IntegrationSchemaVersion(Base):
+    __tablename__ = "integration_schema_version"
+    schema_version_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    service_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_key: Mapped[str] = mapped_column(String(96), nullable=False)
+    api_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    schema_reference: Mapped[str] = mapped_column(String(512), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "service_key",
+            "endpoint_key",
+            "api_version",
+            name="uq_integration_schema_key",
+        ),
+    )
+
+
+class IntegrationEndpointAudit(Base):
+    __tablename__ = "integration_endpoint_audit"
+    audit_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    endpoint_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    previous_checksum: Mapped[str | None] = mapped_column(String(71))
+    new_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class IntegrationRegistryGeneration(Base):
+    __tablename__ = "integration_registry_generation"
+    environment: Mapped[str] = mapped_column(String(32), primary_key=True)
+    generation: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    configuration_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    published_by: Mapped[str] = mapped_column(String(128), nullable=False)

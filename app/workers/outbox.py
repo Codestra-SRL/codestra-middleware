@@ -62,20 +62,28 @@ FROM outbox_event GROUP BY status ORDER BY status
 """)
 
 
-async def claim_batch(session: AsyncSession, *, limit: int, lease_seconds: int) -> list[dict[str, Any]]:
+async def claim_batch(
+    session: AsyncSession, *, limit: int, lease_seconds: int
+) -> list[dict[str, Any]]:
     if limit < 1 or limit > 100:
         raise ValueError("claim limit must be between 1 and 100")
     now = datetime.now(timezone.utc)
     rows = await session.execute(
         CLAIM_SQL,
-        {"limit": limit, "now": now, "lease_until": now + timedelta(seconds=lease_seconds)},
+        {
+            "limit": limit,
+            "now": now,
+            "lease_until": now + timedelta(seconds=lease_seconds),
+        },
     )
     await session.commit()
     return [dict(row) for row in rows.mappings()]
 
 
 async def acknowledge(session: AsyncSession, item_id: UUID) -> bool:
-    result = cast(CursorResult[Any], await session.execute(ACK_SQL, {"item_id": item_id}))
+    result = cast(
+        CursorResult[Any], await session.execute(ACK_SQL, {"item_id": item_id})
+    )
     await session.commit()
     return result.rowcount == 1
 
@@ -93,17 +101,20 @@ async def record_failure(
     status = "dead_letter" if dead else "retry"
     next_attempt_at = None if dead else now + timedelta(seconds=policy.delay(attempts))
     sanitized_error = str(redact({"last_error": error})["last_error"])
-    result = cast(CursorResult[Any], await session.execute(
-        FAIL_SQL,
-        {
-            "item_id": item_id,
-            "attempts": attempts,
-            "status": status,
-            "last_error": sanitized_error,
-            "next_attempt_at": next_attempt_at,
-            "dead_lettered_at": now if dead else None,
-        },
-    ))
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            FAIL_SQL,
+            {
+                "item_id": item_id,
+                "attempts": attempts,
+                "status": status,
+                "last_error": sanitized_error,
+                "next_attempt_at": next_attempt_at,
+                "dead_lettered_at": now if dead else None,
+            },
+        ),
+    )
     await session.commit()
     if result.rowcount != 1:
         raise RuntimeError("outbox item was not processing")
@@ -118,14 +129,21 @@ async def recover_expired_leases(session: AsyncSession) -> int:
 
 
 async def replay_dead_letter(session: AsyncSession, item_id: UUID) -> bool:
-    result = cast(CursorResult[Any], await session.execute(REPLAY_SQL, {"item_id": item_id}))
+    result = cast(
+        CursorResult[Any], await session.execute(REPLAY_SQL, {"item_id": item_id})
+    )
     await session.commit()
     return result.rowcount == 1
 
 
 async def queue_metrics(session: AsyncSession) -> dict[str, dict[str, int]]:
-    rows = (await session.execute(METRICS_SQL, {"now": datetime.now(timezone.utc)})).mappings()
+    rows = (
+        await session.execute(METRICS_SQL, {"now": datetime.now(timezone.utc)})
+    ).mappings()
     return {
-        str(row["status"]): {"count": int(row["count"]), "oldest_age_seconds": int(row["oldest_age_seconds"] or 0)}
+        str(row["status"]): {
+            "count": int(row["count"]),
+            "oldest_age_seconds": int(row["oldest_age_seconds"] or 0),
+        }
         for row in rows
     }

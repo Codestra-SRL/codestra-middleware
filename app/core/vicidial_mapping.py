@@ -36,11 +36,15 @@ class CampaignIdentity:
         if canonical_business_unit != self.business_unit_code:
             raise MappingValidationError("campaign business unit mismatch")
         if not PHYSICAL_PATTERN.fullmatch(self.vicidial_campaign_id):
-            raise MappingValidationError("physical campaign ID must be 8 uppercase alphanumerics")
+            raise MappingValidationError(
+                "physical campaign ID must be 8 uppercase alphanumerics"
+            )
         if self.mapping_version < 1:
             raise MappingValidationError("mapping version must be positive")
         if environment == "production" and self.active:
-            raise MappingValidationError("production activation requires a separate approval gate")
+            raise MappingValidationError(
+                "production activation requires a separate approval gate"
+            )
 
 
 def physical_campaign_id(
@@ -60,11 +64,19 @@ def physical_campaign_id(
     reserved = {value.upper() for value in reserved_ids}
     prefix = canonical_campaign_code[:3]
     for attempt in range(max_attempts):
-        material = canonical_campaign_code if attempt == 0 else f"{canonical_campaign_code}:{attempt}"
-        candidate = prefix + hashlib.sha256(material.encode("ascii")).hexdigest()[:5].upper()
+        material = (
+            canonical_campaign_code
+            if attempt == 0
+            else f"{canonical_campaign_code}:{attempt}"
+        )
+        candidate = (
+            prefix + hashlib.sha256(material.encode("ascii")).hexdigest()[:5].upper()
+        )
         if candidate not in reserved:
             return candidate
-    raise MappingValidationError("unable to allocate collision-free physical campaign ID")
+    raise MappingValidationError(
+        "unable to allocate collision-free physical campaign ID"
+    )
 
 
 def validate_registry(records: Iterable[CampaignIdentity]) -> None:

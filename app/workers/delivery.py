@@ -1,4 +1,5 @@
 """Authoritative integration_delivery lease operations; no transport calls."""
+
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,12 +32,20 @@ WHERE status='leased' AND lease_expires_at<=:now RETURNING id
 """)
 
 
-async def claim(session: AsyncSession, target: str, owner: str, limit: int, lease_seconds: int):
+async def claim(
+    session: AsyncSession, target: str, owner: str, limit: int, lease_seconds: int
+):
     now = datetime.now(timezone.utc)
-    rows = await session.execute(CLAIM, {
-        "target": target, "owner": owner, "limit": limit, "now": now,
-        "expires": now + timedelta(seconds=lease_seconds),
-    })
+    rows = await session.execute(
+        CLAIM,
+        {
+            "target": target,
+            "owner": owner,
+            "limit": limit,
+            "now": now,
+            "expires": now + timedelta(seconds=lease_seconds),
+        },
+    )
     await session.commit()
     return [dict(row) for row in rows.mappings()]
 

@@ -4,7 +4,7 @@ import json
 import logging
 import socket
 import ssl
-from ipaddress import IPv4Address
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit
@@ -20,11 +20,14 @@ MAX_PAYLOAD_BYTES = 64 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024
 CONNECT_TIMEOUT_SECONDS = 3.0
 RESPONSE_TIMEOUT_SECONDS = 8.0
-VICIDIAL_PRIVATE_IP = IPv4Address("10.42.0.20")
 
 APPROVED_ROUTES = frozenset(
     {
-        ("POST", "authorization.internal.codestra.agency", "/api/v1/transfers/authorize"),
+        (
+            "POST",
+            "authorization.internal.codestra.agency",
+            "/api/v1/transfers/authorize",
+        ),
         ("POST", "edge.internal.codestra.agency", "/v1/transfers/execute"),
     }
 )
@@ -76,7 +79,10 @@ class VicidialMtlsClient:
         correlation_id: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
-        if not self._settings.transfer_control_enabled or not self._settings.vicidial_read_enabled:
+        if (
+            not self._settings.transfer_control_enabled
+            or not self._settings.vicidial_read_enabled
+        ):
             raise VicidialMtlsError("VICidial authorization is disabled")
         return self.request(
             "POST",
@@ -132,9 +138,13 @@ class VicidialMtlsClient:
         self._assert_private_resolution(parsed.hostname)
 
         try:
-            body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode(
+                "utf-8"
+            )
         except (TypeError, ValueError) as exc:
-            raise VicidialMtlsError("VICIdial payload is not JSON serializable") from exc
+            raise VicidialMtlsError(
+                "VICIdial payload is not JSON serializable"
+            ) from exc
         if len(body) > MAX_PAYLOAD_BYTES:
             raise VicidialMtlsError("VICidial payload exceeds the configured limit")
 
@@ -165,11 +175,17 @@ class VicidialMtlsClient:
                 for chunk in response.iter_bytes():
                     size += len(chunk)
                     if size > MAX_RESPONSE_BYTES:
-                        raise VicidialMtlsError("VICidial response exceeds the configured limit")
+                        raise VicidialMtlsError(
+                            "VICidial response exceeds the configured limit"
+                        )
                     chunks.append(chunk)
         except VicidialMtlsError:
             raise
-        except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
+        except (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            httpx.HTTPStatusError,
+        ) as exc:
             LOGGER.warning(
                 "vicidial_request_failed",
                 extra={
@@ -204,10 +220,16 @@ class VicidialMtlsClient:
 
     def _build_ssl_context(self) -> ssl.SSLContext:
         ca_file = self._required_file(self._settings.vicidial_ca_file, "CA bundle")
-        cert_file = self._required_file(self._settings.vicidial_client_cert_file, "client certificate")
-        key_file = self._required_file(self._settings.vicidial_client_key_file, "client key")
+        cert_file = self._required_file(
+            self._settings.vicidial_client_cert_file, "client certificate"
+        )
+        key_file = self._required_file(
+            self._settings.vicidial_client_key_file, "client key"
+        )
         try:
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_file))
+            context = ssl.create_default_context(
+                ssl.Purpose.SERVER_AUTH, cafile=str(ca_file)
+            )
             context.check_hostname = True
             context.verify_mode = ssl.CERT_REQUIRED
             context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -218,7 +240,9 @@ class VicidialMtlsClient:
                 context.verify_flags |= ssl.VERIFY_CRL_CHECK_CHAIN
             return context
         except (OSError, ssl.SSLError) as exc:
-            raise VicidialMtlsError("VICidial mTLS credentials are invalid or unreadable") from exc
+            raise VicidialMtlsError(
+                "VICidial mTLS credentials are invalid or unreadable"
+            ) from exc
 
     @staticmethod
     def _required_file(value: str, label: str) -> Path:
@@ -230,11 +254,15 @@ class VicidialMtlsClient:
     def _assert_private_resolution(self, hostname: str) -> None:
         try:
             addresses = self._resolver(hostname)
-            parsed = [IPv4Address(address) for address in addresses]
+            parsed = [ip_address(address) for address in addresses]
         except (OSError, ValueError) as exc:
-            raise VicidialMtlsError("VICidial private DNS resolution failed closed") from exc
-        if not parsed or any(address != VICIDIAL_PRIVATE_IP for address in parsed):
-            raise VicidialMtlsError("VICidial hostname did not resolve exclusively to the private IP")
+            raise VicidialMtlsError(
+                "VICidial private DNS resolution failed closed"
+            ) from exc
+        if not parsed or any(not address.is_private for address in parsed):
+            raise VicidialMtlsError(
+                "VICidial hostname did not resolve exclusively to the private IP"
+            )
 
     @staticmethod
     def _resolve_addresses(hostname: str) -> list[str]:

@@ -31,6 +31,20 @@ def test_api_surfaces_are_narrow_and_cover_existing_routes():
     assert "/api/v1/events/vicidial" in event_paths
     assert "/api/v2/telephony/canary" in event_paths
     assert "/api/v1/automation/events" in integration_paths
+    assert "/api/v1/commands" in integration_paths
+    assert "/api/v1/commands/{command_public_id}" in integration_paths
+    assert "/api/v1/telephony/commands" in integration_paths
+    assert "/api/v1/telephony/commands/{command_public_id}/cancel" in integration_paths
+    assert "/api/v1/telephony/operations" in integration_paths
+    assert "/api/v1/telephony/operations/{operation_public_id}" in integration_paths
+    assert (
+        "/api/v1/telephony/operations/{operation_public_id}/transitions"
+        in integration_paths
+    )
+    assert "/api/v1/telephony/results" in integration_paths
+    assert "/api/v1/telephony/results/{result_public_id}" in integration_paths
+    assert "/api/v1/telephony/reconciliation/runs" in integration_paths
+    assert "/api/v1/telephony/reconciliation/runs/{run_public_id}" in integration_paths
     assert "/webphone-api/v1/session" in integration_paths
     assert route_paths(policy_engine.app) >= {
         "/api/v1/policy/decisions",
@@ -87,6 +101,67 @@ def test_disabled_delivery_workers_do_not_claim_or_contact_adapters(monkeypatch)
     }
 
 
+def test_canonical_broad_event_flags_default_closed_and_require_conjunction(
+    monkeypatch,
+):
+    canonical = (
+        "send_events",
+        "broad_event_delivery_enabled",
+        "production_n8n_enabled",
+        "n8n_production_workflows_enabled",
+    )
+    for name in canonical:
+        monkeypatch.setattr(settings, name, False)
+    assert settings.broad_event_pipeline_enabled is False
+
+    for name in canonical:
+        monkeypatch.setattr(settings, name, True)
+    assert settings.broad_event_pipeline_enabled is True
+    assert settings.enable_external_delivery is False
+
+
+def test_broad_event_activation_fails_closed_without_exact_bounded_scope(
+    monkeypatch,
+):
+    canonical = (
+        "send_events",
+        "broad_event_delivery_enabled",
+        "production_n8n_enabled",
+        "n8n_production_workflows_enabled",
+    )
+    for name in canonical:
+        monkeypatch.setattr(settings, name, True)
+    monkeypatch.setattr(settings, "controlled_broad_event_activation", False)
+    try:
+        settings.validate_safety()
+    except ValueError as exc:
+        assert "bounded explicit scope" in str(exc)
+    else:
+        raise AssertionError("unscoped broad-event activation must be rejected")
+
+
+def test_broad_event_activation_accepts_only_bounded_internal_scope(monkeypatch):
+    canonical = (
+        "send_events",
+        "broad_event_delivery_enabled",
+        "production_n8n_enabled",
+        "n8n_production_workflows_enabled",
+    )
+    for name in canonical:
+        monkeypatch.setattr(settings, name, True)
+    monkeypatch.setattr(settings, "controlled_broad_event_activation", True)
+    monkeypatch.setattr(settings, "broad_event_business_unit_allowlist", "BU-400-COD")
+    monkeypatch.setattr(settings, "broad_event_campaign_allowlist", "CMP-400-COD")
+    monkeypatch.setattr(settings, "broad_event_workflow_allowlist", "existing-id")
+    monkeypatch.setattr(settings, "broad_event_type_allowlist", "existing.event")
+    monkeypatch.setattr(
+        settings, "broad_event_activation_high_water_mark", "2026-07-29T00:00:00Z"
+    )
+    monkeypatch.setattr(settings, "broad_event_submission_limit", 3)
+    monkeypatch.setattr(settings, "enable_external_delivery", False)
+    settings.validate_safety()
+
+
 def test_disabled_scheduler_is_safe(monkeypatch):
     monkeypatch.setattr(settings, "outbox_worker_enabled", False)
     assert __import__("asyncio").run(scheduler.cycle()) == {"status": "disabled"}
@@ -107,3 +182,9 @@ def test_worker_has_internal_operational_endpoints():
     app = worker_app("test-worker", "test.queue.v1", sync_worker.cycle)
     paths = route_paths(app)
     assert {"/healthz", "/readyz", "/dependencies"} <= paths
+    with TestClient(app) as client:
+        health = client.get("/healthz")
+        readiness = client.get("/readyz")
+        assert health.json()["stopping"] is False
+        assert readiness.json()["status"] == "ready"
+        assert readiness.json()["queue"] == "test.queue.v1"

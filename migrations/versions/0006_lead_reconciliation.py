@@ -37,14 +37,27 @@ def upgrade() -> None:
     op.create_index(
         "uq_vicidial_map_odoo_lead_active",
         "vicidial_identity_map",
-        ["connector_id", "environment_id", "odoo_model", "odoo_record_id", "external_entity_type"],
+        [
+            "connector_id",
+            "environment_id",
+            "odoo_model",
+            "odoo_record_id",
+            "external_entity_type",
+        ],
         unique=True,
         postgresql_where=sa.text("active AND external_entity_type = 'lead'"),
     )
     op.create_index(
         "uq_vicidial_map_odoo_membership_active",
         "vicidial_identity_map",
-        ["connector_id", "environment_id", "odoo_model", "odoo_record_id", "external_entity_type", "external_parent_id"],
+        [
+            "connector_id",
+            "environment_id",
+            "odoo_model",
+            "odoo_record_id",
+            "external_entity_type",
+            "external_parent_id",
+        ],
         unique=True,
         postgresql_where=sa.text("active AND external_entity_type = 'list_membership'"),
     )
@@ -65,7 +78,12 @@ def upgrade() -> None:
         sa.Column("status", sa.String(32), nullable=False),
         sa.Column("source_cursor", ts),
         sa.Column("next_cursor", ts),
-        sa.Column("counts", postgresql.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column(
+            "counts",
+            postgresql.JSONB,
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
         sa.Column("error_summary", sa.Text),
     )
     op.create_index(
@@ -78,7 +96,9 @@ def upgrade() -> None:
     op.create_table(
         "vicidial_sync_action",
         sa.Column("id", uuid, primary_key=True),
-        sa.Column("sync_run_id", uuid, sa.ForeignKey("vicidial_sync_run.id"), nullable=False),
+        sa.Column(
+            "sync_run_id", uuid, sa.ForeignKey("vicidial_sync_run.id"), nullable=False
+        ),
         sa.Column("idempotency_key", sa.String(512), nullable=False, unique=True),
         sa.Column("request_checksum", sa.String(64), nullable=False),
         sa.Column("action", sa.String(32), nullable=False),
@@ -108,6 +128,10 @@ def downgrade() -> None:
     op.drop_index("uq_vicidial_sync_run_active", table_name="vicidial_sync_run")
     op.drop_table("vicidial_sync_run")
     op.drop_index("uq_vicidial_map_external_active", table_name="vicidial_identity_map")
-    op.drop_index("uq_vicidial_map_odoo_membership_active", table_name="vicidial_identity_map")
-    op.drop_index("uq_vicidial_map_odoo_lead_active", table_name="vicidial_identity_map")
+    op.drop_index(
+        "uq_vicidial_map_odoo_membership_active", table_name="vicidial_identity_map"
+    )
+    op.drop_index(
+        "uq_vicidial_map_odoo_lead_active", table_name="vicidial_identity_map"
+    )
     op.drop_table("vicidial_identity_map")

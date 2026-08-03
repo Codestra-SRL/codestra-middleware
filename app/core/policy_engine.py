@@ -1,4 +1,5 @@
 """Canonical fail-closed policy evaluator used by API and workers."""
+
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta, timezone
@@ -22,6 +23,7 @@ class PolicyRequest(BaseModel):
     action: DecisionAction
     subject: str = Field(min_length=1, max_length=128)
     resource: str = Field(min_length=1, max_length=128)
+    environment: Literal["test", "staging", "production"] | None = None
     evaluated_at: datetime | None = None
     consent_allowed: bool | None = None
     consent_observed_at: datetime | None = None
@@ -104,7 +106,7 @@ def evaluate(request: PolicyRequest) -> PolicyResult:
         ("consent", request.consent_observed_at),
         ("dnc", request.dnc_observed_at),
     ):
-        if _aware(observed):
+        if observed is not None and _aware(observed):
             age = now - observed
             freshness[name] = f"{max(0, int(age.total_seconds()))}s"
             if age < timedelta(0) or age > MAX_FRESHNESS:

@@ -1,4 +1,5 @@
 """Odoo synchronization worker; remains idle while delivery is disabled."""
+
 from app.core.config import settings
 from app.entrypoints.runtime import run_worker
 

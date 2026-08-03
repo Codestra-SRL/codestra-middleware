@@ -1,4 +1,5 @@
 """Retention cleanup that preserves legal holds and auditable metadata."""
+
 from datetime import datetime, timezone
 
 from prometheus_client import Counter

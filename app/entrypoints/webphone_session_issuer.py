@@ -1,4 +1,5 @@
 """Narrow authenticated webphone session API."""
+
 from fastapi import FastAPI
 
 from app.api.v1.webphone import router

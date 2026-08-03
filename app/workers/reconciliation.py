@@ -25,7 +25,9 @@ SET cursor=EXCLUDED.cursor, status=EXCLUDED.status, updated_at=EXCLUDED.updated_
 """)
 
 
-async def reconcile_internal_outbox(session: AsyncSession, limit: int = 100) -> dict[str, object]:
+async def reconcile_internal_outbox(
+    session: AsyncSession, limit: int = 100
+) -> dict[str, object]:
     if limit < 1 or limit > 1000:
         raise ValueError("reconciliation limit must be between 1 and 1000")
     rows = await session.execute(MISSING_SQL, {"limit": limit})
@@ -33,7 +35,14 @@ async def reconcile_internal_outbox(session: AsyncSession, limit: int = 100) -> 
     now = datetime.now(timezone.utc)
     await session.execute(
         CHECKPOINT_SQL,
-        {"cursor": now.isoformat(), "status": "drift" if missing else "healthy", "now": now},
+        {
+            "cursor": now.isoformat(),
+            "status": "drift" if missing else "healthy",
+            "now": now,
+        },
     )
     await session.commit()
-    return {"missing_outbox_event_ids": missing, "status": "drift" if missing else "healthy"}
+    return {
+        "missing_outbox_event_ids": missing,
+        "status": "drift" if missing else "healthy",
+    }

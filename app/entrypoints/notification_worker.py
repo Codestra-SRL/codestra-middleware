@@ -1,4 +1,5 @@
 """Notification worker; performs no delivery while communication flags are off."""
+
 from app.core.config import settings
 from app.entrypoints.runtime import run_worker
 

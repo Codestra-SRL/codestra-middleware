@@ -1,4 +1,5 @@
 """Cryptographic and state-machine primitives for authenticated invalid events."""
+
 from __future__ import annotations
 
 import hashlib
@@ -11,13 +12,24 @@ from typing import Any
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
-STATES = frozenset({
-    "PENDING_REVIEW", "UNDER_REVIEW", "CORRECTABLE", "REPLAY_APPROVED",
-    "REPLAYING", "REPLAYED", "RESOLVED_NO_REPLAY", "EXPIRED", "REJECTED",
-})
+STATES = frozenset(
+    {
+        "PENDING_REVIEW",
+        "UNDER_REVIEW",
+        "CORRECTABLE",
+        "REPLAY_APPROVED",
+        "REPLAYING",
+        "REPLAYED",
+        "RESOLVED_NO_REPLAY",
+        "EXPIRED",
+        "REJECTED",
+    }
+)
 TRANSITIONS = {
     "PENDING_REVIEW": frozenset({"UNDER_REVIEW", "EXPIRED", "REJECTED"}),
-    "UNDER_REVIEW": frozenset({"CORRECTABLE", "REPLAY_APPROVED", "RESOLVED_NO_REPLAY", "REJECTED"}),
+    "UNDER_REVIEW": frozenset(
+        {"CORRECTABLE", "REPLAY_APPROVED", "RESOLVED_NO_REPLAY", "REJECTED"}
+    ),
     "CORRECTABLE": frozenset({"REPLAY_APPROVED", "RESOLVED_NO_REPLAY", "REJECTED"}),
     "REPLAY_APPROVED": frozenset({"REPLAYING", "RESOLVED_NO_REPLAY"}),
     "REPLAYING": frozenset({"REPLAYED", "REPLAY_APPROVED", "REJECTED"}),
@@ -26,14 +38,32 @@ TRANSITIONS = {
     "EXPIRED": frozenset(),
     "REJECTED": frozenset(),
 }
-PII_KEYS = frozenset({
-    "authorization", "telephone_number", "phone", "email", "token", "secret",
-    "password", "private_key", "recording", "customer_reference",
-})
-PREVIEW_KEYS = frozenset({
-    "schema_version", "event_id", "event_type", "source_system",
-    "client_instance", "business_unit", "campaign", "correlation_id",
-})
+PII_KEYS = frozenset(
+    {
+        "authorization",
+        "telephone_number",
+        "phone",
+        "email",
+        "token",
+        "secret",
+        "password",
+        "private_key",
+        "recording",
+        "customer_reference",
+    }
+)
+PREVIEW_KEYS = frozenset(
+    {
+        "schema_version",
+        "event_id",
+        "event_type",
+        "source_system",
+        "client_instance",
+        "business_unit",
+        "campaign",
+        "correlation_id",
+    }
+)
 
 
 class QuarantineIntegrityError(ValueError):
@@ -51,7 +81,9 @@ class EncryptedPayload:
     key_version: str
 
 
-def encrypt_payload(raw: bytes, key: bytes, key_version: str, digest: str) -> EncryptedPayload:
+def encrypt_payload(
+    raw: bytes, key: bytes, key_version: str, digest: str
+) -> EncryptedPayload:
     if len(key) != 32:
         raise ValueError("AES-256-GCM requires a 32-byte key")
     nonce = os.urandom(12)
@@ -59,7 +91,9 @@ def encrypt_payload(raw: bytes, key: bytes, key_version: str, digest: str) -> En
     return EncryptedPayload(ciphertext, nonce, key_version)
 
 
-def decrypt_payload(value: EncryptedPayload, key: bytes, digest: str, secret: bytes) -> bytes:
+def decrypt_payload(
+    value: EncryptedPayload, key: bytes, digest: str, secret: bytes
+) -> bytes:
     try:
         raw = AESGCM(key).decrypt(value.nonce, value.ciphertext, digest.encode())
     except Exception as exc:

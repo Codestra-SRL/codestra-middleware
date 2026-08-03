@@ -3,8 +3,14 @@ from datetime import datetime, timezone
 import pytest
 
 from app.core.daily_reporting import (
-    METRICS, Recipient, authorized, previous_local_day, quality_status,
-    render_html, report_key, safe_ratio,
+    METRICS,
+    Recipient,
+    authorized,
+    previous_local_day,
+    quality_status,
+    render_html,
+    report_key,
+    safe_ratio,
 )
 
 
@@ -25,7 +31,9 @@ def test_campaign_manager_scope():
 
 
 def test_director_and_superuser_scope():
-    director = Recipient("dir", "business_unit_director", frozenset({"DEV"}), frozenset())
+    director = Recipient(
+        "dir", "business_unit_director", frozenset({"DEV"}), frozenset()
+    )
     admin = Recipient("root", "platform_superuser", frozenset(), frozenset())
     assert authorized(director, "DEV", "any")
     assert not authorized(director, "SCP", "any")
@@ -41,14 +49,17 @@ def test_technical_admin_health_only():
 
 def test_idempotency_and_amendment_version():
     assert report_key("2026-07-24", "campaign", "TL-C1", 1) == report_key(
-        "2026-07-24", "campaign", "TL-C1", 1)
+        "2026-07-24", "campaign", "TL-C1", 1
+    )
     assert report_key("2026-07-24", "campaign", "TL-C1", 1) != report_key(
-        "2026-07-24", "campaign", "TL-C1", 2)
+        "2026-07-24", "campaign", "TL-C1", 2
+    )
 
 
 def test_timezone_previous_day_including_dst():
-    start, end = previous_local_day(datetime(2026, 3, 9, 12, tzinfo=timezone.utc),
-                                    "America/New_York")
+    start, end = previous_local_day(
+        datetime(2026, 3, 9, 12, tzinfo=timezone.utc), "America/New_York"
+    )
     assert start.date().isoformat() == "2026-03-08"
     assert end.date().isoformat() == "2026-03-09"
 
@@ -60,8 +71,9 @@ def test_quality_gate():
 
 
 def test_html_is_escaped_and_secure():
-    result = render_html("<Daily>", "TL", "C1", {"x": "<secret>"},
-                         "https://reports.invalid/r/opaque")
+    result = render_html(
+        "<Daily>", "TL", "C1", {"x": "<secret>"}, "https://reports.invalid/r/opaque"
+    )
     assert "<secret>" not in result and "&lt;secret&gt;" in result
     with pytest.raises(ValueError):
         render_html("x", "TL", "C1", {}, "http://unsafe")

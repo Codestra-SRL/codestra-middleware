@@ -19,7 +19,9 @@ from app.api.v1.quarantine import detail, list_records, reprocess, review
 from app.core.config import settings
 from app.core.quarantine import encrypt_payload, fingerprint
 from app.db.models import (
-    IntegrationDelivery, IntegrationEvent, InvalidEventQuarantine,
+    IntegrationDelivery,
+    IntegrationEvent,
+    InvalidEventQuarantine,
     SecurityRejection,
 )
 from app.workers.quarantine import cleanup_expired
@@ -32,9 +34,7 @@ def test_invalid_event_quarantine_database_gates(tmp_path, monkeypatch):
         pytest.skip("requires an explicitly provisioned disposable database")
     assert "diag" in database_url or "rehearsal" in database_url
     if database_url.startswith("postgresql://"):
-        database_url = database_url.replace(
-            "postgresql://", "postgresql+asyncpg://", 1
-        )
+        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     encryption_key = b"e" * 32
     fingerprint_key = b"f" * 32
     encryption_file = tmp_path / "encryption"
@@ -56,19 +56,21 @@ def test_invalid_event_quarantine_database_gates(tmp_path, monkeypatch):
     monkeypatch.setattr(
         settings, "quarantine_fingerprint_secret_file", str(fingerprint_file)
     )
-    monkeypatch.setattr(
-        settings, "quarantine_reviewer_secret_file", str(reviewer_file)
-    )
+    monkeypatch.setattr(settings, "quarantine_reviewer_secret_file", str(reviewer_file))
     publisher_key = b"p" * 32
     publisher_file = tmp_path / "publishers.json"
-    publisher_file.write_text(json.dumps({
-        "publisher-test": base64.urlsafe_b64encode(publisher_key).decode().rstrip("=")
-    }))
+    publisher_file.write_text(
+        json.dumps(
+            {
+                "publisher-test": base64.urlsafe_b64encode(publisher_key)
+                .decode()
+                .rstrip("=")
+            }
+        )
+    )
     monkeypatch.setattr(settings, "publisher_hmac_keys_file", str(publisher_file))
     monkeypatch.setattr(settings, "publisher_canary_enabled", True)
-    asyncio.run(
-        _scenario(database_url, encryption_key, fingerprint_key, reviewer_key)
-    )
+    asyncio.run(_scenario(database_url, encryption_key, fingerprint_key, reviewer_key))
     with TestClient(gateway_app) as client:
         _http_security_scenario(database_url, publisher_key, client)
 
@@ -119,15 +121,18 @@ def _valid_event(event_id: str, campaign: str = "TEST_SYN") -> bytes:
 
 def _signed_headers(body: bytes, secret: bytes, nonce: str) -> dict[str, str]:
     import time
+
     timestamp = str(int(time.time()))
     event_id = str(uuid4())
     digest = hashlib.sha256(body).hexdigest()
-    canonical = "\n".join((
-        "v2", "publisher-test", timestamp, nonce, event_id, digest
-    )).encode()
-    signature = base64.urlsafe_b64encode(
-        hmac.new(secret, canonical, hashlib.sha256).digest()
-    ).decode().rstrip("=")
+    canonical = "\n".join(
+        ("v2", "publisher-test", timestamp, nonce, event_id, digest)
+    ).encode()
+    signature = (
+        base64.urlsafe_b64encode(hmac.new(secret, canonical, hashlib.sha256).digest())
+        .decode()
+        .rstrip("=")
+    )
     return {
         "X-Codestra-Key-ID": "publisher-test",
         "X-Codestra-Timestamp": timestamp,
@@ -145,15 +150,23 @@ def _counts(database_url: str) -> tuple[int, int, int]:
             async with engine.connect() as connection:
                 values = []
                 for table in (
-                    "security_rejection", "invalid_event_quarantine",
+                    "security_rejection",
+                    "invalid_event_quarantine",
                     "integration_event",
                 ):
-                    values.append(int((await connection.execute(
-                        text(f"SELECT count(*) FROM {table}")
-                    )).scalar()))
+                    values.append(
+                        int(
+                            (
+                                await connection.execute(
+                                    text(f"SELECT count(*) FROM {table}")
+                                )
+                            ).scalar()
+                        )
+                    )
                 return tuple(values)
         finally:
             await engine.dispose()
+
     return asyncio.run(read())
 
 
@@ -174,9 +187,7 @@ def _http_security_scenario(
     assert (security, canonical) == (2, 1)
     assert quarantined == 4
 
-    replay = client.post(
-        "/api/v2/telephony/canary", content=malformed, headers=headers
-    )
+    replay = client.post("/api/v2/telephony/canary", content=malformed, headers=headers)
     assert replay.status_code == 401
     security_after, quarantined_after, canonical_after = _counts(database_url)
     assert security_after == security + 1
@@ -185,16 +196,23 @@ def _http_security_scenario(
 
     invalid_signature = dict(_signed_headers(b"{}", publisher_key, "bad-signature"))
     invalid_signature["X-Codestra-Signature"] = "v2=invalid"
-    assert client.post(
-        "/api/v2/telephony/canary", content=b"{}", headers=invalid_signature
-    ).status_code == 401
+    assert (
+        client.post(
+            "/api/v2/telephony/canary", content=b"{}", headers=invalid_signature
+        ).status_code
+        == 401
+    )
     assert _counts(database_url)[1:] == (quarantined, canonical)
 
     oversized = b"x" * (settings.request_max_bytes + 1)
-    assert client.post(
-        "/api/v2/telephony/canary", content=oversized,
-        headers=_signed_headers(oversized, publisher_key, "oversized"),
-    ).status_code == 413
+    assert (
+        client.post(
+            "/api/v2/telephony/canary",
+            content=oversized,
+            headers=_signed_headers(oversized, publisher_key, "oversized"),
+        ).status_code
+        == 413
+    )
     assert _counts(database_url)[1:] == (quarantined, canonical)
 
 
@@ -202,35 +220,42 @@ def _review_authorization(
     reviewer_key: bytes, reviewer: str, scopes: str, units: str
 ) -> str:
     return hmac.new(
-        reviewer_key, "\n".join((reviewer, scopes, units)).encode(),
+        reviewer_key,
+        "\n".join((reviewer, scopes, units)).encode(),
         hashlib.sha256,
     ).hexdigest()
 
 
 async def _scenario(
-    database_url: str, encryption_key: bytes, fingerprint_key: bytes,
+    database_url: str,
+    encryption_key: bytes,
+    fingerprint_key: bytes,
     reviewer_key: bytes,
 ):
     engine = create_async_engine(database_url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with factory() as session:
-            await session.execute(text(
-                "TRUNCATE quarantine_correction, invalid_event_quarantine, "
-                "security_rejection, integration_delivery, integration_event, "
-                "publisher_nonce, audit_event CASCADE"
-            ))
+            await session.execute(
+                text(
+                    "TRUNCATE quarantine_correction, invalid_event_quarantine, "
+                    "security_rejection, integration_delivery, integration_event, "
+                    "publisher_nonce, audit_event CASCADE"
+                )
+            )
             await session.commit()
 
             attacker = b'{"authorization":"Bearer never-store","phone":"+18095550123"}'
             await _security_rejection(
-                session, _request("security-rejection"), attacker,
+                session,
+                _request("security-rejection"),
+                attacker,
                 "invalid_signature",
             )
             assert await session.scalar(select(func.count(SecurityRejection.id))) == 1
-            assert await session.scalar(
-                select(func.count(InvalidEventQuarantine.id))
-            ) == 0
+            assert (
+                await session.scalar(select(func.count(InvalidEventQuarantine.id))) == 0
+            )
             assert await session.scalar(select(func.count(IntegrationEvent.id))) == 0
             rejection_columns = {
                 column.name for column in SecurityRejection.__table__.columns
@@ -241,13 +266,19 @@ async def _scenario(
 
             malformed = b'{"event_type":"bad","token":"never-preview"}'
             await _quarantine(
-                session, _request("authenticated-invalid"), malformed,
-                key_id="publisher-test", publisher_id="publisher-test",
-                reason="schema_rejected", parsed=None,
+                session,
+                _request("authenticated-invalid"),
+                malformed,
+                key_id="publisher-test",
+                publisher_id="publisher-test",
+                reason="schema_rejected",
+                parsed=None,
             )
             invalid = await session.scalar(select(InvalidEventQuarantine))
             assert invalid is not None
-            assert invalid.encrypted_payload and malformed not in invalid.encrypted_payload
+            assert (
+                invalid.encrypted_payload and malformed not in invalid.encrypted_payload
+            )
             assert "never-preview" not in json.dumps(invalid.sanitized_preview)
             assert await session.scalar(select(func.count(IntegrationEvent.id))) == 0
             assert await session.scalar(select(func.count(IntegrationDelivery.id))) == 0
@@ -287,22 +318,38 @@ async def _scenario(
             replay_id = replay_record.id
             for operation in (
                 lambda: list_records(
-                    business_unit="MOY", scopes="", reviewer="",
-                    authorized_units="", authorization_context="", db=session,
+                    business_unit="MOY",
+                    scopes="",
+                    reviewer="",
+                    authorized_units="",
+                    authorization_context="",
+                    db=session,
                 ),
                 lambda: detail(
-                    replay_id, scopes="", reviewer="", authorized_units="",
-                    authorization_context="", db=session,
+                    replay_id,
+                    scopes="",
+                    reviewer="",
+                    authorized_units="",
+                    authorization_context="",
+                    db=session,
                 ),
                 lambda: review(
-                    replay_id, target_state="REPLAYING",
+                    replay_id,
+                    target_state="REPLAYING",
                     record_version=replay_record.record_version,
-                    scopes="", reviewer="", authorized_units="",
-                    authorization_context="", db=session,
+                    scopes="",
+                    reviewer="",
+                    authorized_units="",
+                    authorization_context="",
+                    db=session,
                 ),
                 lambda: reprocess(
-                    replay_id, scopes="", reviewer="", authorized_units="",
-                    authorization_context="", db=session,
+                    replay_id,
+                    scopes="",
+                    reviewer="",
+                    authorized_units="",
+                    authorization_context="",
+                    db=session,
                 ),
             ):
                 with pytest.raises(HTTPException) as unauthorized:
@@ -313,8 +360,10 @@ async def _scenario(
             async with factory() as candidate:
                 scopes = "quarantine:replay"
                 return await reprocess(
-                    replay_id, scopes=scopes,
-                    reviewer="reviewer-test", authorized_units="MOY",
+                    replay_id,
+                    scopes=scopes,
+                    reviewer="reviewer-test",
+                    authorized_units="MOY",
                     authorization_context=_review_authorization(
                         reviewer_key, "reviewer-test", scopes, "MOY"
                     ),
@@ -345,8 +394,10 @@ async def _scenario(
                 encryption_nonce=denied_encrypted.nonce,
                 encryption_key_version="test-v1",
                 sanitized_preview={"business_unit": "COD"},
-                reason_code="policy_rejected", business_unit="COD",
-                status="REPLAY_APPROVED", retention_policy_version="test",
+                reason_code="policy_rejected",
+                business_unit="COD",
+                status="REPLAY_APPROVED",
+                retention_policy_version="test",
                 retention_deadline=datetime.now(timezone.utc) + timedelta(days=1),
                 received_at=datetime.now(timezone.utc),
             )
@@ -355,11 +406,14 @@ async def _scenario(
             with pytest.raises(HTTPException) as policy_error:
                 scopes = "quarantine:replay"
                 await reprocess(
-                    denied.id, scopes=scopes, reviewer="reviewer-test",
+                    denied.id,
+                    scopes=scopes,
+                    reviewer="reviewer-test",
                     authorized_units="COD",
                     authorization_context=_review_authorization(
                         reviewer_key, "reviewer-test", scopes, "COD"
-                    ), db=session,
+                    ),
+                    db=session,
                 )
             assert policy_error.value.status_code == 403
             assert await session.scalar(select(func.count(IntegrationEvent.id))) == 1
@@ -368,11 +422,14 @@ async def _scenario(
             with pytest.raises(HTTPException) as access_error:
                 scopes = "quarantine:read"
                 await detail(
-                    replay_id, scopes=scopes, reviewer="reviewer-test",
+                    replay_id,
+                    scopes=scopes,
+                    reviewer="reviewer-test",
                     authorized_units="COD",
                     authorization_context=_review_authorization(
                         reviewer_key, "reviewer-test", scopes, "COD"
-                    ), db=session,
+                    ),
+                    db=session,
                 )
             assert access_error.value.status_code == 403
 
