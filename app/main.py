@@ -1,6 +1,8 @@
 import re
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
@@ -9,8 +11,8 @@ from app.api.v1.campaign_search import router as campaign_search_router
 from app.api.v1.commands import router as commands_router
 from app.api.v1.control import router as control_router
 from app.api.v1.events import router as events_router
-from app.api.v1.lead_reconciliation import router as lead_reconciliation_router
 from app.api.v1.lead_automation import router as lead_automation_router
+from app.api.v1.lead_reconciliation import router as lead_reconciliation_router
 from app.api.v1.mappings import router as mappings_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.n8n_target import router as n8n_target_router
@@ -18,11 +20,11 @@ from app.api.v1.n8n_transport import router as n8n_transport_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.publisher import router as publisher_router
-from app.api.v1.reports import router as reports_router
-from app.api.v1.registry import router as registry_router
 from app.api.v1.recordings import router as recordings_router
-from app.api.v1.telephony import router as telephony_router
+from app.api.v1.registry import router as registry_router
+from app.api.v1.reports import router as reports_router
 from app.api.v1.social import router as social_router
+from app.api.v1.telephony import router as telephony_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -50,6 +52,19 @@ app.include_router(commands_router)
 app.include_router(recordings_router)
 app.mount("/metrics", make_asgi_app())
 
+
+@app.exception_handler(RequestValidationError)
+async def privacy_safe_validation_error(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Return useful locations/codes without reflecting submitted content."""
+    errors = [
+        {"type": item["type"], "loc": item["loc"], "msg": item["msg"]}
+        for item in exc.errors()
+    ]
+    return JSONResponse({"detail": errors}, status_code=422)
+
+
 SIGNED_WEBHOOK_PATHS = frozenset(
     {
         "/api/v1/events/vicidial",
@@ -60,6 +75,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v1/n8n/acknowledgements",
         "/api/v1/lead-automation/results",
         "/api/v1/registry/resolve",
+        "/api/v1/social/provider-events",
     }
 )
 SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
@@ -73,11 +89,19 @@ RECORDING_EXPORTER_PATH = re.compile(
 
 @app.middleware("http")
 async def control_request_guard(request: Request, call_next):
+    supplied_correlation = request.headers.get("X-Correlation-ID", "")
+    correlation_id = (
+        supplied_correlation
+        if supplied_correlation and len(supplied_correlation) <= 128
+        else str(uuid4())
+    )
     if (
         int(request.headers.get("content-length", "0") or 0)
         > settings.request_max_bytes
     ):
-        return JSONResponse({"detail": "request too large"}, status_code=413)
+        response = JSONResponse({"detail": "request too large"}, status_code=413)
+        response.headers["X-Correlation-ID"] = correlation_id
+        return response
     if (
         (request.url.path.startswith("/api/") or request.url.path.startswith("/v1/"))
         and request.url.path not in SIGNED_WEBHOOK_PATHS
@@ -93,11 +117,11 @@ async def control_request_guard(request: Request, call_next):
             )
         except BearerAuthError as exc:
             status_code = 503 if not settings.middleware_secret else 401
-            return JSONResponse({"detail": str(exc)}, status_code=status_code)
+            response = JSONResponse({"detail": str(exc)}, status_code=status_code)
+            response.headers["X-Correlation-ID"] = correlation_id
+            return response
     response = await call_next(request)
-    response.headers["X-Correlation-ID"] = (
-        request.headers.get("X-Correlation-ID", "") or "generated"
-    )
+    response.headers["X-Correlation-ID"] = correlation_id
     return response
 
 

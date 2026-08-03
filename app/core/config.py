@@ -156,6 +156,7 @@ class Settings(BaseSettings):
     postly_api_key_file: str = ""
     postly_callback_enabled: bool = False
     postly_callback_hmac_file: str = ""
+    postly_callback_source_cidrs: str = ""
     social_delivery_worker_enabled: bool = False
     social_dead_letter_replay_enabled: bool = False
     social_reconciliation_worker_enabled: bool = False

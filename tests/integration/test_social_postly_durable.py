@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.social_repository import SocialRepository
+from app.workers.social import replay_one_dead_letter
 
 
 def test_durable_social_control_plane_lifecycle():
@@ -25,7 +26,7 @@ async def _scenario(database_url: str) -> None:
         async with factory() as session:
             await session.execute(
                 text(
-                    "TRUNCATE social_reconciliation_lease,social_dead_letter,"
+                    "TRUNCATE social_provider_callback,social_reconciliation_lease,social_dead_letter,"
                     "social_delivery_attempt,social_audit_record,"
                     "social_idempotency_claim,social_publication,social_approval,"
                     "social_content_version,social_content_job"
@@ -40,6 +41,7 @@ async def _scenario(database_url: str) -> None:
                     "campaign_id": "CMP-TEST",
                     "content_job_id": "JOB-DURABLE-TEST",
                     "content_version": 1,
+                    "integration_ids": ["INT-TEST-A", "INT-TEST-B", "INT-TEST-C"],
                     "preferred_language": "en",
                     "correlation_id": "COR-DURABLE-TEST",
                     "scheduled_at": datetime(
@@ -61,6 +63,8 @@ async def _scenario(database_url: str) -> None:
                     "status": "proposal_only",
                 },
                 "N8N-MOCK-1",
+                "ORG-CODESTRA",
+                "WS-TEST",
             )
             await repository.approve(
                 "JOB-DURABLE-TEST",
@@ -70,12 +74,20 @@ async def _scenario(database_url: str) -> None:
                     "approved_at": now,
                     "content_version": 1,
                 },
+                "ORG-CODESTRA",
+                "WS-TEST",
             )
             first = await repository.claim_publications(
-                "JOB-DURABLE-TEST", ["INT-TEST-A", "INT-TEST-B"]
+                "JOB-DURABLE-TEST",
+                ["INT-TEST-A", "INT-TEST-B"],
+                "ORG-CODESTRA",
+                "WS-TEST",
             )
             duplicate = await repository.claim_publications(
-                "JOB-DURABLE-TEST", ["INT-TEST-A", "INT-TEST-B"]
+                "JOB-DURABLE-TEST",
+                ["INT-TEST-A", "INT-TEST-B"],
+                "ORG-CODESTRA",
+                "WS-TEST",
             )
             assert [item["id"] for item in first] == [item["id"] for item in duplicate]
             assert (
@@ -88,15 +100,43 @@ async def _scenario(database_url: str) -> None:
                 == "dead_letter"
             )
             await repository.require_reconciliation(first[1]["id"])
+            retry_publication = (
+                await repository.claim_publications(
+                    "JOB-DURABLE-TEST",
+                    ["INT-TEST-C"],
+                    "ORG-CODESTRA",
+                    "WS-TEST",
+                )
+            )[0]
+            assert (
+                await repository.record_failure(
+                    retry_publication["id"],
+                    category="temporary",
+                    code="SYNTHETIC_503",
+                    retryable=True,
+                )
+                == "retry_wait"
+            )
             lease = await repository.claim_reconciliation("test-worker")
             assert lease and lease["lease_owner"] == "test-worker"
             assert (
                 await session.execute(
                     text("SELECT count(*) FROM social_idempotency_claim")
                 )
-            ).scalar_one() == 2
+            ).scalar_one() == 3
             assert (
                 await session.execute(text("SELECT count(*) FROM social_dead_letter"))
             ).scalar_one() == 1
+            with pytest.raises(PermissionError, match="not authorized"):
+                await replay_one_dead_letter(session)
+            assert (
+                await replay_one_dead_letter(session, authorized=True) == first[0]["id"]
+            )
+            assert (
+                await session.execute(
+                    text("SELECT state FROM social_publication WHERE id=:id"),
+                    {"id": first[0]["id"]},
+                )
+            ).scalar_one() == "retry_wait"
     finally:
         await engine.dispose()

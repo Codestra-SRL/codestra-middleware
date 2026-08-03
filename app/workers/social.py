@@ -71,7 +71,7 @@ async def recover_expired_delivery_leases(session: AsyncSession) -> int:
     """)
     )
     await session.commit()
-    return result.rowcount
+    return int(getattr(result, "rowcount", 0))
 
 
 async def dead_letter_depth(session: AsyncSession) -> int:
@@ -86,6 +86,46 @@ async def dead_letter_depth(session: AsyncSession) -> int:
     )
 
 
+async def replay_one_dead_letter(
+    session: AsyncSession, *, authorized: bool = False
+) -> UUID | None:
+    if not authorized:
+        raise PermissionError("social dead-letter replay is not authorized")
+    row = (
+        (
+            await session.execute(
+                text("""
+            SELECT d.id,d.publication_id FROM social_dead_letter d
+            JOIN social_publication p ON p.id=d.publication_id
+            WHERE d.replayed_at IS NULL AND p.state='dead_letter'
+            ORDER BY d.dead_lettered_at FOR UPDATE SKIP LOCKED LIMIT 1
+            """)
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if not row:
+        return None
+    await session.execute(
+        text("""
+        UPDATE social_dead_letter SET replay_count=replay_count+1,replayed_at=now()
+        WHERE id=:dead_letter_id
+        """),
+        {"dead_letter_id": row["id"]},
+    )
+    await session.execute(
+        text("""
+        UPDATE social_publication SET state='retry_wait',next_attempt_at=now(),
+          lease_owner=NULL,lease_expires_at=NULL,updated_at=now()
+        WHERE id=:publication_id
+        """),
+        {"publication_id": row["publication_id"]},
+    )
+    await session.commit()
+    return row["publication_id"]
+
+
 async def recover_expired_reconciliation_leases(session: AsyncSession) -> int:
     result = await session.execute(
         text("""
@@ -96,4 +136,4 @@ async def recover_expired_reconciliation_leases(session: AsyncSession) -> int:
         {"now": datetime.now(timezone.utc)},  # noqa: UP017
     )
     await session.commit()
-    return result.rowcount
+    return int(getattr(result, "rowcount", 0))

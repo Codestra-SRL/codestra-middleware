@@ -21,6 +21,12 @@ groups:
           severity: critical
         annotations:
           summary: "Social publication reconciliation is stalled"
+      - alert: SocialProviderCallbackRejected
+        expr: sum(increase(codestra_social_callbacks_total{outcome=~"source_rejected|timestamp_rejected|signature_rejected|schema_rejected|binding_rejected"}[5m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "A signed social provider callback was rejected"
   - name: codestra-middleware-fast-ack
     rules:
       - alert: MiddlewareFastAckP99High

@@ -33,3 +33,8 @@ SOCIAL_RECONCILIATION_OLDEST = Gauge(
 SOCIAL_RETRIES = Counter(
     "codestra_social_retries_total", "Social delivery retries", ["category"]
 )
+SOCIAL_CALLBACKS = Counter(
+    "codestra_social_callbacks_total",
+    "Social provider callbacks by privacy-safe outcome",
+    ["outcome"],
+)

@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.social_postly import SocialError
@@ -72,9 +73,14 @@ class SocialRepository:
         return dict(row)
 
     async def store_proposal(
-        self, public_id: str, proposal: dict[str, Any], execution_id: str
+        self,
+        public_id: str,
+        proposal: dict[str, Any],
+        execution_id: str,
+        organization_id: str,
+        workspace_id: str,
     ) -> dict[str, Any]:
-        job = await self._job(public_id, for_update=True)
+        job = await self._job(public_id, organization_id, workspace_id, for_update=True)
         if (
             proposal["content_job_id"] != public_id
             or proposal["content_version"] != job["current_version"]
@@ -115,10 +121,16 @@ class SocialRepository:
             {"workflow_execution_id": execution_id},
         )
         await self.session.commit()
-        return await self.get_job(public_id)
+        return await self.get_job(public_id, organization_id, workspace_id)
 
-    async def approve(self, public_id: str, approval: dict[str, Any]) -> dict[str, Any]:
-        job = await self._job(public_id, for_update=True)
+    async def approve(
+        self,
+        public_id: str,
+        approval: dict[str, Any],
+        organization_id: str,
+        workspace_id: str,
+    ) -> dict[str, Any]:
+        job = await self._job(public_id, organization_id, workspace_id, for_update=True)
         if (
             job["state"] != "pending_review"
             or approval["content_version"] != job["current_version"]
@@ -170,12 +182,16 @@ class SocialRepository:
             {"approval_id": approval["approval_id"]},
         )
         await self.session.commit()
-        return await self.get_job(public_id)
+        return await self.get_job(public_id, organization_id, workspace_id)
 
     async def claim_publications(
-        self, public_id: str, integration_ids: list[str]
+        self,
+        public_id: str,
+        integration_ids: list[str],
+        organization_id: str,
+        workspace_id: str,
     ) -> list[dict[str, Any]]:
-        job = await self._job(public_id, for_update=True)
+        job = await self._job(public_id, organization_id, workspace_id, for_update=True)
         if job["state"] not in {"approved", "queued"}:
             raise SocialError(
                 "APPROVAL_REQUIRED", "approved immutable version required"
@@ -406,19 +422,191 @@ class SocialRepository:
         await self.session.commit()
         return dict(row) if row else None
 
-    async def get_job(self, public_id: str) -> dict[str, Any]:
-        return dict(await self._job(public_id))
+    async def get_job(
+        self, public_id: str, organization_id: str, workspace_id: str
+    ) -> dict[str, Any]:
+        return dict(await self._job(public_id, organization_id, workspace_id))
 
-    async def _job(self, public_id: str, *, for_update: bool = False) -> Any:
+    async def get_audit(
+        self, public_id: str, organization_id: str, workspace_id: str
+    ) -> list[dict[str, Any]]:
+        job = await self._job(public_id, organization_id, workspace_id)
+        rows = (
+            (
+                await self.session.execute(
+                    text("""
+                SELECT sequence,action,from_state,to_state,actor_ref,occurred_at,
+                       correlation_id,safe_details
+                FROM social_audit_record WHERE job_id=:job_id ORDER BY sequence
+                """),
+                    {"job_id": job["id"]},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return [dict(row) for row in rows]
+
+    async def get_analytics(
+        self, public_id: str, organization_id: str, workspace_id: str
+    ) -> dict[str, int]:
+        job = await self._job(public_id, organization_id, workspace_id)
+        row = (
+            (
+                await self.session.execute(
+                    text("""
+                SELECT COALESCE(SUM((provider_result->>'impressions')::bigint),0) impressions,
+                       COALESCE(SUM((provider_result->>'reactions')::bigint),0) reactions,
+                       COALESCE(SUM((provider_result->>'comments')::bigint),0) comments,
+                       COALESCE(SUM((provider_result->>'shares')::bigint),0) shares
+                FROM social_publication WHERE job_id=:job_id
+                """),
+                    {"job_id": job["id"]},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        return {key: int(value) for key, value in row.items()}
+
+    async def accept_provider_callback(
+        self, callback: dict[str, Any], payload_sha256: str
+    ) -> dict[str, Any]:
+        callback_id = callback["callback_id"]
+        if (
+            await self.session.execute(
+                text("SELECT 1 FROM social_provider_callback WHERE callback_id=:id"),
+                {"id": callback_id},
+            )
+        ).scalar_one_or_none():
+            raise SocialError(
+                "CALLBACK_REPLAY", "provider callback replay rejected", 409
+            )
+        prior_event = (
+            await self.session.execute(
+                text(
+                    "SELECT callback_id FROM social_provider_callback WHERE event_id=:id"
+                ),
+                {"id": callback["event_id"]},
+            )
+        ).scalar_one_or_none()
+        if prior_event:
+            return {"status": "duplicate_event", "persisted": False}
+        releases = [
+            item.get("provider_release_id")
+            for item in callback["provider_results"]
+            if item.get("provider_release_id")
+        ]
+        groups = (
+            [callback.get("postly_group_id")] if callback.get("postly_group_id") else []
+        )
+        if not releases and not groups:
+            raise SocialError(
+                "CALLBACK_BINDING_REQUIRED", "provider binding required", 409
+            )
+        matched_publications: list[dict[str, Any]] = []
+        for result in callback["provider_results"]:
+            rows = (
+                (
+                    await self.session.execute(
+                        text("""
+                        SELECT p.id publication_id,p.job_id,j.*
+                        FROM social_publication p
+                        JOIN social_content_job j ON j.id=p.job_id
+                        WHERE p.integration_id=:integration_id
+                          AND (
+                            (CAST(:release_id AS text) IS NOT NULL
+                             AND p.provider_release_id=CAST(:release_id AS text))
+                            OR (CAST(:group_id AS text) IS NOT NULL
+                                AND p.postly_group_id=CAST(:group_id AS text))
+                          )
+                        """),
+                        {
+                            "integration_id": result["integration_id"],
+                            "release_id": result.get("provider_release_id"),
+                            "group_id": callback.get("postly_group_id"),
+                        },
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            if len(rows) != 1:
+                raise SocialError(
+                    "CALLBACK_BINDING_CONFLICT", "provider binding conflict", 409
+                )
+            matched_publications.append(dict(rows[0]))
+        job_ids = {item["job_id"] for item in matched_publications}
+        if len(job_ids) != 1:
+            raise SocialError(
+                "CALLBACK_BINDING_CONFLICT", "provider binding conflict", 409
+            )
+        bound = matched_publications[0]
+        try:
+            await self.session.execute(
+                text("""
+                INSERT INTO social_provider_callback
+                  (callback_id,event_id,job_id,correlation_id,payload_sha256,state,attempt,occurred_at)
+                VALUES (:callback_id,:event_id,:job_id,:correlation_id,:payload_sha256,
+                        :state,:attempt,:occurred_at)
+                """),
+                {"job_id": bound["id"], "payload_sha256": payload_sha256, **callback},
+            )
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise SocialError(
+                "CALLBACK_REPLAY", "provider callback replay rejected", 409
+            ) from exc
+        for result, publication in zip(
+            callback["provider_results"], matched_publications, strict=True
+        ):
+            await self.session.execute(
+                text("""
+                UPDATE social_publication SET state=:state,
+                  provider_release_id=COALESCE(:release_id,provider_release_id),
+                  updated_at=now()
+                WHERE id=:publication_id
+                """),
+                {
+                    "publication_id": publication["publication_id"],
+                    "state": result["state"],
+                    "release_id": result.get("provider_release_id"),
+                },
+            )
+        await self._audit(
+            bound["id"],
+            "provider_callback_accepted",
+            bound["state"],
+            callback["state"],
+            "postly-adapter",
+            callback["correlation_id"],
+            {"callback_id": str(callback_id), "attempt": callback["attempt"]},
+        )
+        await self.session.commit()
+        return {"status": "accepted", "persisted": True}
+
+    async def _job(
+        self,
+        public_id: str,
+        organization_id: str,
+        workspace_id: str,
+        *,
+        for_update: bool = False,
+    ) -> Any:
         suffix = " FOR UPDATE" if for_update else ""
         row = (
             (
                 await self.session.execute(
                     text(
-                        "SELECT * FROM social_content_job WHERE content_job_id=:id"
-                        + suffix
+                        "SELECT * FROM social_content_job WHERE content_job_id=:id "
+                        "AND organization_id=:organization_id "
+                        "AND workspace_id=:workspace_id" + suffix
                     ),
-                    {"id": public_id},
+                    {
+                        "id": public_id,
+                        "organization_id": organization_id,
+                        "workspace_id": workspace_id,
+                    },
                 )
             )
             .mappings()
