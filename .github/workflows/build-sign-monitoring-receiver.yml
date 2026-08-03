@@ -1,0 +1,198 @@
+name: Build and sign monitoring receiver replacement
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact reviewed monitoring-receiver source commit
+        required: true
+        type: string
+      version:
+        description: Immutable release version label
+        required: true
+        type: string
+      dockerfile:
+        description: Reviewed Dockerfile path in the source commit
+        required: true
+        type: string
+      context:
+        description: Reviewed Docker build context in the source commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monitoring-receiver-replacement-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-scan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: security-release
+    timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      repository: ${{ steps.vars.outputs.repository }}
+      signer: ${{ steps.vars.outputs.signer }}
+    steps:
+      - name: Check out exact reviewed source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact source and clean tree
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git status --porcelain)" = ""
+          git cat-file -e "$SOURCE_SHA^{commit}"
+          test -f "${{ inputs.dockerfile }}"
+
+      - name: Define approved destination and signer identity
+        id: vars
+        shell: bash
+        env:
+          REGISTRY_HOSTNAME: ${{ vars.REGISTRY_HOSTNAME }}
+          MONITORING_RECEIVER_REPOSITORY: ${{ vars.MONITORING_RECEIVER_REPOSITORY }}
+          WORKFLOW_PATH: .github/workflows/build-sign-monitoring-receiver.yml
+        run: |
+          set -euo pipefail
+          test -n "$REGISTRY_HOSTNAME"
+          test -n "$MONITORING_RECEIVER_REPOSITORY"
+          repository="${REGISTRY_HOSTNAME}/${MONITORING_RECEIVER_REPOSITORY}"
+          signer="https://github.com/${GITHUB_REPOSITORY}/${WORKFLOW_PATH}@${GITHUB_REF}"
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "signer=$signer" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to approved registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.REGISTRY_HOSTNAME }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and publish with attestations
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          push: true
+          tags: ${{ steps.vars.outputs.repository }}:${{ inputs.version }}
+          platforms: linux/amd64
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ inputs.source_sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+            org.opencontainers.image.version=${{ inputs.version }}
+
+      - name: Pull exact digest for scanning
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: docker pull "$IMAGE"
+
+      - name: Generate CycloneDX SBOM
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: syft "$IMAGE" -o cyclonedx-json=sbom.cdx.json
+
+      - name: Scan with Trivy
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: trivy image --format json --output trivy.json --exit-code 1 --severity CRITICAL,HIGH "$IMAGE"
+
+      - name: Scan with Grype
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: grype "$IMAGE" --output json --file grype.json --fail-on high
+
+      - name: Retain build metadata and checksums
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"source_sha":"${{ inputs.source_sha }}","workflow":"'"$GITHUB_WORKFLOW_REF"'","run_id":"'"$GITHUB_RUN_ID"'","run_attempt":"'"$GITHUB_RUN_ATTEMPT"'","digest":"${{ steps.build.outputs.digest }}"}' > provenance.json
+          sha256sum sbom.cdx.json provenance.json trivy.json grype.json > checksums.sha256
+          jq empty sbom.cdx.json
+          jq empty provenance.json
+
+      - name: Upload unsigned build evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-receiver-build-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            sbom.cdx.json
+            provenance.json
+            trivy.json
+            grype.json
+            checksums.sha256
+
+  sign-verify:
+    needs: build-scan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: security-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download build evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: monitoring-receiver-build-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Sign exact digest and attest evidence
+        env:
+          IMAGE: ${{ needs.build-scan.outputs.repository }}@${{ needs.build-scan.outputs.digest }}
+          EXPECTED_IDENTITY: ${{ needs.build-scan.outputs.signer }}
+          EXPECTED_ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          set -euo pipefail
+          cosign sign --yes --bundle image-signature.sigstore.json "$IMAGE"
+          cosign attest --yes --type cyclonedx --predicate sbom.cdx.json --bundle sbom-attestation.sigstore.json "$IMAGE"
+          cosign attest --yes --type custom --predicate provenance.json --bundle provenance-attestation.sigstore.json "$IMAGE"
+          cosign verify --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" "$IMAGE" > image-verification.json
+          cosign verify-attestation --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" --type cyclonedx "$IMAGE" > sbom-verification.json
+          cosign verify-attestation --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" --type custom "$IMAGE" > provenance-verification.json
+          sha256sum image-signature.sigstore.json sbom-attestation.sigstore.json provenance-attestation.sigstore.json image-verification.json sbom-verification.json provenance-verification.json >> checksums.sha256
+
+      - name: Upload signed evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-receiver-signed-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            sbom.cdx.json
+            provenance.json
+            trivy.json
+            grype.json
+            checksums.sha256
+            image-signature.sigstore.json
+            sbom-attestation.sigstore.json
+            provenance-attestation.sigstore.json
+            image-verification.json
+            sbom-verification.json
+            provenance-verification.json
