@@ -4,19 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Exact reviewed Caddy source commit
+        description: Exact reviewed 40-character source commit
         required: true
         type: string
-      version:
-        description: Immutable release version label
-        required: true
-        type: string
-      dockerfile:
-        description: Reviewed Dockerfile path in the source commit
-        required: true
-        type: string
-      context:
-        description: Reviewed Docker build context in the source commit
+      release_version:
+        description: Owner-approved immutable release identifier
         required: true
         type: string
 
@@ -29,170 +21,283 @@ concurrency:
 
 jobs:
   build-scan:
-    if: github.ref == 'refs/heads/main'
+    if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: security-release
-    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       repository: ${{ steps.vars.outputs.repository }}
-      signer: ${{ steps.vars.outputs.signer }}
+      signer: ${{ steps.context.outputs.signer }}
     steps:
-      - name: Check out exact reviewed source
-        uses: actions/checkout@v4
+      - name: Check out exact reviewed source commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify exact source and clean tree
+      - name: Verify repository, workflow, ref, source SHA, and clean tree
+        id: context
         shell: bash
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
+          EXPECTED_REPOSITORY: Codestra-SRL/codestra-middleware
+          EXPECTED_REF: refs/heads/main
+          EXPECTED_WORKFLOW_REF: Codestra-SRL/codestra-middleware/.github/workflows/build-sign-caddy.yml@refs/heads/main
         run: |
           set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          test "$GITHUB_REF" = "$EXPECTED_REF"
+          test "$GITHUB_WORKFLOW_REF" = "$EXPECTED_WORKFLOW_REF"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          test "$(git status --porcelain)" = ""
+          test -z "$(git status --porcelain)"
+          test -z "$(git symbolic-ref -q --short HEAD || true)"
           git cat-file -e "$SOURCE_SHA^{commit}"
-          test -f "${{ inputs.dockerfile }}"
+          echo "signer=https://github.com/${GITHUB_REPOSITORY}/.github/workflows/build-sign-caddy.yml@${GITHUB_REF}" >> "$GITHUB_OUTPUT"
 
-      - name: Define approved destination and signer identity
+      - name: Resolve reviewed build paths and build timestamp
+        id: inputs
+        shell: bash
+        env:
+          BUILD_CONTEXT: build/caddy
+          DOCKERFILE_PATH: build/caddy/Dockerfile
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_CONTEXT" != /* && "$DOCKERFILE_PATH" != /* ]]
+          [[ "$BUILD_CONTEXT" != *..* && "$DOCKERFILE_PATH" != *..* ]]
+          test -f "$DOCKERFILE_PATH"
+          test -d "$BUILD_CONTEXT"
+          root=$(realpath -e .); context=$(realpath -e "$BUILD_CONTEXT"); dockerfile=$(realpath -e "$DOCKERFILE_PATH")
+          case "$context" in "$root"/*) ;; *) exit 1;; esac
+          case "$dockerfile" in "$root"/*) ;; *) exit 1;; esac
+          echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Define owner-approved registry destination
         id: vars
         shell: bash
         env:
           REGISTRY_HOSTNAME: ${{ vars.REGISTRY_HOSTNAME }}
           CADDY_REPOSITORY: ${{ vars.CADDY_REPOSITORY }}
-          WORKFLOW_PATH: .github/workflows/build-sign-caddy.yml
         run: |
           set -euo pipefail
-          test -n "$REGISTRY_HOSTNAME"
-          test -n "$CADDY_REPOSITORY"
-          repository="${REGISTRY_HOSTNAME}/${CADDY_REPOSITORY}"
-          signer="https://github.com/${GITHUB_REPOSITORY}/${WORKFLOW_PATH}@${GITHUB_REF}"
-          echo "repository=$repository" >> "$GITHUB_OUTPUT"
-          echo "signer=$signer" >> "$GITHUB_OUTPUT"
+          test -n "$REGISTRY_HOSTNAME"; test -n "$CADDY_REPOSITORY"
+          test "$CADDY_REPOSITORY" != "latest"
+          echo "repository=${REGISTRY_HOSTNAME}/${CADDY_REPOSITORY}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to approved registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: ${{ vars.REGISTRY_HOSTNAME }}
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_TOKEN }}
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
-      - name: Build and publish with attestations
+      - name: Build and publish with native BuildKit attestations
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: ${{ inputs.context }}
-          file: ${{ inputs.dockerfile }}
+          context: build/caddy
+          file: build/caddy/Dockerfile
           push: true
-          tags: ${{ steps.vars.outputs.repository }}:${{ inputs.version }}
+          tags: ${{ steps.vars.outputs.repository }}:${{ inputs.release_version }}
           platforms: linux/amd64
+          metadata-file: build-metadata.json
           provenance: mode=max
-          sbom: true
+          sbom: generator=anchore/syft@sha256:b46e597614ddc78621e560af3fabf9346e35462ea1c886a38b30bcc7ca601a73
           labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.source=https://github.com/Codestra-SRL/codestra-middleware
             org.opencontainers.image.revision=${{ inputs.source_sha }}
-            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
-            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.created=${{ steps.inputs.outputs.created }}
+            org.opencontainers.image.version=${{ inputs.release_version }}
+            org.opencontainers.image.title=Codestra Caddy replacement
+            org.opencontainers.image.description=Reviewed Caddy replacement image
 
-      - name: Pull exact digest for scanning
+      - name: Pull and inspect exact digest
         env:
           IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
-        run: docker pull "$IMAGE"
-
-      - name: Generate CycloneDX SBOM
-        env:
-          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
-        run: syft "$IMAGE" -o cyclonedx-json=sbom.cdx.json
-
-      - name: Scan with Trivy
-        env:
-          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
-        run: trivy image --format json --output trivy.json --exit-code 1 --severity CRITICAL,HIGH "$IMAGE"
-
-      - name: Scan with Grype
-        env:
-          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
-        run: grype "$IMAGE" --output json --file grype.json --fail-on high
-
-      - name: Retain build metadata and checksums
         run: |
           set -euo pipefail
-          printf '%s\n' '{"source_sha":"${{ inputs.source_sha }}","workflow":"'"$GITHUB_WORKFLOW_REF"'","run_id":"'"$GITHUB_RUN_ID"'","run_attempt":"'"$GITHUB_RUN_ATTEMPT"'","digest":"${{ steps.build.outputs.digest }}"}' > provenance.json
-          sha256sum sbom.cdx.json provenance.json trivy.json grype.json > checksums.sha256
+          docker pull "$IMAGE"
+          docker buildx imagetools inspect "$IMAGE" > registry-image-inspect.txt
+          docker image inspect "$IMAGE" > oci-metadata.json
+          printf '%s\n' "$IMAGE" > image-digest.txt
+
+      - name: Generate CycloneDX SBOM with pinned Syft container
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work anchore/syft@sha256:b46e597614ddc78621e560af3fabf9346e35462ea1c886a38b30bcc7ca601a73 "$IMAGE" -o cyclonedx-json=sbom.cdx.json
           jq empty sbom.cdx.json
-          jq empty provenance.json
+
+      - name: Scan exact digest with pinned Trivy container
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm -v "$HOME/.docker:/root/.docker:ro" -v "$GITHUB_WORKSPACE:/work" -w /work aquasec/trivy@sha256:91c3a842834563a6860dbaec5af7c1949df5caf988f9632ef5cbb0a5cd59d8f8 image --format json --output trivy.json --exit-code 1 --severity CRITICAL,HIGH "$IMAGE"
+
+      - name: Scan exact digest with pinned Grype container
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm -v "$HOME/.docker:/root/.docker:ro" -v "$GITHUB_WORKSPACE:/work" -w /work anchore/grype@sha256:3c9d35c54bb94318370ac143789e21ea0b2fb49c50a2f56e8a77d798fe825ec4 "$IMAGE" -o json --file /work/grype.json --fail-on high
+
+      - name: Retain digest-bound scan and provenance references
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          jq empty build-metadata.json
+          jq -e '."buildx.build.provenance"' build-metadata.json > buildkit-provenance.json
+          printf 'SBOM_SUBJECT_DIGEST=%s\nPROVENANCE_SUBJECT_DIGEST=%s\nPROVENANCE_GENERATOR=BUILDKIT_NATIVE\nPROVENANCE_REFERENCE=registry-attestation-from-build-push-action\nSOURCE_REPOSITORY=https://github.com/Codestra-SRL/codestra-middleware\nSOURCE_SHA=%s\n' "$IMAGE" "$IMAGE" "${{ inputs.source_sha }}" > subject-references.txt
+          jq empty trivy.json; jq empty grype.json
+          sha256sum image-digest.txt oci-metadata.json registry-image-inspect.txt sbom.cdx.json build-metadata.json buildkit-provenance.json subject-references.txt trivy.json grype.json > checksums.sha256
 
       - name: Upload unsigned build evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: caddy-build-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 90
           path: |
+            image-digest.txt
+            oci-metadata.json
+            registry-image-inspect.txt
             sbom.cdx.json
-            provenance.json
+            build-metadata.json
+            buildkit-provenance.json
+            subject-references.txt
             trivy.json
             grype.json
             checksums.sha256
 
-  sign-verify:
+  sign:
     needs: build-scan
-    if: github.ref == 'refs/heads/main'
+    if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: security-release
     permissions:
       contents: read
+      packages: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Check exact workflow context
+        env:
+          EXPECTED: Codestra-SRL/codestra-middleware/.github/workflows/build-sign-caddy.yml@refs/heads/main
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "Codestra-SRL/codestra-middleware"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_WORKFLOW_REF" = "$EXPECTED"
+
+      - name: Log in to approved registry for signing
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
-          ref: ${{ github.sha }}
-          fetch-depth: 1
-          persist-credentials: false
+          registry: ${{ vars.REGISTRY_HOSTNAME }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
 
       - name: Download build evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: caddy-build-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
-      - name: Sign exact digest and attest evidence
+      - name: Sign exact digest and attest SBOM/provenance
         env:
           IMAGE: ${{ needs.build-scan.outputs.repository }}@${{ needs.build-scan.outputs.digest }}
-          EXPECTED_IDENTITY: ${{ needs.build-scan.outputs.signer }}
-          EXPECTED_ISSUER: https://token.actions.githubusercontent.com
         run: |
           set -euo pipefail
           cosign sign --yes --bundle image-signature.sigstore.json "$IMAGE"
           cosign attest --yes --type cyclonedx --predicate sbom.cdx.json --bundle sbom-attestation.sigstore.json "$IMAGE"
-          cosign attest --yes --type custom --predicate provenance.json --bundle provenance-attestation.sigstore.json "$IMAGE"
-          cosign verify --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" "$IMAGE" > image-verification.json
-          cosign verify-attestation --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" --type cyclonedx "$IMAGE" > sbom-verification.json
-          cosign verify-attestation --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" --type custom "$IMAGE" > provenance-verification.json
-          sha256sum image-signature.sigstore.json sbom-attestation.sigstore.json provenance-attestation.sigstore.json image-verification.json sbom-verification.json provenance-verification.json >> checksums.sha256
+          cosign attest --yes --type slsaprovenance --predicate buildkit-provenance.json --bundle provenance-attestation.sigstore.json "$IMAGE"
+          printf 'SIGNED_IMAGE_REFERENCE=%s\nSIGNED_IMAGE_DIGEST=%s\nCOSIGN_OIDC_ISSUER=https://token.actions.githubusercontent.com\nCOSIGN_CERTIFICATE_IDENTITY=https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/build-sign-caddy.yml@refs/heads/main\n' "$IMAGE" "${{ needs.build-scan.outputs.digest }}" > signing-record.txt
+          sha256sum image-signature.sigstore.json sbom-attestation.sigstore.json provenance-attestation.sigstore.json signing-record.txt >> checksums.sha256
 
       - name: Upload signed evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: caddy-signed-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 90
           path: |
+            image-digest.txt
+            oci-metadata.json
+            registry-image-inspect.txt
             sbom.cdx.json
-            provenance.json
+            build-metadata.json
+            buildkit-provenance.json
+            subject-references.txt
             trivy.json
             grype.json
             checksums.sha256
             image-signature.sigstore.json
             sbom-attestation.sigstore.json
             provenance-attestation.sigstore.json
+            signing-record.txt
+
+  verify:
+    needs: [build-scan, sign]
+    if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: security-release-verification
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check exact workflow context
+        env:
+          EXPECTED: Codestra-SRL/codestra-middleware/.github/workflows/build-sign-caddy.yml@refs/heads/main
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "Codestra-SRL/codestra-middleware"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_WORKFLOW_REF" = "$EXPECTED"
+
+      - name: Log in to approved registry for read-only verification
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ vars.REGISTRY_HOSTNAME }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Download signed evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: caddy-signed-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - name: Independently verify digest, signer, issuer, and attestations
+        env:
+          IMAGE: ${{ needs.build-scan.outputs.repository }}@${{ needs.build-scan.outputs.digest }}
+          EXPECTED_IDENTITY: https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/build-sign-caddy.yml@refs/heads/main
+          EXPECTED_ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          cosign verify --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" "$IMAGE" > image-verification.json
+          cosign verify-attestation --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" --type cyclonedx "$IMAGE" > sbom-verification.json
+          cosign verify-attestation --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" --type slsaprovenance "$IMAGE" > provenance-verification.json
+          sha256sum -c checksums.sha256
+          sha256sum image-verification.json sbom-verification.json provenance-verification.json > verification-checksums.sha256
+
+      - name: Upload independent verification evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: caddy-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
             image-verification.json
             sbom-verification.json
             provenance-verification.json
+            verification-checksums.sha256
