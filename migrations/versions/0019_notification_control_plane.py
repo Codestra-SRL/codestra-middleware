@@ -1,7 +1,7 @@
 """Add provider-neutral notification control-plane journal.
 
 Revision ID: 0019_notification_control_plane
-Revises: 0018_campaign_search_aliases
+Revises: 0020_staging_lineage_bridge
 """
 
 import sqlalchemy as sa
@@ -10,7 +10,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "0019_notification_control_plane"
-down_revision = "0018_campaign_search_aliases"
+down_revision = "0020_staging_lineage_bridge"
 branch_labels = None
 depends_on = None
 
