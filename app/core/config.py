@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     )
     allowed_client_instances: str = "vicidial-server-b"
     live_writes_enabled: bool = False
+    odoo_write_enabled: bool = False
     allow_non_test_campaigns: bool = False
     odoo_delivery_enabled: bool = False
     n8n_delivery_enabled: bool = False
@@ -67,6 +68,14 @@ class Settings(BaseSettings):
     vicidial_crl_file: str = ""
     callback_dispatch_enabled: bool = False
     messaging_enabled: bool = False
+    external_dial_enabled: bool = False
+    ai_private_api_enabled: bool = False
+    ai_service_id: str = "qwen"
+    ai_hmac_secret_file: str = ""
+    ai_audit_log_file: str = ""
+    ai_signature_ttl_seconds: int = 300
+    ai_rate_limit_per_minute: int = 60
+    ai_command_timeout_seconds: int = 10
     send_events: bool = False
     broad_event_delivery_enabled: bool = False
     production_n8n_enabled: bool = False
@@ -191,9 +200,11 @@ class Settings(BaseSettings):
         )
         production_switches = (
             self.live_writes_enabled,
+            self.odoo_write_enabled,
             self.allow_non_test_campaigns,
             self.vicidial_write_enabled,
             self.messaging_enabled,
+            self.external_dial_enabled,
             self.enable_external_delivery,
             self.email_dispatch_enabled,
             self.sms_dispatch_enabled,
