@@ -316,6 +316,7 @@ class Settings(BaseSettings):
         if not value:
             raise ValueError("Postiz API key file is empty")
 
+        return value
     def load_registry_snapshot_key(self) -> bytes:
         path = Path(self.registry_snapshot_signing_key_file)
         if not path.is_absolute() or not path.is_file():
