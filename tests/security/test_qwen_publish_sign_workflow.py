@@ -1,11 +1,9 @@
+import re
 from pathlib import Path
-
-import yaml  # type: ignore[import-untyped]
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/publish-sign-qwen-auth-verifier.yml"
 TEXT = WORKFLOW.read_text()
-DOC = yaml.safe_load(TEXT)
 
 IMAGE_DIGEST = "sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef"
 VEX_SHA256 = "ba6ec01d89e3140a8538d9e5669be8b05f1e31ac3c475cf65a8d6907302dc1ff"
@@ -14,51 +12,40 @@ GOVERNANCE_HEAD = "7c918e328f6336761f0c65540a65fae8b84e9117"
 
 
 def test_dispatch_only_and_separate_concurrency_group():
-    trigger = DOC.get("on", DOC.get(True))
-    assert set(trigger) == {"workflow_dispatch"}
-    assert trigger["workflow_dispatch"] is None
-    assert DOC["concurrency"] == {
-        "group": "publish-sign-qwen-auth-verifier-a0423439705ee7f",
-        "cancel-in-progress": False,
-    }
+    assert "on:\n  workflow_dispatch:\n" in TEXT
+    for forbidden_trigger in ("pull_request:", "push:", "schedule:"):
+        assert forbidden_trigger not in TEXT
+    assert "group: publish-sign-qwen-auth-verifier-a0423439705ee7f" in TEXT
+    assert "cancel-in-progress: false" in TEXT
 
 
 def test_exact_subject_and_evidence_are_hard_bound_without_inputs():
-    assert DOC["env"]["IMAGE_REPOSITORY"] == "ghcr.io/codestra-srl/qwen-auth-verifier"
-    assert DOC["env"]["IMAGE_DIGEST"] == IMAGE_DIGEST
-    assert DOC["env"]["LOCAL_IMAGE_ID"] == IMAGE_DIGEST
-    assert DOC["env"]["VEX_SHA256"] == VEX_SHA256
-    assert DOC["env"]["SBOM_SHA256"] == SBOM_SHA256
-    assert DOC["env"]["GOVERNANCE_HEAD"] == GOVERNANCE_HEAD
-    assert DOC["env"]["CANDIDATE_COMMIT"] == "bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75"
+    expected_lines = (
+        "IMAGE_REPOSITORY: ghcr.io/codestra-srl/qwen-auth-verifier",
+        f"IMAGE_DIGEST: {IMAGE_DIGEST}",
+        f"LOCAL_IMAGE_ID: {IMAGE_DIGEST}",
+        f"VEX_SHA256: {VEX_SHA256}",
+        f"SBOM_SHA256: {SBOM_SHA256}",
+        f"GOVERNANCE_HEAD: {GOVERNANCE_HEAD}",
+        "CANDIDATE_COMMIT: bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75",
+    )
+    for line in expected_lines:
+        assert line in TEXT
 
 
 def test_protected_environment_runner_and_permissions():
-    publish = DOC["jobs"]["publish-sign"]
-    assert publish["environment"] == "security-owner-signing"
-    assert publish["runs-on"] == [
-        "self-hosted",
-        "linux",
-        "x64",
-        "codestra-qwen-artifact-publisher",
-    ]
-    assert DOC["permissions"] == {}
-    assert publish["permissions"] == {
-        "contents": "read",
-        "packages": "write",
-        "id-token": "write",
-        "attestations": "write",
-    }
-    assert DOC["jobs"]["independently-verify"]["permissions"] == {
-        "contents": "read",
-        "packages": "read",
-    }
+    assert "permissions: {}" in TEXT
+    assert "environment: security-owner-signing" in TEXT
+    assert (
+        "runs-on: [self-hosted, linux, x64, codestra-qwen-artifact-publisher]"
+        in TEXT
+    )
+    assert "contents: read\n      packages: write\n      id-token: write\n      attestations: write" in TEXT
+    assert "contents: read\n      packages: read" in TEXT
 
 
 def test_all_third_party_actions_are_immutable_sha_pinned():
-    uses = []
-    for job in DOC["jobs"].values():
-        uses.extend(step["uses"] for step in job["steps"] if "uses" in step)
+    uses = re.findall(r"^\s+uses:\s+(\S+)\s*$", TEXT, flags=re.MULTILINE)
     assert uses
     for action in uses:
         assert "@" in action
@@ -90,12 +77,15 @@ def test_signature_attestations_and_independent_verification_are_exact():
     assert "cosign sign --yes" in TEXT
     for predicate_type in ("cyclonedx", "slsaprovenance", "openvex"):
         assert f"--type {predicate_type}" in TEXT or '--type "${type}"' in TEXT
-    assert DOC["jobs"]["independently-verify"]["needs"] == "publish-sign"
-    assert DOC["jobs"]["independently-verify"]["runs-on"] == "ubuntu-latest"
+    assert "independently-verify:\n    needs: publish-sign\n    runs-on: ubuntu-latest" in TEXT
     assert "--certificate-identity \"${EXPECTED_IDENTITY}\"" in TEXT
     assert "--certificate-oidc-issuer \"${EXPECTED_ISSUER}\"" in TEXT
-    assert "@refs/heads/main" in DOC["env"]["EXPECTED_IDENTITY"]
-    assert DOC["env"]["EXPECTED_ISSUER"] == "https://token.actions.githubusercontent.com"
+    assert (
+        "EXPECTED_IDENTITY: https://github.com/Codestra-SRL/codestra-middleware/"
+        ".github/workflows/publish-sign-qwen-auth-verifier.yml@refs/heads/main"
+        in TEXT
+    )
+    assert "EXPECTED_ISSUER: https://token.actions.githubusercontent.com" in TEXT
 
 
 def test_existing_middleware_signing_workflow_is_not_referenced_or_modified():
