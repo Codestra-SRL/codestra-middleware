@@ -390,7 +390,6 @@ jobs:
               fi
             done
             test "${verified}" = true
-            test "$(jq -r '.payload' "${output_name}-verification.json" | base64 --decode | jq -r '.subject[0].digest.sha256')" = "${IMAGE_DIGEST#sha256:}"
           done
           for pair in \
             'cyclonedx:final-sbom.cdx.json' \
@@ -399,23 +398,35 @@ jobs:
           do
             type="${pair%%:*}"
             source="${pair#*:}"
-            jq -sr '.[0].payload' "${type}-verification.json" | \
-              base64 --decode | jq -cS .predicate > "${type}-verified-predicate.json"
             jq -cS . "${source}" > "${type}-expected-predicate.json"
-            cmp --silent \
-              "${type}-verified-predicate.json" "${type}-expected-predicate.json"
+            matches=0
+            while IFS= read -r payload; do
+              printf '%s' "${payload}" | base64 --decode > "${type}-statement.json"
+              test "$(jq -r '.subject[0].digest.sha256' "${type}-statement.json")" = \
+                "${IMAGE_DIGEST#sha256:}"
+              jq -cS .predicate "${type}-statement.json" > \
+                "${type}-candidate-predicate.json"
+              if cmp --silent "${type}-candidate-predicate.json" \
+                "${type}-expected-predicate.json"
+              then
+                cp -- "${type}-candidate-predicate.json" \
+                  "${type}-verified-predicate.json"
+                matches=$((matches + 1))
+              fi
+            done < <(jq -r '.payload' "${type}-verification.json")
+            rm -f -- "${type}-statement.json" "${type}-candidate-predicate.json"
+            test "${matches}" -ge 1
           done
-          jq -r '.payload' v1-verification.json | base64 --decode | \
-            jq -e \
+          jq -e \
               --arg source "${CANDIDATE_COMMIT}" \
               --arg governance "${GOVERNANCE_HEAD}" \
               --arg sbom "${SBOM_SHA256}" \
               --arg vex "${VEX_SHA256}" '
-                .predicate.buildDefinition.externalParameters.candidate_source_commit == $source and
-                .predicate.buildDefinition.externalParameters.governance_head == $governance and
-                .predicate.buildDefinition.externalParameters.sbom_sha256 == $sbom and
-                .predicate.buildDefinition.externalParameters.final_vex_sha256 == $vex
-              ' >/dev/null
+                .buildDefinition.externalParameters.candidate_source_commit == $source and
+                .buildDefinition.externalParameters.governance_head == $governance and
+                .buildDefinition.externalParameters.sbom_sha256 == $sbom and
+                .buildDefinition.externalParameters.final_vex_sha256 == $vex
+              ' v1-verified-predicate.json >/dev/null
 
       - name: Remove independent verification registry authentication
         if: ${{ always() }}
