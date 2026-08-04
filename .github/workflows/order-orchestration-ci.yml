@@ -48,7 +48,7 @@ jobs:
           assert all(w['active'] is False for w in registry['workflows'])
           PY
       - name: Offline provider mocks
-        run: python -m pytest -q tests/test_provider_mocks.py tests/test_ai_tasks.py
+        run: python -m pytest -q tests/test_provider_mocks.py tests/test_cross_system_mock_sales.py tests/test_ai_tasks.py
       - name: Monitoring and dashboard validation
         run: |
           python - <<'PY'
