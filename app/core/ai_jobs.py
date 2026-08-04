@@ -55,6 +55,15 @@ async def create_message_job(
     project_key: str | None, idempotency_key: str, correlation_id: str,
     max_attempts: int,
 ) -> dict[str, Any]:
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {
+            "key": (
+                f"ai-job:{organization_id}:{workspace_id}:"
+                f"{idempotency_key}"
+            )
+        },
+    )
     request_hash = hashlib.sha256(
         f"{conversation_id}\0{task_type}\0{project_key or ''}\0{content}".encode()
     ).hexdigest()
@@ -152,7 +161,8 @@ async def assert_lease(db: AsyncSession, job_id: UUID, worker_id: str,
 
 
 async def heartbeat(db: AsyncSession, job_id: UUID, worker_id: str,
-                    fencing_token: int, lease_seconds: int) -> datetime:
+                    fencing_token: int, lease_seconds: int, *, service_id: str,
+                    certificate_serial: str, spiffe_id: str) -> datetime:
     await assert_lease(db, job_id, worker_id, fencing_token)
     expires = datetime.now(timezone.utc)
     row = (await db.execute(text("""
@@ -161,9 +171,12 @@ async def heartbeat(db: AsyncSession, job_id: UUID, worker_id: str,
     """), {"seconds": lease_seconds, "job": job_id})).mappings().one()
     await db.execute(text("""
         INSERT INTO ai_worker_heartbeats(worker_id,service_id,certificate_serial,spiffe_id,last_seen_at,current_job_id)
-        VALUES (:worker,'qwen-ai-01','3001','spiffe://codestra.internal/service/qwen-ai-01',now(),:job)
-        ON CONFLICT(worker_id) DO UPDATE SET last_seen_at=now(),current_job_id=:job
-    """), {"worker": worker_id, "job": job_id})
+        VALUES (:worker,:service,:serial,:spiffe,now(),:job)
+        ON CONFLICT(worker_id) DO UPDATE SET service_id=:service,
+          certificate_serial=:serial,spiffe_id=:spiffe,last_seen_at=now(),
+          current_job_id=:job
+    """), {"worker": worker_id, "service": service_id,
+            "serial": certificate_serial, "spiffe": spiffe_id, "job": job_id})
     await db.commit()
     return row["lease_expires_at"] or expires
 

@@ -198,7 +198,10 @@ async def authenticate_worker(
     if not hmac.compare_digest(expected, signature.lower()):
         raise HTTPException(401, "authentication denied")
     await _claim_nonce(db, service_id, nonce, correlation_id)
-    return WorkerPrincipal(service_id=service_id, scopes=SERVER_SCOPES)
+    return WorkerPrincipal(
+        service_id=settings.ai_worker_service_id,
+        scopes=SERVER_SCOPES,
+    )
 
 
 def require_scope(scope: str):
@@ -233,11 +236,19 @@ async def claim_job(body: LeaseRequest, _: WorkerPrincipal = Depends(require_sco
 
 @router.post("/worker/jobs/{job_id}/heartbeat")
 async def job_heartbeat(job_id: UUID, body: LeaseMutation,
-                        _: WorkerPrincipal = Depends(require_scope("ai.worker.heartbeat")),
+                        principal: WorkerPrincipal = Depends(require_scope("ai.worker.heartbeat")),
                         db: AsyncSession = Depends(get_session)) -> dict[str, object]:
     try:
-        expires = await ai_jobs.heartbeat(db, job_id, body.worker_id,
-                                          body.fencing_token, settings.ai_job_lease_seconds)
+        expires = await ai_jobs.heartbeat(
+            db,
+            job_id,
+            body.worker_id,
+            body.fencing_token,
+            settings.ai_job_lease_seconds,
+            service_id=principal.service_id,
+            certificate_serial=settings.ai_worker_certificate_serial,
+            spiffe_id=settings.ai_worker_spiffe_id,
+        )
     except PermissionError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"accepted": True, "lease_expires_at": expires}

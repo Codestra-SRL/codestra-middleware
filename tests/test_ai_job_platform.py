@@ -11,12 +11,13 @@ from uuid import uuid4
 
 import pytest
 import httpx
+import jwt
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -24,6 +25,7 @@ from sqlalchemy.pool import NullPool
 
 from app.api.internal import ai_jobs as worker_api
 from app.api.v1 import ai_console
+from app import main as middleware_main
 from app.core import ai_jobs
 from app.core.config import settings
 
@@ -46,23 +48,69 @@ def test_worker_contract_has_one_canonical_auth_and_no_memory_replay_store():
         assert spoofable not in source
 
 
-def test_ai_router_enforces_authentication_for_future_routes():
+def test_ai_router_enforces_authentication_and_outer_guard_fails_closed():
     assert ai_console.router.dependencies
     assert any(item.dependency is ai_console.tenant for item in ai_console.router.dependencies)
+    assert not hasattr(middleware_main, "SELF_AUTHENTICATED_PREFIXES")
+    with TestClient(middleware_main.app) as client:
+        current = client.post("/api/v1/ai/conversations", json={"title": "x"})
+        future = client.get("/api/v1/ai/_future-auth-regression")
+    assert current.status_code in {401, 422}
+    assert future.status_code in {401, 503}
 
-    isolated = FastAPI()
-    isolated.include_router(ai_console.router)
 
-    @ai_console.router.get("/_future-auth-regression")
-    async def future_route():
-        return {"unexpected": True}
+def test_ai_tenant_uses_real_rs256_validation(monkeypatch):
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    organization_id, workspace_id = uuid4(), uuid4()
+    now = int(time.time())
 
-    # Re-include to model a newly introduced route in a new application process.
-    guarded = FastAPI()
-    guarded.include_router(ai_console.router)
-    with TestClient(guarded) as client:
-        result = client.get("/api/v1/ai/_future-auth-regression")
-    assert result.status_code in {401, 422}
+    class SigningKey:
+        key = private_key.public_key()
+
+    class JWKClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def get_signing_key_from_jwt(self, _token):
+            return SigningKey()
+
+    monkeypatch.setattr(jwt, "PyJWKClient", JWKClient)
+    monkeypatch.setattr(
+        settings,
+        "keycloak_issuer",
+        "https://identity.example.invalid/realms/codestra",
+    )
+    monkeypatch.setattr(settings, "keycloak_audience", "codestra-ai-console")
+    monkeypatch.setattr(
+        settings, "keycloak_jwks_url", "https://identity.example.invalid/jwks"
+    )
+    monkeypatch.setattr(
+        settings, "keycloak_authorized_parties", "codestra-ai-console"
+    )
+    ai_console._validator.cache_clear()
+    token = jwt.encode(
+        {
+            "iss": settings.keycloak_issuer,
+            "aud": settings.keycloak_audience,
+            "azp": "codestra-ai-console",
+            "sub": "synthetic-user",
+            "iat": now,
+            "exp": now + 300,
+            "organization_id": str(organization_id),
+            "workspace_id": str(workspace_id),
+            "realm_access": {"roles": ["codestra_ai_user"]},
+        },
+        private_key,
+        algorithm="RS256",
+    )
+    subject = ai_console.tenant(f"Bearer {token}")
+    assert subject.organization_id == organization_id
+    assert subject.workspace_id == workspace_id
+    assert subject.user_id == "synthetic-user"
+    with pytest.raises(HTTPException) as denied:
+        ai_console.tenant("Bearer invalid")
+    assert denied.value.status_code == 401
+    ai_console._validator.cache_clear()
 
 
 def test_nonce_migration_is_atomic_durable_and_reversible():
@@ -177,6 +225,18 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     assert accepted.status_code == 200
     assert accepted.json()["scope"] == "ai.auth.verify/read-only"
     assert (await auth_client.post(verify_path, headers=valid)).status_code == 409
+    restarted_app = FastAPI()
+    restarted_app.include_router(worker_api.router)
+    restarted_app.dependency_overrides[worker_api.get_session] = auth_session
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(
+            app=restarted_app, client=("10.250.241.2", 443)
+        ),
+        base_url="http://test",
+    ) as restarted_client:
+        assert (
+            await restarted_client.post(verify_path, headers=valid)
+        ).status_code == 409
     race = worker_headers("POST", verify_path, b"", client_certificate)
     raced = await asyncio.gather(
         auth_client.post(verify_path, headers=race),
@@ -253,7 +313,16 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
         assert await ai_jobs.finish(db, job_id, "synthetic-worker", claimed["fencing_token"],
             failed=False, error_code=None, retryable=False, correlation_id="corr-complete") == "completed"
         with pytest.raises(PermissionError):
-            await ai_jobs.heartbeat(db, job_id, "synthetic-worker", claimed["fencing_token"], 30)
+            await ai_jobs.heartbeat(
+                db,
+                job_id,
+                "synthetic-worker",
+                claimed["fencing_token"],
+                30,
+                service_id="qwen-ai-01",
+                certificate_serial="12289",
+                spiffe_id="spiffe://codestra.internal/service/qwen-ai-01",
+            )
 
         second = await ai_jobs.create_message_job(
             db, conversation_id=conversation["conversation_id"], organization_id=organization_id,
@@ -308,4 +377,77 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     assert '"code":"not_found"' in isolated.text
     await client.aclose()
     app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest.mark.skipif(
+    "DATABASE_URL" not in os.environ,
+    reason="disposable PostgreSQL required",
+)
+@pytest.mark.asyncio
+async def test_concurrent_idempotency_and_claim_are_atomic():
+    engine = create_async_engine(os.environ["DATABASE_URL"], poolclass=NullPool)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    organization_id, workspace_id = uuid4(), uuid4()
+    async with session_factory() as db:
+        await db.execute(
+            text(
+                """TRUNCATE ai_audit_events, ai_worker_heartbeats,
+                ai_job_attempts, ai_job_chunks, ai_generation_jobs,
+                ai_messages, ai_conversations CASCADE"""
+            )
+        )
+        await db.commit()
+        conversation = await ai_jobs.create_conversation(
+            db,
+            organization_id,
+            workspace_id,
+            "synthetic-user",
+            "Concurrent fixture",
+            "corr-concurrent-conversation",
+        )
+
+    async def submit(correlation_id: str):
+        async with session_factory() as db:
+            return await ai_jobs.create_message_job(
+                db,
+                conversation_id=conversation["conversation_id"],
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                user_id="synthetic-user",
+                content="example.invalid concurrent request",
+                task_type="chat",
+                project_key=None,
+                idempotency_key="fixture-concurrent-idempotency-key",
+                correlation_id=correlation_id,
+                max_attempts=2,
+            )
+
+    first, second = await asyncio.gather(
+        submit("corr-concurrent-first"),
+        submit("corr-concurrent-second"),
+    )
+    assert first["job_id"] == second["job_id"]
+    assert sorted(
+        [first["idempotent_replay"], second["idempotent_replay"]]
+    ) == [False, True]
+
+    async def claim(worker_id: str):
+        async with session_factory() as db:
+            return await ai_jobs.claim(db, worker_id, 30, f"corr-{worker_id}")
+
+    claims = await asyncio.gather(claim("worker-a"), claim("worker-b"))
+    assert sum(item is not None for item in claims) == 1
+    async with session_factory() as db:
+        counts = (
+            await db.execute(
+                text(
+                    """SELECT
+                    (SELECT count(*) FROM ai_messages) AS messages,
+                    (SELECT count(*) FROM ai_generation_jobs) AS jobs,
+                    (SELECT count(*) FROM ai_job_attempts) AS attempts"""
+                )
+            )
+        ).mappings().one()
+    assert dict(counts) == {"messages": 1, "jobs": 1, "attempts": 1}
     await engine.dispose()
