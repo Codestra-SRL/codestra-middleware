@@ -12,6 +12,10 @@ ROOT = Path(__file__).parents[1]
 ORDER_DIR = ROOT / "integrations/n8n/approved-orders"
 registry = json.loads((ORDER_DIR / "workflow-registry.json").read_text())
 entries = registry["workflows"]
+exports = {}
+for export in ORDER_DIR.glob("CdstOrder*.json"):
+    document = json.loads(export.read_text())
+    exports[document["name"]] = document
 assert registry["payload_schema"] == "codestra.order.command.v1"
 assert registry["result_schema"] == "codestra.order.result.v1"
 assert set(registry) >= {"payload_schema", "result_schema", "workflows"}
@@ -23,6 +27,19 @@ for export in ORDER_DIR.glob("CdstOrder*.json"):
     text = export.read_text().lower()
     assert "codestra_middleware_base_url" in text
     assert all(token not in text for token in ("odoo", "vicidial", "postiz"))
+    node_ids = [node["id"] for node in document["nodes"]]
+    assert len(node_ids) == len(set(node_ids))
+    assert all("position" in node for node in document["nodes"])
+    for source, branches in document.get("connections", {}).items():
+        assert source in node_ids
+        for branch in branches.get("main", []):
+            for connection in branch:
+                assert connection["node"] in node_ids
+for entry in entries:
+    assert entry["n8n_workflow_id"] in exports
+    assert entry["active"] is False
+assert len(entries) == len(exports)
+assert len({entry["workflow_code"] for entry in entries}) == len(entries)
 for schema in ("error", "progress", "result", "reconciliation", "dead_letter"):
     assert (ROOT / f"schemas/orders/codestra.order.{schema}.v1.json").exists()
 print("ORDER_ORCHESTRATION_ARTIFACT_GATE=PASS")

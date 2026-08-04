@@ -119,7 +119,7 @@ async def receive_result(result: ResultEnvelope,
     record = STORE.get(result.order_id)
     if record["command_id"] != result.command_id or record["trace_id"] != result.trace_id:
         raise HTTPException(409, "command or trace reference mismatch")
-    record["status"] = OrderStatus.COMPLETED.value if result.status == "completed" else OrderStatus.PARTIALLY_COMPLETED.value
+    STORE.record_result(result.command_id, result.status)
     record["result"] = result.model_dump(mode="json")
     return {"accepted": True, "status": record["status"], "order_id": result.order_id}
 
@@ -134,7 +134,7 @@ async def receive_error(error: ErrorEnvelope,
     record = STORE.get(error.order_id)
     if record["command_id"] != error.command_id or record["trace_id"] != error.trace_id:
         raise HTTPException(409, "command or trace reference mismatch")
-    record["status"] = OrderStatus.FAILED_RETRYABLE.value if error.retryable else OrderStatus.FAILED_FINAL.value
+    STORE.record_failure(error.command_id, error.error_code, error.retryable)
     record["error_code"] = error.error_code
     return {"accepted": True, "status": record["status"], "order_id": error.order_id}
 
@@ -152,6 +152,9 @@ async def receive_progress(progress: ProgressEnvelope,
         raise HTTPException(409, "command or trace reference mismatch")
     command["progress"].append({"percent": progress.progress_percent, "message": progress.message})
     record["status"] = OrderStatus.RUNNING.value
+    STORE._count("order_progress_total")
+    STORE._audit(progress.order_id, "command_progress", command_id=progress.command_id,
+                 percent=progress.progress_percent)
     return {"accepted": True, "status": record["status"], "order_id": progress.order_id}
 
 
@@ -167,6 +170,8 @@ async def receive_dead_letter(dead_letter: DeadLetterEnvelope,
         raise HTTPException(409, "command or trace reference mismatch")
     record["status"] = OrderStatus.DEAD_LETTER.value
     record["dead_letter"] = dead_letter.model_dump(mode="json")
+    STORE._count("orders_dead_lettered_total")
+    STORE._audit(dead_letter.order_id, "command_dead_letter", command_id=dead_letter.command_id)
     return {"accepted": True, "status": record["status"], "order_id": dead_letter.order_id}
 
 

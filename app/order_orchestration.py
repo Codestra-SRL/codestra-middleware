@@ -232,6 +232,14 @@ class OrderStore:
         self.orders: dict[str, dict[str, Any]] = {}
         self.by_idempotency: dict[str, str] = {}
         self.commands: dict[str, dict[str, Any]] = {}
+        self.audit_events: list[dict[str, Any]] = []
+        self.metrics: dict[str, int] = {}
+
+    def _count(self, name: str) -> None:
+        self.metrics[name] = self.metrics.get(name, 0) + 1
+
+    def _audit(self, order_id: str, event: str, **details: Any) -> None:
+        self.audit_events.append({"order_id": order_id, "event": event, **details})
 
     def create(self, order: OrderEnvelope) -> dict[str, Any]:
         existing_id = self.by_idempotency.get(order.idempotency_key)
@@ -254,6 +262,8 @@ class OrderStore:
         }
         self.orders[order.order_id] = record
         self.by_idempotency[order.idempotency_key] = order.order_id
+        self._count("orders_received_total")
+        self._audit(order.order_id, "order_received", trace_id=order.trace_id)
         return record
 
     def get(self, order_id: str) -> dict[str, Any]:
@@ -271,9 +281,49 @@ class OrderStore:
         command = {
             "command_id": command_id, "order_id": order_id,
             "workflow_code": record["workflow_code"],
-            "status": OrderStatus.QUEUED.value, "progress": [],
+            "status": OrderStatus.QUEUED.value, "progress": [], "attempts": 0,
         }
         self.commands[command_id] = command
+        self._count("orders_dispatched_total")
+        self._audit(order_id, "command_created", command_id=command_id)
+        return command
+
+    def record_failure(self, command_id: str, error_code: str, retryable: bool,
+                       max_attempts: int = 3) -> dict[str, Any]:
+        command = self.commands.get(command_id)
+        if not command:
+            raise HTTPException(404, "command not found")
+        order = self.get(command["order_id"])
+        command["attempts"] += 1
+        security_failure = error_code in {"AUTHENTICATION_FAILURE", "AUTHORIZATION_FAILURE", "INVALID_SIGNATURE"}
+        can_retry = retryable and not security_failure and command["attempts"] < max_attempts
+        if can_retry:
+            command["status"] = OrderStatus.RETRY_SCHEDULED.value
+            order["status"] = OrderStatus.FAILED_RETRYABLE.value
+            self._count("orders_retried_total")
+        else:
+            command["status"] = OrderStatus.DEAD_LETTER.value if retryable else OrderStatus.FAILED_FINAL.value
+            order["status"] = command["status"]
+            if retryable:
+                self._count("orders_dead_lettered_total")
+        if security_failure:
+            self._count("security_failure_retry_total")
+        self._count("orders_failed_total")
+        self._audit(order["order_id"], "command_failure", command_id=command_id,
+                    error_code=error_code, retryable=can_retry)
+        return command
+
+    def record_result(self, command_id: str, status: str) -> dict[str, Any]:
+        command = self.commands.get(command_id)
+        if not command:
+            raise HTTPException(404, "command not found")
+        if command["status"] == OrderStatus.COMPLETED.value and status == "completed":
+            return command
+        order = self.get(command["order_id"])
+        command["status"] = OrderStatus.COMPLETED.value if status == "completed" else OrderStatus.PARTIALLY_COMPLETED.value
+        order["status"] = command["status"]
+        self._count("orders_completed_total" if status == "completed" else "orders_failed_total")
+        self._audit(order["order_id"], "command_result", command_id=command_id, status=status)
         return command
 
 
