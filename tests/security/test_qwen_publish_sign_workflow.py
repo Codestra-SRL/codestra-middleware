@@ -37,6 +37,13 @@ def test_exact_subject_and_evidence_are_hard_bound_without_inputs():
         assert line in TEXT
 
 
+def test_governance_ref_is_validated_by_exact_api_fetch_not_shallow_git_history():
+    assert 'contents/${path}?ref=${GOVERNANCE_HEAD}' in TEXT
+    assert 'fetch_exact "${VEX_PATH}" final-openvex.json' in TEXT
+    assert 'fetch_exact "${SECURITY_OWNER_RECORD_PATH}" security-owner-record.json' in TEXT
+    assert "git cat-file" not in TEXT
+
+
 def test_protected_environment_runner_and_permissions():
     assert "permissions: {}" in TEXT
     assert "environment: security-owner-signing" in TEXT
@@ -120,6 +127,14 @@ def test_exact_daemonless_destination_and_archive_are_enforced():
     assert 'test -x "${ORAS_BIN}"' in TEXT
     assert 'test ! -w "${OCI_ARCHIVE_PATH}"' in TEXT
     assert 'test ! -e "${ORAS_TMP_DIR}"' in TEXT
+
+
+def test_temporary_paths_are_initialized_only_at_runner_runtime():
+    assert "${{ runner.temp }}" not in TEXT
+    assert TEXT.count('test -n "${RUNNER_TEMP}"') == 2
+    assert '"${RUNNER_TEMP}" >> "${GITHUB_ENV}"' in TEXT
+    assert "Initialize run-scoped temporary paths" in TEXT
+    assert "Initialize independent run-scoped temporary paths" in TEXT
 
 
 def test_signature_attestations_and_independent_verification_are_exact():
