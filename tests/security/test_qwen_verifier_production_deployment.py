@@ -87,18 +87,20 @@ def test_caddy_route_is_exact_private_and_overwrites_identity_header():
     assert "path /internal/api/v1/ai/auth/verify" in text
     assert "reverse_proxy qwen-auth-verifier:8095" in text
     overwrite = (
-        'header_up X-Codestra-Client-Certificate '
-        '"{http.request.tls.client.certificate_pem}"'
+        'header_up X-Codestra-Client-Certificate-DER '
+        '"{http.request.tls.client.certificate_der_base64}"'
     )
     assert text.count(overwrite) == 1
-    assert "header_up -X-Codestra-Client-Certificate" not in text
-    assert "certificate_der_base64" not in text
+    assert text.count("header_up -X-Codestra-Client-Certificate") == 1
+    assert "header_up -X-Codestra-Client-Certificate-DER" not in text
+    assert "certificate_pem" not in text
 
 
 def test_caddy_certificate_header_has_no_client_controlled_fallback():
     text = load_text("Caddyfile.production.snippet")
     assert "{http.request.header.X-Codestra-Client-Certificate}" not in text
-    assert "{http.request.tls.client.certificate_pem}" in text
+    assert "{http.request.header.X-Codestra-Client-Certificate-DER}" not in text
+    assert "{http.request.tls.client.certificate_der_base64}" in text
 
 
 def test_runbook_requires_rollback_and_preserves_vicidial():
