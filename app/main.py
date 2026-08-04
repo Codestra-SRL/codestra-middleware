@@ -23,6 +23,8 @@ from app.api.v1.registry import router as registry_router
 from app.api.v1.recordings import router as recordings_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.internal.ai import router as internal_ai_router
+from app.api.internal.ai_jobs import router as internal_ai_jobs_router
+from app.api.v1.ai_console import router as ai_console_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -44,6 +46,8 @@ app.include_router(n8n_transport_router)
 app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(internal_ai_router)
+app.include_router(internal_ai_jobs_router)
+app.include_router(ai_console_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)
 app.include_router(commands_router)
