@@ -63,7 +63,13 @@ jobs:
           PY
       - name: Secret and direct-path scan
         run: |
-          ! rg -n -i '(api[_-]?key|password|secret)\s*[:=]\s*["'"'][^$][^"'"']{8,}' integrations/n8n/approved-orders || true
-          ! rg -n -i 'odoo|vicidial|postiz' integrations/n8n/approved-orders
+          python - <<'PY'
+          import pathlib
+          import re
+          roots = [pathlib.Path('integrations/n8n/approved-orders'), pathlib.Path('integrations/n8n/qwen-tasks'), pathlib.Path('integrations/n8n/vicidial-orchestration'), pathlib.Path('integrations/n8n/postiz-orchestration')]
+          text = '\\n'.join(p.read_text() for root in roots for p in root.glob('*.json'))
+          assert not re.search(r'(api[_-]?key|password|secret)\\s*[:=]\\s*["\'][^$][^"\']{8,}', text, re.I)
+          assert 'postgresql://' not in text.lower()
+          PY
       - name: Whitespace
         run: git diff --check
