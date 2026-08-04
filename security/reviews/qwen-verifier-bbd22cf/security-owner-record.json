@@ -1,0 +1,22 @@
+{
+  "record_type": "independent-vex-approval",
+  "owner": "Evelin Appolon",
+  "github_username": "kazan555",
+  "github_user_id": 77101516,
+  "github_account_type": "User",
+  "repository": "Codestra-SRL/codestra-middleware",
+  "repository_permission": "admin",
+  "protected_environment": "security-owner-signing",
+  "existing_protected_reviewer_preserved": true,
+  "identity_verified_utc": "2026-08-04T03:55:26Z",
+  "release_owner": "Ralph Appolon",
+  "rollback_authority": "Ralph Appolon",
+  "candidate_commit": "bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75",
+  "image_digest": "sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef",
+  "registry_subject": "ghcr.io/codestra-srl/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef",
+  "sbom_sha256": "380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec",
+  "vex_document": "vex/openvex-draft.json",
+  "decision": null,
+  "signed": false,
+  "status": "pending_independent_security_owner"
+}

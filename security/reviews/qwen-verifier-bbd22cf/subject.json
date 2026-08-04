@@ -1,0 +1,20 @@
+{
+  "record_type": "qwen-verifier-security-review-subject",
+  "candidate_commit": "bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75",
+  "authorized_source_commit": "471eee4aaace4f7f442c1bb79c29061fff606628",
+  "registry": "ghcr.io/codestra-srl/qwen-auth-verifier",
+  "image_digest": "sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef",
+  "image_subject": "ghcr.io/codestra-srl/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef",
+  "sbom_sha256": "380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec",
+  "openapi_sha256": "590ceab381e42c71f2eed69a92c096b3f1425f4e927e28d48745a0880eaf67ac",
+  "contract_sha256": "ffab29882b514041c438d7568bec5d8ec8c32c461560d6f4e8e9e32ae89d1b2d",
+  "review_archive_sha256": "9495eb5ca0916ba0c7c3b47617e1f385043498c71cf92f8e6acc6fd533d9733e",
+  "unit_and_contract_tests": {
+    "passed": 24,
+    "failed": 0
+  },
+  "vex_status": "unsigned_under_investigation",
+  "cosign_status": "not_signed",
+  "image_published": false,
+  "deployment_performed": false
+}

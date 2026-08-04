@@ -1,0 +1,71 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://evidence.codestra.invalid/qwen-ai-01/vex/sha256-a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef",
+  "author": "Codestra release engineering; unsigned draft pending independent Security Owner review",
+  "role": "Evidence preparer; not a Security Owner decision",
+  "timestamp": "2026-08-04T03:12:45Z",
+  "last_updated": "2026-08-04T03:12:45Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {"name": "CVE-2026-11940"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed fixed: checksum-pinned CPython 3.12 backport be13e86f6b9788a6f4d0419dffef72cbae5865c9; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-11972"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed fixed: checksum-pinned CPython 3.12 backport 7f0dc59c9a70f8f3b4da33d7c4a2ba552a7acc21; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-15308"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed fixed: checksum-pinned CPython 3.12 backport 7933f4bf7131aa4140750f9404f5de0aa2969ced; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-3298"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed not_affected/component_not_present: issue is Windows-only and subject image is Linux/amd64; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-3644"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed fixed: checksum-pinned CPython 3.12 backport dae4b1a21f8df4570e30986affd61bbe4ade4cef; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-4224"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed fixed: checksum-pinned CPython 3.12 backport 642865ddf4b232da1f3b1f7abcfa3254c4bfe785; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-4786"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed fixed: local checksum-pinned Python 3.12 adaptation of upstream f4654824ae0850ac87227fb270f9057477946769; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-6100"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed fixed: checksum-pinned CPython 3.12 backport e20c6c9667c99ecaab96e1a2b3767082841ffc8b; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-7210"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed fixed: Expat 2.8.2 plus checksum-pinned Python 3.12 entropy adaptation and upstream fc9b11ff49cbc82e6f917d07a61517a2b5f3145f remainder; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-9669"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "under_investigation",
+      "status_notes": "Proposed fixed: checksum-pinned Python 3.12 backport contained in 938ec030e90c5e53f1faac6fab1643f14e4f4a79; Security Owner approval pending; SBOM_SHA256=380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+    }
+  ]
+}
