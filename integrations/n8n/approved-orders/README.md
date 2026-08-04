@@ -1,6 +1,6 @@
 # Approved-order n8n workflows
 
-These inactive exports implement the middleware-owned order contract. Every
+These seven inactive exports implement the middleware-owned order contract. Every
 workflow calls only the middleware command/result/error/reconciliation APIs;
 none contains Odoo, VICIdial, Postiz, database, Redis, or arbitrary external
 URLs. Import remains disabled until synthetic validation enables the two test

@@ -11,6 +11,7 @@ from app.order_orchestration import (
     OrderStore,
     content_hash,
     validate_for_dispatch,
+    verify_body_integrity,
 )
 
 
@@ -74,7 +75,7 @@ def test_dispatch_rejects_unknown_workflow_and_blocked_action():
 def test_n8n_exports_have_only_middleware_urls_and_are_inactive():
     root = Path(__file__).parents[1] / "integrations/n8n/approved-orders"
     exports = list(root.glob("CdstOrder*.json"))
-    assert len(exports) == 9
+    assert len(exports) == 7
     for export in exports:
         text = export.read_text()
         assert '"active":false' in text
@@ -90,3 +91,16 @@ def test_flags_default_disabled():
     settings = Settings()
     assert settings.order_orchestration_enabled is False
     assert settings.n8n_order_dispatch_enabled is False
+
+
+def test_modified_body_and_bad_signature_are_rejected(monkeypatch):
+    order = envelope()
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "middleware_secret", "test-secret")
+    import hashlib
+    import json
+    body_hash = hashlib.sha256(json.dumps(order.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    with pytest.raises(HTTPException, match="signature invalid"):
+        verify_body_integrity(order, "1700000000", "nonce-1", "bad", body_hash)
+    with pytest.raises(HTTPException, match="body hash mismatch"):
+        verify_body_integrity(order, "1700000000", "nonce-1", "bad", "0" * 64)

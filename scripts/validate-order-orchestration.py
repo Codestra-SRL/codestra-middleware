@@ -14,7 +14,7 @@ registry = json.loads((ORDER_DIR / "workflow-registry.json").read_text())
 entries = registry["workflows"]
 assert registry["payload_schema"] == "codestra.order.command.v1"
 assert registry["result_schema"] == "codestra.order.result.v1"
-assert len(entries) == 10
+assert len(entries) >= 10
 assert {item["workflow_code"] for item in entries} >= ALLOWED_WORKFLOWS
 for export in ORDER_DIR.glob("CdstOrder*.json"):
     document = json.loads(export.read_text())

@@ -8,6 +8,7 @@ n8n receives only validated, allowlisted commands.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from datetime import datetime, timezone
 from enum import Enum
@@ -44,13 +45,17 @@ ALLOWED_WORKFLOWS = frozenset(
     {
         "CDST-ORDER-VALIDATE-V1",
         "CDST-ORDER-ROUTER-V1",
+        "CDST-ORDER-EXECUTE-V1",
         "CDST-ORDER-SHIPPING-V1",
         "CDST-ORDER-FULFILLMENT-V1",
         "CDST-ORDER-CUSTOMER-SETUP-V1",
+        "CDST-ORDER-SOCIAL-DRAFT-V1",
         "CDST-ORDER-SOCIAL-CAMPAIGN-V1",
         "CDST-ORDER-CALLBACK-V1",
+        "CDST-ORDER-INTERNAL-REPORT-V1",
         "CDST-ORDER-RESULT-V1",
         "CDST-ORDER-FAILURE-V1",
+        "CDST-ORDER-DEAD-LETTER-V1",
         "CDST-ORDER-RECONCILIATION-V1",
     }
 )
@@ -103,9 +108,15 @@ class OrderEnvelope(StrictModel):
     organization_id: str = Field(min_length=1, max_length=128)
     customer_reference: str = Field(min_length=1, max_length=128)
     workflow_code: str = Field(min_length=1, max_length=64)
+    workflow_version: str = Field(default="1", min_length=1, max_length=16)
     approval: Approval
+    approval_required: bool | None = None
+    approval_status: str | None = None
+    approval_reference: str | None = None
+    approval_content_hash: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     requested_actions: list[str] = Field(min_length=1, max_length=20)
+    approved_actions: list[str] | None = None
     constraints: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str = Field(min_length=16, max_length=255)
     correlation_id: str = Field(min_length=1, max_length=128)
@@ -117,6 +128,18 @@ class OrderEnvelope(StrictModel):
     def validate_time_order(self) -> "OrderEnvelope":
         if self.expires_at <= self.requested_at:
             raise ValueError("expires_at must be after requested_at")
+        return self
+
+    @model_validator(mode="after")
+    def normalize_approval_fields(self) -> "OrderEnvelope":
+        if self.approval_required is None:
+            self.approval_required = self.approval.required
+        if self.approval_status is None:
+            self.approval_status = self.approval.status
+        if self.approval_content_hash is None:
+            self.approval_content_hash = self.approval.content_hash
+        if self.approved_actions is None:
+            self.approved_actions = list(self.requested_actions)
         return self
 
 
@@ -156,7 +179,13 @@ class ErrorEnvelope(StrictModel):
 
 
 def content_hash(order: OrderEnvelope) -> str:
-    data = order.model_dump(mode="json", exclude={"approval"})
+    data = order.model_dump(
+        mode="json",
+        exclude={
+            "approval", "approval_required", "approval_status",
+            "approval_reference", "approval_content_hash", "approved_actions",
+        },
+    )
     return hashlib.sha256(
         json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -190,6 +219,7 @@ class OrderStore:
     def __init__(self) -> None:
         self.orders: dict[str, dict[str, Any]] = {}
         self.by_idempotency: dict[str, str] = {}
+        self.commands: dict[str, dict[str, Any]] = {}
 
     def create(self, order: OrderEnvelope) -> dict[str, Any]:
         existing_id = self.by_idempotency.get(order.idempotency_key)
@@ -218,6 +248,36 @@ class OrderStore:
         if order_id not in self.orders:
             raise HTTPException(404, "order not found")
         return self.orders[order_id]
+
+    def command(self, command_id: str, order_id: str) -> dict[str, Any]:
+        record = self.get(order_id)
+        existing = self.commands.get(command_id)
+        if existing:
+            if existing["order_id"] != order_id:
+                raise HTTPException(409, "command reference conflict")
+            return existing
+        command = {
+            "command_id": command_id, "order_id": order_id,
+            "workflow_code": record["workflow_code"],
+            "status": OrderStatus.QUEUED.value, "progress": [],
+        }
+        self.commands[command_id] = command
+        return command
+
+
+def verify_body_integrity(body: BaseModel | dict[str, Any], timestamp: str | None, nonce: str | None,
+                          signature: str | None, body_hash: str | None) -> None:
+    if not all((timestamp, nonce, signature, body_hash)):
+        raise HTTPException(401, "timestamp, nonce, signature, and body hash are required")
+    payload = body.model_dump(mode="json") if isinstance(body, BaseModel) else body
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    computed_hash = hashlib.sha256(canonical).hexdigest()
+    if not hmac.compare_digest(computed_hash, body_hash or ""):
+        raise HTTPException(401, "body hash mismatch")
+    if settings.middleware_secret:
+        expected = hmac.new(settings.middleware_secret.encode(), f"{timestamp}.{nonce}.{computed_hash}".encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, signature or ""):
+            raise HTTPException(401, "signature invalid")
 
 
 STORE = OrderStore()
