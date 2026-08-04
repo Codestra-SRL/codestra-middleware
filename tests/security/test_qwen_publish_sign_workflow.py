@@ -37,6 +37,13 @@ def test_exact_subject_and_evidence_are_hard_bound_without_inputs():
         assert line in TEXT
 
 
+def test_governance_ref_is_validated_by_exact_api_fetch_not_shallow_git_history():
+    assert 'contents/${path}?ref=${GOVERNANCE_HEAD}' in TEXT
+    assert 'fetch_exact "${VEX_PATH}" final-openvex.json' in TEXT
+    assert 'fetch_exact "${SECURITY_OWNER_RECORD_PATH}" security-owner-record.json' in TEXT
+    assert "git cat-file" not in TEXT
+
+
 def test_protected_environment_runner_and_permissions():
     assert "permissions: {}" in TEXT
     assert "environment: security-owner-signing" in TEXT
