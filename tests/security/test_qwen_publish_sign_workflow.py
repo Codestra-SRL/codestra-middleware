@@ -2,7 +2,6 @@ from pathlib import Path
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/publish-sign-qwen-auth-verifier.yml"
 TEXT = WORKFLOW.read_text()
@@ -90,7 +89,7 @@ def test_workflow_publishes_existing_artifact_without_build_or_deployment():
 def test_signature_attestations_and_independent_verification_are_exact():
     assert "cosign sign --yes" in TEXT
     for predicate_type in ("cyclonedx", "slsaprovenance", "openvex"):
-        assert f"--type {predicate_type}" in TEXT or f'--type "${{type}}"' in TEXT
+        assert f"--type {predicate_type}" in TEXT or '--type "${type}"' in TEXT
     assert DOC["jobs"]["independently-verify"]["needs"] == "publish-sign"
     assert DOC["jobs"]["independently-verify"]["runs-on"] == "ubuntu-latest"
     assert "--certificate-identity \"${EXPECTED_IDENTITY}\"" in TEXT
