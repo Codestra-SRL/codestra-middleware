@@ -39,7 +39,36 @@ def test_secret_is_file_mounted_and_never_in_environment():
     text = load_text("compose.production.yaml")
     assert "QWEN_HMAC_SECRET_FILE: /run/secrets/qwen-hmac" in text
     assert "QWEN_HMAC_SECRET:" not in text
-    assert "qwen-ai-01-hmac-20260804-01:/run/secrets/qwen-hmac:ro" in text
+    assert "/run/codestra/qwen-auth-verifier-secrets/qwen-hmac:/run/secrets/qwen-hmac:ro" in text
+    assert "/run/codestra/qwen-auth-verifier-secrets/client-ca.crt:/run/secrets/client-ca.crt:ro" in text
+    assert "/etc/codestra/secrets" not in text
+    assert "/etc/codestra/pki" not in text
+
+
+def test_projection_is_tmpfs_only_exact_and_permission_strict():
+    prepare = load_text("prepare-runtime-secrets")
+    cleanup = load_text("cleanup-runtime-secrets")
+    assert "findmnt -n -o FSTYPE /run" in prepare
+    assert "root:root:600" in prepare
+    assert "install -d -o 10001 -g 10001 -m 0700" in prepare
+    assert prepare.count("install -o 10001 -g 10001 -m 0600") == 2
+    assert "cmp -s" in prepare
+    assert "qwen-hmac client-ca.crt" in prepare
+    assert "unlink" in prepare and "unlink" in cleanup
+    assert "rmdir" in cleanup
+    assert "rm -rf" not in prepare + cleanup
+    assert "cat " not in prepare + cleanup
+
+
+def test_replay_init_is_bounded_deterministic_and_networkless():
+    text = load_text("initialize-replay-volume")
+    assert "--rm --network none" in text
+    assert "--cap-drop ALL" in text
+    assert "--cap-add CHOWN --cap-add FOWNER" in text
+    assert "--entrypoint python" in text
+    assert "@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef" in text
+    assert "os.chown(p,10001,10001)" in text
+    assert "os.chmod(p,0o700)" in text
 
 
 def test_caddy_route_is_exact_private_and_overwrites_identity_header():
@@ -57,4 +86,5 @@ def test_runbook_requires_rollback_and_preserves_vicidial():
     assert "automatic rollback" in text
     assert "Do not modify the" in text
     assert "VICIdial matcher" in text
-    assert "Remove only the two UID 10001 ACL entries" in text
+    assert "do not add" in text
+    assert "cleanup-runtime-secrets" in text
