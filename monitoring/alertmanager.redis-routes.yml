@@ -1,0 +1,10 @@
+# Merge into the reviewed Alertmanager route tree. Receivers are existing
+# secret-backed receiver names; no receiver URLs are stored here.
+routes:
+  - matchers: [service="redis", severity="critical"]
+    receiver: approved-primary-receiver
+    continue: true
+  - matchers: [service="redis", severity="warning"]
+    receiver: approved-secondary-receiver
+  - matchers: [service="redis", alertname=~"CodestraRedisAuthenticationFailures|CodestraRedisUnexpectedAclDenials"]
+    receiver: approved-primary-receiver
