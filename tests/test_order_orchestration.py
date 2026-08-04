@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta, timezone
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -17,7 +17,7 @@ from app.order_orchestration import (
 
 
 def envelope(**overrides) -> OrderEnvelope:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     values = {
         "schema_version": "codestra.order.command.v1",
         "command_id": "cmd-test-001",
@@ -55,7 +55,7 @@ def test_order_lifecycle_and_duplicate_suppression():
 
 
 def test_dispatch_rejects_expired_order():
-    expired = datetime.now(timezone.utc) - timedelta(seconds=1)
+    expired = datetime.now(UTC) - timedelta(seconds=1)
     order = envelope(
         requested_at=expired - timedelta(minutes=10),
         expires_at=expired,

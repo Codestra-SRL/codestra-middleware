@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -209,7 +209,7 @@ def _is_synthetic(order: OrderEnvelope) -> bool:
 
 
 def validate_for_dispatch(order: OrderEnvelope) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if order.expires_at <= now:
         raise HTTPException(422, "order has expired")
     if order.workflow_code not in ALLOWED_WORKFLOWS:
