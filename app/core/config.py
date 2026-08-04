@@ -101,6 +101,14 @@ class Settings(BaseSettings):
     extension_allocator_enabled: bool = False
     telephony_provisioning_enabled: bool = False
     vicidial_provisioning_enabled: bool = False
+    postiz_internal_base_url: str = ""
+    postiz_api_key_file: str = ""
+    postiz_organization_reference: str = ""
+    postiz_timeout_seconds: float = 10.0
+    postiz_delivery_enabled: bool = False
+    postiz_publish_enabled: bool = False
+    postiz_media_upload_enabled: bool = False
+    postiz_analytics_enabled: bool = False
     pjsip_provisioning_enabled: bool = False
     webphone_session_issuer_enabled: bool = False
     telephony_reconciliation_enabled: bool = False
@@ -118,6 +126,7 @@ class Settings(BaseSettings):
             self.telephony_provisioning_enabled,
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
+            self.postiz_publish_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
@@ -140,6 +149,18 @@ class Settings(BaseSettings):
                 if not value:
                     raise ValueError(f"required {attribute} secret file is empty")
                 setattr(self, attribute, value)
+
+    @property
+    def postiz_api_key(self) -> str:
+        if not self.postiz_api_key_file:
+            return ""
+        path = Path(self.postiz_api_key_file)
+        if not path.is_absolute() or not path.is_file():
+            raise ValueError("Postiz API key file is unavailable")
+        value = path.read_text().strip()
+        if not value:
+            raise ValueError("Postiz API key file is empty")
+        return value
 
     @field_validator("vicidial_authorization_url", "vicidial_edge_url")
     @classmethod
