@@ -18,7 +18,22 @@ This is an unsigned review worksheet. Completing it does not deploy or sign the 
 - Existing protected reviewer: `kazan555` on `security-owner-signing` (preserved)
 - Rollback Authority: Ralph Appolon
 
-The VEX remains `under_investigation` until Evelin personally records and signs a decision through the approved independent workflow.
+Evelin recorded an authenticated, unsigned decision for all ten findings at [PR #84 comment 5178687201](https://github.com/Codestra-SRL/codestra-middleware/pull/84#issuecomment-5178687201). The decision is bound to the exact subject above. It remains unsigned and requires fresh approval against the governance update commit.
+
+## Authenticated Security Owner decision
+
+- Decision: `APPROVED`
+- Findings reviewed: `10`
+- `not_affected`: `10`
+- `fixed`: `0`
+- `affected`: `0`
+- `under_investigation`: `0`
+- Signed: `false`
+- Decision timestamp: `2026-08-04T11:59:19Z`
+- Original scanner evidence: preserved unchanged
+- Scope: exact image digest, source commit, SBOM, Linux/amd64 platform and restricted verifier functionality only
+
+The Security Owner explicitly did not declare CPython 3.12.13 generally fixed. Any rebuild, dependency change, new endpoint, or addition of archive, HTML, cookie mutation, XML, browser-command, or decompression functionality requires a new review.
 
 ## Before reviewing findings
 
