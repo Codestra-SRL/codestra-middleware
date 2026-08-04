@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 
 import pytest
@@ -78,7 +79,10 @@ def test_n8n_exports_have_only_middleware_urls_and_are_inactive():
     assert len(exports) == 7
     for export in exports:
         text = export.read_text()
+        document = json.loads(text)
         assert '"active":false' in text
+        assert document["id"].startswith("cdst-order-")
+        assert all("position" in node for node in document["nodes"])
         assert "CODESTRA_MIDDLEWARE_BASE_URL" in text
         assert "odoo.com" not in text.lower()
         assert "vicidial" not in text.lower()
