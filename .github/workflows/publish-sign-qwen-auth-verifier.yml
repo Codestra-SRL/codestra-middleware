@@ -1,0 +1,293 @@
+name: Publish and sign approved Qwen authentication verifier
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: publish-sign-qwen-auth-verifier-a0423439705ee7f
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/codestra-srl/qwen-auth-verifier
+  IMAGE_DIGEST: sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef
+  LOCAL_IMAGE_ID: sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef
+  OCI_INDEX_MEDIA_TYPE: application/vnd.oci.image.index.v1+json
+  OCI_MANIFEST_DIGEST: sha256:57e2e343064afaa586c80a0646c2e9ec0ea0ec4d540b6743a2a10ce6a981f9f2
+  OCI_CONFIG_DIGEST: sha256:cf8822230dad24817cc688913fa4437b8f6a25f7f93d36793b537fb85fbe5ccb
+  APP_SHA256: 9e092df381724091a4f4e113f06491c008820c9a4883784bccb0eeb26517fece
+  CANDIDATE_COMMIT: bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75
+  GOVERNANCE_HEAD: 7c918e328f6336761f0c65540a65fae8b84e9117
+  VEX_SHA256: ba6ec01d89e3140a8538d9e5669be8b05f1e31ac3c475cf65a8d6907302dc1ff
+  SBOM_SHA256: 380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec
+  VEX_PATH: security/reviews/qwen-verifier-bbd22cf/openvex-draft.json
+  SECURITY_OWNER_RECORD_PATH: security/reviews/qwen-verifier-bbd22cf/security-owner-record.json
+  LOCAL_SBOM_PATH: /var/lib/codestra/qwen-security-review/qwen-ai-01-bbd22cf/scanner/sbom.cdx.json
+  PUBLISH_TAG: approved-a0423439705ee7f
+  EXPECTED_ISSUER: https://token.actions.githubusercontent.com
+  EXPECTED_IDENTITY: https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/publish-sign-qwen-auth-verifier.yml@refs/heads/main
+
+jobs:
+  publish-sign:
+    if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, x64, codestra-qwen-artifact-publisher]
+    environment: security-owner-signing
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Check out protected default branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate immutable workflow identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REPOSITORY}" = "Codestra-SRL/codestra-middleware"
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "${IMAGE_REPOSITORY}" = "ghcr.io/codestra-srl/qwen-auth-verifier"
+          test "${IMAGE_DIGEST}" = "sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef"
+          test "${CANDIDATE_COMMIT}" = "bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75"
+          test "${GOVERNANCE_HEAD}" = "7c918e328f6336761f0c65540a65fae8b84e9117"
+          test "${VEX_SHA256}" = "ba6ec01d89e3140a8538d9e5669be8b05f1e31ac3c475cf65a8d6907302dc1ff"
+          test "${SBOM_SHA256}" = "380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+          test "${GITHUB_ACTOR}" != "kazan555"
+          git cat-file -e "${GOVERNANCE_HEAD}^{commit}"
+
+      - name: Fetch and validate exact approved governance evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fetch_exact() {
+            local path="$1" output="$2"
+            gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GOVERNANCE_HEAD}" \
+              --jq .content | base64 --decode > "${output}"
+          }
+          fetch_exact "${VEX_PATH}" final-openvex.json
+          fetch_exact "${SECURITY_OWNER_RECORD_PATH}" security-owner-record.json
+          test "$(sha256sum final-openvex.json | cut -d' ' -f1)" = "${VEX_SHA256}"
+          test "$(sha256sum "${LOCAL_SBOM_PATH}" | cut -d' ' -f1)" = "${SBOM_SHA256}"
+          jq -e \
+            --arg digest "${IMAGE_DIGEST}" \
+            --arg vex "${VEX_SHA256}" '
+              .decision == "APPROVED" and
+              .signed == false and
+              .github_username == "kazan555" and
+              .github_user_id == 77101516 and
+              .image_digest == $digest and
+              .final_vex_sha256 == $vex and
+              .findings_reviewed == 10
+            ' security-owner-record.json >/dev/null
+          jq -e \
+            --arg digest "${IMAGE_DIGEST}" '
+              .["@context"] == "https://openvex.dev/ns/v0.2.0" and
+              (.statements | length) == 10 and
+              all(.statements[];
+                .status == "not_affected" and
+                (.impact_statement | type == "string" and length > 40) and
+                all(.products[]; .["@id"] | contains($digest)))
+            ' final-openvex.json >/dev/null
+          cp "${LOCAL_SBOM_PATH}" final-sbom.cdx.json
+
+      - name: Verify local immutable OCI artifact without rebuilding
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v docker
+          command -v jq
+          inspect="$(docker image inspect "${LOCAL_IMAGE_ID}")"
+          test "$(jq -r '.[0].Id' <<<"${inspect}")" = "${LOCAL_IMAGE_ID}"
+          test "$(jq -r '.[0].Descriptor.mediaType' <<<"${inspect}")" = "${OCI_INDEX_MEDIA_TYPE}"
+          test "$(jq -r '.[0].Descriptor.digest' <<<"${inspect}")" = "${IMAGE_DIGEST}"
+          test "$(jq -r '.[0].Os' <<<"${inspect}")" = linux
+          test "$(jq -r '.[0].Architecture' <<<"${inspect}")" = amd64
+          test "$(jq -r '.[0].Config.User' <<<"${inspect}")" = "10001:10001"
+          test "$(jq -r '.[0].Config.Labels["org.opencontainers.image.revision"]' <<<"${inspect}")" = "${CANDIDATE_COMMIT}"
+          test "$(docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --entrypoint /usr/bin/sha256sum \
+            "${LOCAL_IMAGE_ID}" /app/app/qwen_auth_verifier.py | cut -d' ' -f1)" = "${APP_SHA256}"
+          test "$(docker image inspect "${LOCAL_IMAGE_ID}" --format '{{.Descriptor.digest}}')" = "${IMAGE_DIGEST}"
+
+      - name: Publish exact existing OCI index without rebuilding
+        id: publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          target="${IMAGE_REPOSITORY}:${PUBLISH_TAG}"
+          cleanup_mismatched_tag() {
+            version_id="$({
+              gh api --paginate \
+                "orgs/Codestra-SRL/packages/container/qwen-auth-verifier/versions" \
+                --jq ".[] | select(any(.metadata.container.tags[]?; . == \"${PUBLISH_TAG}\")) | .id"
+            } | head -n1)"
+            if [[ -n "${version_id}" ]]; then
+              gh api --method DELETE \
+                "orgs/Codestra-SRL/packages/container/qwen-auth-verifier/versions/${version_id}"
+            fi
+          }
+          echo "${GH_TOKEN}" | docker login ghcr.io \
+            --username "${GITHUB_ACTOR}" --password-stdin
+          docker image tag "${LOCAL_IMAGE_ID}" "${target}"
+          docker image push "${target}"
+          registry_digest="$(docker buildx imagetools inspect "${target}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          if [[ "${registry_digest}" != "${IMAGE_DIGEST}" ]]; then
+            cleanup_mismatched_tag
+            exit 1
+          fi
+          printf 'registry_digest=%s\n' "${registry_digest}" >> "${GITHUB_OUTPUT}"
+          printf 'subject=%s@%s\n' "${IMAGE_REPOSITORY}" "${registry_digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate digest-bound SLSA provenance predicate
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -cnS \
+            --arg digest "${IMAGE_DIGEST#sha256:}" \
+            --arg source "${CANDIDATE_COMMIT}" \
+            --arg governance "${GOVERNANCE_HEAD}" \
+            --arg sbom "${SBOM_SHA256}" \
+            --arg vex "${VEX_SHA256}" \
+            --arg invocation "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}" \
+            --arg builder "${EXPECTED_IDENTITY}" '
+              {
+                buildDefinition: {
+                  buildType: "https://codestra.example/buildtypes/publish-existing-oci/v1",
+                  externalParameters: {
+                    rebuild: false,
+                    candidate_source_commit: $source,
+                    governance_head: $governance,
+                    sbom_sha256: $sbom,
+                    final_vex_sha256: $vex
+                  },
+                  internalParameters: {},
+                  resolvedDependencies: [{uri:"pkg:oci/qwen-auth-verifier",digest:{sha256:$digest}}]
+                },
+                runDetails: {
+                  builder: {id:$builder},
+                  metadata: {invocationId:$invocation},
+                  byproducts: []
+                }
+              }
+            ' > final-provenance.json
+
+      - name: Install pinned Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.2
+
+      - name: Keylessly sign and attest exact digest-qualified subject
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          subject="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          test "${subject}" = "${{ steps.publish.outputs.subject }}"
+          cosign sign --yes "${subject}"
+          cosign attest --yes --type cyclonedx \
+            --predicate final-sbom.cdx.json "${subject}"
+          cosign attest --yes --type slsaprovenance \
+            --predicate final-provenance.json "${subject}"
+          cosign attest --yes --type openvex \
+            --predicate final-openvex.json "${subject}"
+          sha256sum final-sbom.cdx.json final-provenance.json final-openvex.json \
+            security-owner-record.json > signed-evidence-SHA256SUMS
+
+      - name: Upload non-secret signing evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qwen-auth-verifier-signing-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 90
+          path: |
+            final-sbom.cdx.json
+            final-openvex.json
+            final-provenance.json
+            security-owner-record.json
+            signed-evidence-SHA256SUMS
+
+  independently-verify:
+    needs: publish-sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Download exact run-scoped signing evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: qwen-auth-verifier-signing-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Install pinned Cosign on independent runner
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.2
+
+      - name: Independently verify signature and attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          subject="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          test "$(sha256sum final-sbom.cdx.json | cut -d' ' -f1)" = "${SBOM_SHA256}"
+          test "$(sha256sum final-openvex.json | cut -d' ' -f1)" = "${VEX_SHA256}"
+          sha256sum -c signed-evidence-SHA256SUMS
+          echo "${GH_TOKEN}" | cosign login ghcr.io \
+            --username "${GITHUB_ACTOR}" --password-stdin
+          cosign verify \
+            --certificate-identity "${EXPECTED_IDENTITY}" \
+            --certificate-oidc-issuer "${EXPECTED_ISSUER}" \
+            "${subject}" > cosign-verification.json
+          for type in cyclonedx slsaprovenance openvex; do
+            cosign verify-attestation \
+              --type "${type}" \
+              --certificate-identity "${EXPECTED_IDENTITY}" \
+              --certificate-oidc-issuer "${EXPECTED_ISSUER}" \
+              "${subject}" > "${type}-verification.json"
+            test "$(jq -r '.payload' "${type}-verification.json" | base64 --decode | jq -r '.subject[0].digest.sha256')" = "${IMAGE_DIGEST#sha256:}"
+          done
+          for pair in \
+            'cyclonedx:final-sbom.cdx.json' \
+            'slsaprovenance:final-provenance.json' \
+            'openvex:final-openvex.json'
+          do
+            type="${pair%%:*}"
+            source="${pair#*:}"
+            jq -sr '.[0].payload' "${type}-verification.json" | \
+              base64 --decode | jq -cS .predicate > "${type}-verified-predicate.json"
+            jq -cS . "${source}" > "${type}-expected-predicate.json"
+            cmp --silent \
+              "${type}-verified-predicate.json" "${type}-expected-predicate.json"
+          done
+          docker buildx imagetools inspect "${subject}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"' | \
+            grep -Fx "${IMAGE_DIGEST}"
+          jq -r '.payload' slsaprovenance-verification.json | base64 --decode | \
+            jq -e \
+              --arg source "${CANDIDATE_COMMIT}" \
+              --arg governance "${GOVERNANCE_HEAD}" \
+              --arg sbom "${SBOM_SHA256}" \
+              --arg vex "${VEX_SHA256}" '
+                .predicate.buildDefinition.externalParameters.candidate_source_commit == $source and
+                .predicate.buildDefinition.externalParameters.governance_head == $governance and
+                .predicate.buildDefinition.externalParameters.sbom_sha256 == $sbom and
+                .predicate.buildDefinition.externalParameters.final_vex_sha256 == $vex
+              ' >/dev/null
