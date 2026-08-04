@@ -26,6 +26,7 @@ from app.api.v1.webphone import router as webphone_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.ai import router as ai_router
+from app.api.v1.provider_commands import router as provider_commands_router
 from app.integrations.postiz.routes import router as postiz_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -48,6 +49,7 @@ app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(orders_router)
 app.include_router(ai_router)
+app.include_router(provider_commands_router)
 app.include_router(integrations_router)
 app.include_router(postiz_router)
 app.include_router(campaign_search_router)
