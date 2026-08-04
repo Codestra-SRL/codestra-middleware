@@ -20,7 +20,7 @@ jobs:
         run: >-
           python -m pip install --disable-pip-version-check
           -e '.[test]'
-          pyyaml jsonschema
+          pyyaml jsonschema pytest-asyncio
       - name: Compile Python
         run: python -m compileall -q app tests scripts
       - name: Targeted lint
