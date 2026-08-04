@@ -18,6 +18,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import settings
+from app import metrics
 
 
 class OrderStatus(str, Enum):
@@ -237,6 +238,18 @@ class OrderStore:
 
     def _count(self, name: str) -> None:
         self.metrics[name] = self.metrics.get(name, 0) + 1
+        prometheus_metric = {
+            "orders_received_total": metrics.ORDER_RECEIVED,
+            "orders_dispatched_total": metrics.ORDER_DISPATCHED,
+            "orders_completed_total": metrics.ORDER_COMPLETED,
+            "orders_failed_total": metrics.ORDER_FAILED,
+            "orders_retried_total": metrics.ORDER_RETRIED,
+            "orders_dead_lettered_total": metrics.ORDER_DEAD_LETTERED,
+            "order_progress_total": metrics.ORDER_PROGRESS,
+            "security_failure_retry_total": metrics.ORDER_SECURITY_RETRY,
+        }.get(name)
+        if prometheus_metric is not None:
+            prometheus_metric.inc()
 
     def _audit(self, order_id: str, event: str, **details: Any) -> None:
         self.audit_events.append({"order_id": order_id, "event": event, **details})

@@ -53,3 +53,30 @@ groups:
         for: 2m
         labels: {severity: warning}
         annotations: {runbook_url: "https://monitoring.codestra.co/runbooks/middleware-authentication"}
+  - name: codestra-approved-order-orchestration
+    rules:
+      - alert: CodestraOrderFailureRateHigh
+        expr: sum(rate(codestra_orders_failed_total[5m])) / clamp_min(sum(rate(codestra_orders_received_total[5m])), 1) > 0.25
+        for: 10m
+        labels: {severity: warning, service: middleware, environment: production}
+        annotations: {summary: "Approved-order failure rate is high", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+      - alert: CodestraOrderQueueBacklog
+        expr: codestra_delivery_queue_depth{target="n8n",status="pending"} > 50
+        for: 10m
+        labels: {severity: warning, service: middleware, environment: production}
+        annotations: {summary: "Approved-order queue backlog is high", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+      - alert: CodestraOrderDeadLetterIncrease
+        expr: increase(codestra_orders_dead_lettered_total[15m]) > 0
+        for: 5m
+        labels: {severity: critical, service: middleware, environment: production}
+        annotations: {summary: "Approved orders entered dead letter", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+      - alert: CodestraOrderReconciliationMismatch
+        expr: increase(codestra_order_reconciliation_mismatch_total[10m]) > 0
+        for: 5m
+        labels: {severity: critical, service: middleware, environment: production}
+        annotations: {summary: "Approved-order reconciliation mismatch", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+      - alert: CodestraN8nOrderWorkflowUnavailable
+        expr: absent(up{job="n8n-order-workflows"})
+        for: 5m
+        labels: {severity: critical, service: n8n, environment: production}
+        annotations: {summary: "n8n approved-order workflow target unavailable", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
