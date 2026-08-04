@@ -22,6 +22,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.registry import router as registry_router
 from app.api.v1.recordings import router as recordings_router
 from app.api.v1.telephony import router as telephony_router
+from app.api.v1.webphone import router as webphone_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.orders import router as orders_router
 from app.integrations.postiz.routes import router as postiz_router

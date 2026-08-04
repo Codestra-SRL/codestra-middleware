@@ -111,6 +111,10 @@ class Settings(BaseSettings):
     allow_live_email: bool = False
     allow_live_sms: bool = False
     ai_enrichment_enabled: bool = False
+    qwen_base_url_file: str = ""
+    qwen_api_key_file: str = ""
+    litellm_base_url_file: str = ""
+    litellm_api_key_file: str = ""
     report_delivery_enabled: bool = False
     outbox_worker_enabled: bool = False
     outbox_max_attempts: int = 5
@@ -272,6 +276,34 @@ class Settings(BaseSettings):
                 if not value:
                     raise ValueError(f"required {attribute} secret file is empty")
                 setattr(self, attribute, value)
+
+    @staticmethod
+    def _optional_secret(filename: str, label: str) -> str:
+        if not filename:
+            return ""
+        path = Path(filename)
+        if not path.is_absolute() or not path.is_file():
+            raise ValueError(f"{label} secret file is unavailable")
+        value = path.read_text().strip()
+        if not value:
+            raise ValueError(f"{label} secret file is empty")
+        return value
+
+    @property
+    def qwen_base_url(self) -> str:
+        return self._optional_secret(self.qwen_base_url_file, "Qwen base URL")
+
+    @property
+    def qwen_api_key(self) -> str:
+        return self._optional_secret(self.qwen_api_key_file, "Qwen API key")
+
+    @property
+    def litellm_base_url(self) -> str:
+        return self._optional_secret(self.litellm_base_url_file, "LiteLLM base URL")
+
+    @property
+    def litellm_api_key(self) -> str:
+        return self._optional_secret(self.litellm_api_key_file, "LiteLLM API key")
 
     @property
     def postiz_api_key(self) -> str:
