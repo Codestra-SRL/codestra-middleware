@@ -23,7 +23,11 @@ def test_exact_subject_and_evidence_are_hard_bound_without_inputs():
     expected_lines = (
         "IMAGE_REPOSITORY: ghcr.io/codestra-srl/qwen-auth-verifier",
         f"IMAGE_DIGEST: {IMAGE_DIGEST}",
-        f"LOCAL_IMAGE_ID: {IMAGE_DIGEST}",
+        "OCI_ARCHIVE_PATH: /opt/codestra-jit-input/qwen-auth-verifier-a0423439705ee7f.oci.tar",
+        "ORAS_VERSION: 1.3.2",
+        "ORAS_ARCHIVE_SHA256: 9229ccc6d17bb282039ad4a69abb16dcb887a5bce567c075d731d9b3c7ad8eaf",
+        "ORAS_SIGNING_KEY_FINGERPRINT: 2DA461D13B0C27845EDFA77FE462A3894CBAAA47",  # gitleaks:allow
+        "ORAS_GIT_COMMIT: fe425992fdfdf300a1cfb380bc4271b3e1a3d3db",
         f"VEX_SHA256: {VEX_SHA256}",
         f"SBOM_SHA256: {SBOM_SHA256}",
         f"GOVERNANCE_HEAD: {GOVERNANCE_HEAD}",
@@ -36,10 +40,8 @@ def test_exact_subject_and_evidence_are_hard_bound_without_inputs():
 def test_protected_environment_runner_and_permissions():
     assert "permissions: {}" in TEXT
     assert "environment: security-owner-signing" in TEXT
-    assert (
-        "runs-on: [self-hosted, linux, x64, codestra-qwen-artifact-publisher]"
-        in TEXT
-    )
+    assert "runs-on:\n      group: qwen-artifact-publishers" in TEXT
+    assert "labels: codestra-qwen-artifact-publisher" in TEXT
     assert "contents: read\n      packages: write\n      id-token: write\n      attestations: write" in TEXT
     assert "contents: read\n      packages: read" in TEXT
 
@@ -56,9 +58,12 @@ def test_all_third_party_actions_are_immutable_sha_pinned():
 
 def test_workflow_publishes_existing_artifact_without_build_or_deployment():
     forbidden = (
-        "docker build ",
-        "docker buildx build",
+        "docker ",
+        "docker.",
         "build-push-action",
+        "/var/run/docker.sock",
+        "/run/containerd/containerd.sock",
+        "containerd.sock",
         "kubectl",
         "systemctl",
         "docker compose",
@@ -67,10 +72,54 @@ def test_workflow_publishes_existing_artifact_without_build_or_deployment():
     lowered = TEXT.lower()
     for token in forbidden:
         assert token not in lowered
-    assert 'docker image inspect "${LOCAL_IMAGE_ID}"' in TEXT
-    assert 'docker image push "${target}"' in TEXT
-    assert 'registry_digest}" != "${IMAGE_DIGEST}' in TEXT
-    assert "cleanup_mismatched_tag" in TEXT
+    assert "skopeo" not in lowered
+    assert '"${ORAS_BIN}" cp --no-tty --from-oci-layout' in TEXT
+    assert '"${OCI_ARCHIVE_PATH}@${IMAGE_DIGEST}" "${target}"' in TEXT
+
+
+def test_oras_copy_preserves_the_complete_index_and_digest():
+    copy_block = TEXT.split('"${ORAS_BIN}" cp', 1)[1].split("registry_digest=", 1)[0]
+    assert "--from-oci-layout" in copy_block
+    assert '"${OCI_ARCHIVE_PATH}@${IMAGE_DIGEST}"' in copy_block
+    assert '"${ORAS_BIN}" resolve' in TEXT
+    assert 'test "${registry_digest}" = "${IMAGE_DIGEST}"' in TEXT
+    assert 'test "sha256:${remote_digest}" = "${IMAGE_DIGEST}"' in TEXT
+
+
+def test_oras_release_signature_checksum_and_archive_are_verified():
+    assert "oras_1.3.2_linux_amd64.tar.gz" in TEXT
+    assert "oras_1.3.2_checksums.txt" in TEXT
+    assert "oras_1.3.2_checksums.txt.asc" in TEXT
+    assert "https://raw.githubusercontent.com/oras-project/oras/v1.3.2/KEYS" in TEXT
+    assert 'gpg --batch --homedir "${ORAS_TMP_DIR}/gnupg" --status-fd 1' in TEXT
+    assert 'test "${signer_fingerprint}" = "${ORAS_SIGNING_KEY_FINGERPRINT}"' in TEXT
+    assert "sha256sum --check --strict" in TEXT
+    assert "PurePosixPath" in TEXT
+    assert 'if {member.name for member in members} != {"LICENSE", "oras"}' in TEXT
+    assert 'raise SystemExit("unsafe ORAS archive path")' in TEXT
+    assert 'raise SystemExit("non-regular ORAS archive member")' in TEXT
+    assert 'raise SystemExit("unexpected ORAS executable member")' in TEXT
+
+
+def test_registry_auth_is_password_stdin_only_and_always_removed():
+    assert '"${ORAS_BIN}" login' in TEXT
+    assert "--password-stdin ghcr.io" in TEXT
+    assert "--password " not in TEXT
+    assert "--password=${GH_TOKEN}" not in TEXT
+    assert 'echo "${GH_TOKEN}"' not in TEXT
+    assert TEXT.count('printf \'%s\' "${GH_TOKEN}"') == 2
+    assert "if: ${{ always() }}" in TEXT
+    assert TEXT.count('rm -- "${REGISTRY_AUTH_FILE}"') == 2
+    assert TEXT.count('test ! -e "${REGISTRY_AUTH_FILE}"') == 2
+
+
+def test_exact_daemonless_destination_and_archive_are_enforced():
+    assert "target=\"${IMAGE_REPOSITORY}:${PUBLISH_TAG}\"" in TEXT
+    assert "IMAGE_REPOSITORY: ghcr.io/codestra-srl/qwen-auth-verifier" in TEXT
+    assert "OCI_ARCHIVE_PATH: /opt/codestra-jit-input/" in TEXT
+    assert 'test -x "${ORAS_BIN}"' in TEXT
+    assert 'test ! -w "${OCI_ARCHIVE_PATH}"' in TEXT
+    assert 'test ! -e "${ORAS_TMP_DIR}"' in TEXT
 
 
 def test_signature_attestations_and_independent_verification_are_exact():
