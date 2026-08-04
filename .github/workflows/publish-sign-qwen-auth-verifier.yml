@@ -12,11 +12,9 @@ concurrency:
 env:
   IMAGE_REPOSITORY: ghcr.io/codestra-srl/qwen-auth-verifier
   IMAGE_DIGEST: sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef
-  LOCAL_IMAGE_ID: sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef
+  OCI_ARCHIVE_PATH: /opt/codestra-jit-input/qwen-auth-verifier-a0423439705ee7f.oci.tar
   OCI_INDEX_MEDIA_TYPE: application/vnd.oci.image.index.v1+json
-  OCI_MANIFEST_DIGEST: sha256:57e2e343064afaa586c80a0646c2e9ec0ea0ec4d540b6743a2a10ce6a981f9f2
-  OCI_CONFIG_DIGEST: sha256:cf8822230dad24817cc688913fa4437b8f6a25f7f93d36793b537fb85fbe5ccb
-  APP_SHA256: 9e092df381724091a4f4e113f06491c008820c9a4883784bccb0eeb26517fece
+  SKOPEO_VERSION: 1.24.0
   CANDIDATE_COMMIT: bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75
   GOVERNANCE_HEAD: 7c918e328f6336761f0c65540a65fae8b84e9117
   VEX_SHA256: ba6ec01d89e3140a8538d9e5669be8b05f1e31ac3c475cf65a8d6907302dc1ff
@@ -31,7 +29,9 @@ env:
 jobs:
   publish-sign:
     if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, linux, x64, codestra-qwen-artifact-publisher]
+    runs-on:
+      group: qwen-artifact-publishers
+      labels: codestra-qwen-artifact-publisher
     environment: security-owner-signing
     timeout-minutes: 20
     permissions:
@@ -39,6 +39,9 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+    env:
+      REGISTRY_AUTH_DIR: ${{ runner.temp }}/qwen-registry-auth
+      REGISTRY_AUTH_FILE: ${{ runner.temp }}/qwen-registry-auth/config.json
 
     steps:
       - name: Check out protected default branch
@@ -100,54 +103,67 @@ jobs:
             ' final-openvex.json >/dev/null
           cp "${LOCAL_SBOM_PATH}" final-sbom.cdx.json
 
-      - name: Verify local immutable OCI artifact without rebuilding
+      - name: Verify daemonless Skopeo and exact read-only OCI archive
         shell: bash
         run: |
           set -euo pipefail
-          command -v docker
+          command -v skopeo
           command -v jq
-          inspect="$(docker image inspect "${LOCAL_IMAGE_ID}")"
-          test "$(jq -r '.[0].Id' <<<"${inspect}")" = "${LOCAL_IMAGE_ID}"
-          test "$(jq -r '.[0].Descriptor.mediaType' <<<"${inspect}")" = "${OCI_INDEX_MEDIA_TYPE}"
-          test "$(jq -r '.[0].Descriptor.digest' <<<"${inspect}")" = "${IMAGE_DIGEST}"
-          test "$(jq -r '.[0].Os' <<<"${inspect}")" = linux
-          test "$(jq -r '.[0].Architecture' <<<"${inspect}")" = amd64
-          test "$(jq -r '.[0].Config.User' <<<"${inspect}")" = "10001:10001"
-          test "$(jq -r '.[0].Config.Labels["org.opencontainers.image.revision"]' <<<"${inspect}")" = "${CANDIDATE_COMMIT}"
-          test "$(docker run --rm --network none --read-only --cap-drop ALL \
-            --security-opt no-new-privileges --entrypoint /usr/bin/sha256sum \
-            "${LOCAL_IMAGE_ID}" /app/app/qwen_auth_verifier.py | cut -d' ' -f1)" = "${APP_SHA256}"
-          test "$(docker image inspect "${LOCAL_IMAGE_ID}" --format '{{.Descriptor.digest}}')" = "${IMAGE_DIGEST}"
+          command -v tar
+          test "$(skopeo --version)" = "skopeo version ${SKOPEO_VERSION}"
+          test -f "${OCI_ARCHIVE_PATH}"
+          test ! -L "${OCI_ARCHIVE_PATH}"
+          test ! -w "${OCI_ARCHIVE_PATH}"
+          if tar -tf "${OCI_ARCHIVE_PATH}" | \
+            grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+            exit 1
+          fi
+          layout_index="$(tar -xOf "${OCI_ARCHIVE_PATH}" index.json)"
+          test "$(jq -r .schemaVersion <<<"${layout_index}")" = 2
+          archive_digest="$(jq -er \
+            '.manifests[] | select(.mediaType == "application/vnd.oci.image.index.v1+json") | .digest' \
+            <<<"${layout_index}")"
+          test "${archive_digest}" = "${IMAGE_DIGEST}"
+          archive_blob="blobs/sha256/${archive_digest#sha256:}"
+          test "$(tar -xOf "${OCI_ARCHIVE_PATH}" "${archive_blob}" | \
+            sha256sum | cut -d' ' -f1)" = "${IMAGE_DIGEST#sha256:}"
+          test "$(tar -xOf "${OCI_ARCHIVE_PATH}" "${archive_blob}" | \
+            jq -r .mediaType)" = "${OCI_INDEX_MEDIA_TYPE}"
 
-      - name: Publish exact existing OCI index without rebuilding
-        id: publish
+      - name: Create temporary registry authentication
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          install -d -m 0700 "${REGISTRY_AUTH_DIR}"
+          umask 077
+          printf '%s' "${GH_TOKEN}" | skopeo login \
+            --authfile "${REGISTRY_AUTH_FILE}" \
+            --username "${GITHUB_ACTOR}" \
+            --password-stdin ghcr.io >/dev/null
+          test -s "${REGISTRY_AUTH_FILE}"
+          test "$(stat -c '%a' "${REGISTRY_AUTH_FILE}")" = 600
+
+      - name: Publish exact existing OCI index daemonlessly
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
           target="${IMAGE_REPOSITORY}:${PUBLISH_TAG}"
-          cleanup_mismatched_tag() {
-            version_id="$({
-              gh api --paginate \
-                "orgs/Codestra-SRL/packages/container/qwen-auth-verifier/versions" \
-                --jq ".[] | select(any(.metadata.container.tags[]?; . == \"${PUBLISH_TAG}\")) | .id"
-            } | head -n1)"
-            if [[ -n "${version_id}" ]]; then
-              gh api --method DELETE \
-                "orgs/Codestra-SRL/packages/container/qwen-auth-verifier/versions/${version_id}"
-            fi
-          }
-          echo "${GH_TOKEN}" | docker login ghcr.io \
-            --username "${GITHUB_ACTOR}" --password-stdin
-          docker image tag "${LOCAL_IMAGE_ID}" "${target}"
-          docker image push "${target}"
-          registry_digest="$(docker buildx imagetools inspect "${target}" \
-            --format '{{json .Manifest.Digest}}' | tr -d '"')"
-          if [[ "${registry_digest}" != "${IMAGE_DIGEST}" ]]; then
-            cleanup_mismatched_tag
-            exit 1
-          fi
+          skopeo copy \
+            --all \
+            --preserve-digests \
+            --authfile "${REGISTRY_AUTH_FILE}" \
+            --digestfile published-digest.txt \
+            "oci-archive:${OCI_ARCHIVE_PATH}" \
+            "docker://${target}"
+          registry_digest="$(tr -d '[:space:]' < published-digest.txt)"
+          test "${registry_digest}" = "${IMAGE_DIGEST}"
+          remote_digest="$(skopeo inspect --raw \
+            --authfile "${REGISTRY_AUTH_FILE}" \
+            "docker://${target}" | sha256sum | cut -d' ' -f1)"
+          test "sha256:${remote_digest}" = "${IMAGE_DIGEST}"
           printf 'registry_digest=%s\n' "${registry_digest}" >> "${GITHUB_OUTPUT}"
           printf 'subject=%s@%s\n' "${IMAGE_REPOSITORY}" "${registry_digest}" >> "${GITHUB_OUTPUT}"
 
@@ -193,6 +209,7 @@ jobs:
         shell: bash
         env:
           COSIGN_EXPERIMENTAL: "1"
+          DOCKER_CONFIG: ${{ env.REGISTRY_AUTH_DIR }}
         run: |
           set -euo pipefail
           subject="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
@@ -221,6 +238,19 @@ jobs:
             security-owner-record.json
             signed-evidence-SHA256SUMS
 
+      - name: Remove temporary registry authentication
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e "${REGISTRY_AUTH_FILE}" ]]; then
+            rm -- "${REGISTRY_AUTH_FILE}"
+          fi
+          if [[ -d "${REGISTRY_AUTH_DIR}" ]]; then
+            rmdir -- "${REGISTRY_AUTH_DIR}"
+          fi
+          test ! -e "${REGISTRY_AUTH_FILE}"
+
   independently-verify:
     needs: publish-sign
     runs-on: ubuntu-latest
@@ -228,6 +258,9 @@ jobs:
     permissions:
       contents: read
       packages: read
+    env:
+      REGISTRY_AUTH_DIR: ${{ runner.temp }}/qwen-verify-registry-auth
+      REGISTRY_AUTH_FILE: ${{ runner.temp }}/qwen-verify-registry-auth/config.json
 
     steps:
       - name: Download exact run-scoped signing evidence
@@ -244,13 +277,16 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          DOCKER_CONFIG: ${{ env.REGISTRY_AUTH_DIR }}
         run: |
           set -euo pipefail
           subject="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
           test "$(sha256sum final-sbom.cdx.json | cut -d' ' -f1)" = "${SBOM_SHA256}"
           test "$(sha256sum final-openvex.json | cut -d' ' -f1)" = "${VEX_SHA256}"
           sha256sum -c signed-evidence-SHA256SUMS
-          echo "${GH_TOKEN}" | cosign login ghcr.io \
+          install -d -m 0700 "${REGISTRY_AUTH_DIR}"
+          umask 077
+          printf '%s' "${GH_TOKEN}" | cosign login ghcr.io \
             --username "${GITHUB_ACTOR}" --password-stdin
           cosign verify \
             --certificate-identity "${EXPECTED_IDENTITY}" \
@@ -277,9 +313,6 @@ jobs:
             cmp --silent \
               "${type}-verified-predicate.json" "${type}-expected-predicate.json"
           done
-          docker buildx imagetools inspect "${subject}" \
-            --format '{{json .Manifest.Digest}}' | tr -d '"' | \
-            grep -Fx "${IMAGE_DIGEST}"
           jq -r '.payload' slsaprovenance-verification.json | base64 --decode | \
             jq -e \
               --arg source "${CANDIDATE_COMMIT}" \
@@ -291,3 +324,16 @@ jobs:
                 .predicate.buildDefinition.externalParameters.sbom_sha256 == $sbom and
                 .predicate.buildDefinition.externalParameters.final_vex_sha256 == $vex
               ' >/dev/null
+
+      - name: Remove independent verification registry authentication
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e "${REGISTRY_AUTH_FILE}" ]]; then
+            rm -- "${REGISTRY_AUTH_FILE}"
+          fi
+          if [[ -d "${REGISTRY_AUTH_DIR}" ]]; then
+            rmdir -- "${REGISTRY_AUTH_DIR}"
+          fi
+          test ! -e "${REGISTRY_AUTH_FILE}"
