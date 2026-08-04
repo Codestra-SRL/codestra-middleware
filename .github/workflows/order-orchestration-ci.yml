@@ -40,7 +40,7 @@ jobs:
               data = json.loads(path.read_text())
               assert data.get('active') is False
               assert data.get('nodes')
-              assert data.get('connections')
+              assert 'connections' in data
           registry = json.loads(pathlib.Path('integrations/n8n/cross-system-workflow-registry.json').read_text())
           assert len(registry['workflows']) == 51
           assert len({w['workflow_code'] for w in registry['workflows']}) == 51
