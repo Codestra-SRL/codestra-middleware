@@ -1,0 +1,223 @@
+"""Middleware-owned approved-order orchestration contract.
+
+This module is deliberately persistence-agnostic for the first release: the
+canonical order state is held by middleware and the durable outbox/inbox
+adapters can replace the in-memory store without changing the HTTP contract.
+n8n receives only validated, allowlisted commands.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
+
+from fastapi import HTTPException
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.core.config import settings
+
+
+class OrderStatus(str, Enum):
+    RECEIVED = "RECEIVED"
+    VALIDATING = "VALIDATING"
+    VALIDATED = "VALIDATED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    QUEUED = "QUEUED"
+    DISPATCHED_TO_N8N = "DISPATCHED_TO_N8N"
+    RUNNING = "RUNNING"
+    PARTIALLY_COMPLETED = "PARTIALLY_COMPLETED"
+    COMPLETED = "COMPLETED"
+    FAILED_RETRYABLE = "FAILED_RETRYABLE"
+    RETRY_SCHEDULED = "RETRY_SCHEDULED"
+    FAILED_FINAL = "FAILED_FINAL"
+    DEAD_LETTER = "DEAD_LETTER"
+    HUMAN_REVIEW = "HUMAN_REVIEW"
+    CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
+
+
+ALLOWED_WORKFLOWS = frozenset(
+    {
+        "CDST-ORDER-VALIDATE-V1",
+        "CDST-ORDER-ROUTER-V1",
+        "CDST-ORDER-SHIPPING-V1",
+        "CDST-ORDER-FULFILLMENT-V1",
+        "CDST-ORDER-CUSTOMER-SETUP-V1",
+        "CDST-ORDER-SOCIAL-CAMPAIGN-V1",
+        "CDST-ORDER-CALLBACK-V1",
+        "CDST-ORDER-RESULT-V1",
+        "CDST-ORDER-FAILURE-V1",
+        "CDST-ORDER-RECONCILIATION-V1",
+    }
+)
+ALLOWED_ACTIONS = frozenset(
+    {
+        "validate_customer",
+        "create_fulfillment_task",
+        "request_shipping_quote",
+        "schedule_pickup",
+        "create_callback",
+        "prepare_campaign_draft",
+        "create_social_draft",
+        "request_document",
+        "generate_internal_report",
+        "notify_internal_team",
+    }
+)
+BLOCKED_ACTIONS = frozenset(
+    {
+        "charge_payment_method",
+        "send_customer_message",
+        "place_external_call",
+        "publish_social_post",
+        "delete_record",
+        "cancel_customer_service",
+        "export_customer_database",
+    }
+)
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Approval(StrictModel):
+    required: bool = True
+    status: str = Field(pattern="^(pending|approved|rejected)$")
+    approved_by: str | None = Field(default=None, max_length=128)
+    approved_at: datetime | None = None
+    content_hash: str = Field(min_length=64, max_length=64)
+
+
+class OrderEnvelope(StrictModel):
+    schema_version: str = Field(pattern="^codestra\\.order\\.command\\.v1$")
+    command_id: str = Field(min_length=1, max_length=128)
+    event_id: str = Field(min_length=1, max_length=128)
+    order_id: str = Field(min_length=1, max_length=128)
+    order_type: str = Field(min_length=1, max_length=64)
+    source_system: str = Field(min_length=1, max_length=32)
+    organization_id: str = Field(min_length=1, max_length=128)
+    customer_reference: str = Field(min_length=1, max_length=128)
+    workflow_code: str = Field(min_length=1, max_length=64)
+    approval: Approval
+    payload: dict[str, Any] = Field(default_factory=dict)
+    requested_actions: list[str] = Field(min_length=1, max_length=20)
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str = Field(min_length=16, max_length=255)
+    correlation_id: str = Field(min_length=1, max_length=128)
+    trace_id: str = Field(min_length=1, max_length=128)
+    requested_at: datetime
+    expires_at: datetime
+
+    @model_validator(mode="after")
+    def validate_time_order(self) -> "OrderEnvelope":
+        if self.expires_at <= self.requested_at:
+            raise ValueError("expires_at must be after requested_at")
+        return self
+
+
+class ApprovalRequest(StrictModel):
+    approved_by: str = Field(min_length=1, max_length=128)
+    content_hash: str = Field(min_length=64, max_length=64)
+
+
+class ResultEnvelope(StrictModel):
+    schema_version: str = Field(pattern="^codestra\\.order\\.result\\.v1$")
+    command_id: str = Field(min_length=1, max_length=128)
+    order_id: str = Field(min_length=1, max_length=128)
+    workflow_code: str = Field(min_length=1, max_length=64)
+    execution_id: str = Field(min_length=1, max_length=128)
+    status: str = Field(pattern="^(completed|partially_completed|failed)$")
+    completed_actions: list[str] = Field(default_factory=list)
+    failed_actions: list[str] = Field(default_factory=list)
+    result: dict[str, Any] = Field(default_factory=dict)
+    retryable: bool = False
+    error_code: str | None = None
+    error_message: str | None = None
+    correlation_id: str
+    trace_id: str
+    started_at: datetime
+    completed_at: datetime
+
+
+class ErrorEnvelope(StrictModel):
+    command_id: str
+    order_id: str
+    workflow_code: str
+    error_code: str
+    error_message: str = Field(max_length=512)
+    retryable: bool = False
+    correlation_id: str
+    trace_id: str
+
+
+def content_hash(order: OrderEnvelope) -> str:
+    data = order.model_dump(mode="json", exclude={"approval"})
+    return hashlib.sha256(
+        json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _is_synthetic(order: OrderEnvelope) -> bool:
+    return order.order_id.startswith("CODESTRA-INTEGRATION-TEST-")
+
+
+def validate_for_dispatch(order: OrderEnvelope) -> None:
+    now = datetime.now(timezone.utc)
+    if order.expires_at <= now:
+        raise HTTPException(422, "order has expired")
+    if order.workflow_code not in ALLOWED_WORKFLOWS:
+        raise HTTPException(422, "workflow code is not allowlisted")
+    if any(action in BLOCKED_ACTIONS for action in order.requested_actions):
+        raise HTTPException(422, "requested action is blocked")
+    if not set(order.requested_actions).issubset(ALLOWED_ACTIONS):
+        raise HTTPException(422, "requested action is not allowlisted")
+    if order.approval.required and order.approval.status != "approved":
+        raise HTTPException(409, "approval is required before dispatch")
+    if order.approval.content_hash != content_hash(order):
+        raise HTTPException(409, "approval content hash does not match order")
+    if not _is_synthetic(order) and not settings.order_orchestration_enabled:
+        raise HTTPException(503, "order orchestration is disabled")
+    if not settings.n8n_order_dispatch_enabled and not _is_synthetic(order):
+        raise HTTPException(503, "n8n order dispatch is disabled")
+
+
+class OrderStore:
+    def __init__(self) -> None:
+        self.orders: dict[str, dict[str, Any]] = {}
+        self.by_idempotency: dict[str, str] = {}
+
+    def create(self, order: OrderEnvelope) -> dict[str, Any]:
+        existing_id = self.by_idempotency.get(order.idempotency_key)
+        if existing_id:
+            existing = self.orders[existing_id]
+            if existing["content_hash"] != content_hash(order):
+                raise HTTPException(409, "duplicate idempotency key conflict")
+            return {**existing, "duplicate": True}
+        status = OrderStatus.APPROVAL_REQUIRED.value if order.approval.required else OrderStatus.VALIDATED.value
+        record = {
+            "order_id": order.order_id,
+            "command_id": order.command_id,
+            "workflow_code": order.workflow_code,
+            "status": status,
+            "content_hash": content_hash(order),
+            "trace_id": order.trace_id,
+            "correlation_id": order.correlation_id,
+            "envelope": order.model_dump(mode="json"),
+            "duplicate": False,
+        }
+        self.orders[order.order_id] = record
+        self.by_idempotency[order.idempotency_key] = order.order_id
+        return record
+
+    def get(self, order_id: str) -> dict[str, Any]:
+        if order_id not in self.orders:
+            raise HTTPException(404, "order not found")
+        return self.orders[order_id]
+
+
+STORE = OrderStore()

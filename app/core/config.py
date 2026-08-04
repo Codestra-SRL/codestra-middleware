@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     odoo_delivery_enabled: bool = False
     n8n_delivery_enabled: bool = False
     n8n_event_delivery_enabled: bool = False
+    order_orchestration_enabled: bool = False
+    n8n_order_dispatch_enabled: bool = False
     n8n_production_workflows_enabled: bool = False
     automation_actions_enabled: bool = False
     odoo_automation_writes_enabled: bool = False
