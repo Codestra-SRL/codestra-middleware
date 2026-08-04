@@ -1,0 +1,40 @@
+# Redacted recovery of active profiles. Host secret files are deployment-local.
+services:
+  redis:
+    image: redis:7.4.5
+    user: "0:0"
+    command: ["redis-server", "--appendonly", "yes", "--aclfile", "/run/secrets/redis-users.acl"]
+    expose: ["6379"]
+    networks: [redis-private]
+    volumes: [redis-data:/data]
+    secrets: [redis-users-acl, redis-service-username, redis-service-password]
+  n8n:
+    image: n8nio/n8n:validated-digest
+    user: "0:0"
+    entrypoint: ["/usr/local/bin/redis-secret-entrypoint.sh"]
+    command: ["n8n"]
+    networks: [redis-private]
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./scripts/redis-secret-entrypoint.sh:/usr/local/bin/redis-secret-entrypoint.sh:ro
+      - ./scripts/n8n-node-entrypoint:/usr/local/bin/n8n-node-entrypoint:ro
+    secrets: [redis-n8n-username, redis-n8n-password]
+  n8n-worker:
+    extends: {service: n8n}
+    command: ["worker", "--concurrency=5"]
+  n8n-worker-2:
+    extends: {service: n8n-worker}
+  n8n-webhook:
+    extends: {service: n8n}
+    command: ["webhook"]
+networks:
+  redis-private: {internal: true}
+volumes:
+  redis-data:
+  n8n-data:
+secrets:
+  redis-users-acl: {external: true}
+  redis-service-username: {external: true}
+  redis-service-password: {external: true}
+  redis-n8n-username: {external: true}
+  redis-n8n-password: {external: true}
