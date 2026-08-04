@@ -17,10 +17,16 @@ services:
     volumes:
       - n8n-data:/home/node/.n8n
       - ./scripts/redis-secret-entrypoint.sh:/usr/local/bin/redis-secret-entrypoint.sh:ro
+      - ./scripts/n8n-node-entrypoint:/usr/local/bin/n8n-node-entrypoint:ro
     secrets: [redis-n8n-username, redis-n8n-password]
   n8n-worker:
     extends: {service: n8n}
     command: ["worker", "--concurrency=5"]
+  n8n-worker-2:
+    extends: {service: n8n-worker}
+  n8n-webhook:
+    extends: {service: n8n}
+    command: ["webhook"]
 networks:
   redis-private: {internal: true}
 volumes:
