@@ -129,3 +129,33 @@ ENV PATH=/opt/venv/bin:$PATH \
 USER 10001:10001
 EXPOSE 8095
 CMD ["python", "-m", "app.entrypoints.integration_api"]
+
+FROM patched-python AS qwen-auth-verifier-runtime
+ARG VCS_REF
+ARG BUILD_REVISION
+LABEL org.opencontainers.image.title="Codestra Qwen Authentication Verifier" \
+      org.opencontainers.image.description="Read-only private mTLS and HMAC authentication verifier" \
+      org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-middleware" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.version="1.0.0-rc1" \
+      io.codestra.build.revision="${BUILD_REVISION}" \
+      io.codestra.python.base.repository="docker.io/library/python" \
+      io.codestra.python.base.digest="sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df" \
+      io.codestra.python.version="3.12.13"
+USER root
+RUN grep -q '^app:' /etc/group || addgroup -S -g 10001 app \
+ && grep -q '^app:' /etc/passwd || adduser -S -D -H -u 10001 -G app app
+COPY --from=builder /opt/venv /opt/venv
+RUN /opt/venv/bin/python -m pip uninstall -y \
+      alembic asyncpg greenlet httpcore httpx mako markupsafe prometheus-client \
+      pyjwt python-dotenv redis sqlalchemy pydantic-settings \
+ && /opt/venv/bin/python -m pip uninstall -y pip setuptools
+WORKDIR /app
+COPY --chown=10001:10001 app/qwen_auth_verifier.py /app/app/qwen_auth_verifier.py
+ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+USER 10001:10001
+EXPOSE 8095
+CMD ["uvicorn", "app.qwen_auth_verifier:create_app", "--factory", "--host", "0.0.0.0", "--port", "8095", "--no-server-header", "--no-date-header"]

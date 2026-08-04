@@ -5,6 +5,7 @@
 }
 handle @qwen_auth_verify {
 	reverse_proxy qwen-auth-verifier:8095 {
-		header_up X-Codestra-Client-Certificate "{http.request.tls.client.certificate_pem}"
+		header_up -X-Codestra-Client-Certificate
+		header_up X-Codestra-Client-Certificate-DER "{http.request.tls.client.certificate_der_base64}"
 	}
 }
