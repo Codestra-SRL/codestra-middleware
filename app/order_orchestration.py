@@ -240,11 +240,17 @@ class OrderStore:
         self.metrics[name] = self.metrics.get(name, 0) + 1
         prometheus_metric = {
             "orders_received_total": metrics.ORDER_RECEIVED,
+            "orders_validated_total": metrics.ORDER_VALIDATED,
+            "orders_approved_total": metrics.ORDER_APPROVED,
             "orders_dispatched_total": metrics.ORDER_DISPATCHED,
+            "orders_started_total": metrics.ORDER_STARTED,
             "orders_completed_total": metrics.ORDER_COMPLETED,
             "orders_failed_total": metrics.ORDER_FAILED,
             "orders_retried_total": metrics.ORDER_RETRIED,
             "orders_dead_lettered_total": metrics.ORDER_DEAD_LETTERED,
+            "orders_human_review_total": metrics.ORDER_HUMAN_REVIEW,
+            "order_duplicate_suppression_total": metrics.ORDER_DUPLICATE_SUPPRESSION,
+            "order_callback_failure_total": metrics.ORDER_CALLBACK_FAILURE,
             "order_progress_total": metrics.ORDER_PROGRESS,
             "security_failure_retry_total": metrics.ORDER_SECURITY_RETRY,
         }.get(name)
@@ -260,6 +266,7 @@ class OrderStore:
             existing = self.orders[existing_id]
             if existing["content_hash"] != content_hash(order):
                 raise HTTPException(409, "duplicate idempotency key conflict")
+            self._count("order_duplicate_suppression_total")
             return {**existing, "duplicate": True}
         status = OrderStatus.APPROVAL_REQUIRED.value if order.approval.required else OrderStatus.VALIDATED.value
         record = {
@@ -276,6 +283,7 @@ class OrderStore:
         self.orders[order.order_id] = record
         self.by_idempotency[order.idempotency_key] = order.order_id
         self._count("orders_received_total")
+        self._count("orders_approved_total" if order.approval.status == "approved" else "orders_validated_total")
         self._audit(order.order_id, "order_received", trace_id=order.trace_id)
         return record
 

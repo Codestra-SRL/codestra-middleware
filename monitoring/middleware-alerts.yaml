@@ -58,25 +58,45 @@ groups:
       - alert: CodestraOrderFailureRateHigh
         expr: sum(rate(codestra_orders_failed_total[5m])) / clamp_min(sum(rate(codestra_orders_received_total[5m])), 1) > 0.25
         for: 10m
-        labels: {severity: warning, service: middleware, environment: production}
-        annotations: {summary: "Approved-order failure rate is high", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+        labels: {severity: warning, service: middleware, component: order-orchestration, environment: production}
+        annotations: {summary: "Approved-order failure rate is high", description: "Order failures exceed the sustained safety threshold.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
       - alert: CodestraOrderQueueBacklog
-        expr: codestra_delivery_queue_depth{target="n8n",status="pending"} > 50
+        expr: codestra_order_queue_depth > 50
         for: 10m
-        labels: {severity: warning, service: middleware, environment: production}
-        annotations: {summary: "Approved-order queue backlog is high", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+        labels: {severity: warning, service: middleware, component: order-orchestration, environment: production}
+        annotations: {summary: "Approved-order queue backlog is high", description: "Approved orders are waiting beyond the safe queue threshold.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+      - alert: CodestraOrderExecutionStale
+        expr: codestra_order_stale_running_total > 0
+        for: 10m
+        labels: {severity: warning, service: middleware, component: order-orchestration, environment: production}
+        annotations: {summary: "Approved-order execution is stale", description: "A running order has exceeded its heartbeat or progress interval.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
       - alert: CodestraOrderDeadLetterIncrease
         expr: increase(codestra_orders_dead_lettered_total[15m]) > 0
         for: 5m
-        labels: {severity: critical, service: middleware, environment: production}
-        annotations: {summary: "Approved orders entered dead letter", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+        labels: {severity: critical, service: middleware, component: order-orchestration, environment: production}
+        annotations: {summary: "Approved orders entered dead letter", description: "One or more approved orders exhausted retry policy and entered dead letter.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+      - alert: CodestraOrderCallbackFailures
+        expr: increase(codestra_order_callback_failure_total[10m]) > 0
+        for: 5m
+        labels: {severity: critical, service: middleware, component: order-orchestration, environment: production}
+        annotations: {summary: "Approved-order callback failures detected", description: "n8n callback delivery or validation is failing.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
       - alert: CodestraOrderReconciliationMismatch
         expr: increase(codestra_order_reconciliation_mismatch_total[10m]) > 0
         for: 5m
-        labels: {severity: critical, service: middleware, environment: production}
-        annotations: {summary: "Approved-order reconciliation mismatch", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+        labels: {severity: critical, service: middleware, component: order-orchestration, environment: production}
+        annotations: {summary: "Approved-order reconciliation mismatch", description: "Middleware and n8n execution state disagree.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
       - alert: CodestraN8nOrderWorkflowUnavailable
         expr: absent(up{job="n8n-order-workflows"})
         for: 5m
-        labels: {severity: critical, service: n8n, environment: production}
-        annotations: {summary: "n8n approved-order workflow target unavailable", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+        labels: {severity: critical, service: n8n, component: order-orchestration, environment: production}
+        annotations: {summary: "n8n approved-order workflow target unavailable", description: "The approved n8n order workflow target is absent or unavailable.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+      - alert: CodestraOrderRetryRateHigh
+        expr: sum(rate(codestra_orders_retried_total[10m])) / clamp_min(sum(rate(codestra_orders_dispatched_total[10m])), 1) > 0.20
+        for: 10m
+        labels: {severity: warning, service: middleware, component: order-orchestration, environment: production}
+        annotations: {summary: "Approved-order retry rate is high", description: "Temporary dependency failures are causing elevated retries.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+      - alert: CodestraOrderApprovalBacklog
+        expr: increase(codestra_orders_received_total[15m]) - increase(codestra_orders_approved_total[15m]) > 25
+        for: 15m
+        labels: {severity: warning, service: middleware, component: order-orchestration, environment: production}
+        annotations: {summary: "Approved-order approval backlog is high", description: "Orders are waiting for approval beyond the defined SLA.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}

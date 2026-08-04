@@ -1,0 +1,46 @@
+name: Approved order orchestration
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install validation dependencies
+        run: python -m pip install --disable-pip-version-check pytest ruff pyyaml jsonschema prometheus-client
+      - name: Compile Python
+        run: python -m compileall -q app tests scripts
+      - name: Targeted lint
+        run: ruff check app/order_orchestration.py app/api/v1/orders.py app/metrics.py tests/test_order_orchestration.py tests/test_integrations_gateway.py scripts/validate-order-orchestration.py
+      - name: Middleware tests
+        run: python -m pytest -q
+      - name: Order artifacts
+        run: python scripts/validate-order-orchestration.py
+      - name: Monitoring and dashboard validation
+        run: |
+          python - <<'PY'
+          import json, pathlib, yaml
+          rules = pathlib.Path('monitoring/middleware-alerts.yaml')
+          data = yaml.safe_load(rules.read_text())
+          names = [r['alert'] for g in data['groups'] for r in g['rules']]
+          required = {'CodestraOrderFailureRateHigh','CodestraOrderQueueBacklog','CodestraOrderExecutionStale','CodestraOrderDeadLetterIncrease','CodestraOrderCallbackFailures','CodestraOrderReconciliationMismatch','CodestraN8nOrderWorkflowUnavailable','CodestraOrderRetryRateHigh','CodestraOrderApprovalBacklog'}
+          assert required <= set(names)
+          assert all({'severity','service','component'} <= set(r['labels']) for g in data['groups'] for r in g['rules'] if r['alert'].startswith('CodestraOrder') or r['alert'].startswith('CodestraN8nOrder'))
+          json.loads(pathlib.Path('monitoring/dashboards/approved-order-orchestration.json').read_text())
+          PY
+      - name: Secret and direct-path scan
+        run: |
+          ! rg -n -i '(api[_-]?key|password|secret)\s*[:=]\s*["'"'][^$][^"'"']{8,}' integrations/n8n/approved-orders || true
+          ! rg -n -i 'odoo|vicidial|postiz' integrations/n8n/approved-orders
+      - name: Whitespace
+        run: git diff --check
