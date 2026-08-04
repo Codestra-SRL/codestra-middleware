@@ -1,4 +1,5 @@
 """Production-safe evidence collector with no external writes."""
+
 from app.core.config import settings
 from app.entrypoints.runtime import run_worker
 

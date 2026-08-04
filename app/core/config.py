@@ -1,11 +1,11 @@
-from pathlib import Path
 import base64
 import json
+import re
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 VICIDIAL_PRIVATE_HOSTS = frozenset(
     {
@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     database_url_file: str = ""
     redis_url: str = "redis://localhost:6379/2"
     redis_url_file: str = ""
+    registry_snapshot_signing_key_file: str = ""
+    registry_l1_ttl_seconds: int = 15
+    registry_l2_ttl_seconds: int = 60
+    registry_stale_grace_seconds: int = 300
+    registry_service_issuer: str = ""
+    registry_service_audience: str = "codestra-middleware"
+    registry_service_jwks_url: str = ""
+    registry_service_client_id: str = "codestra-registry-client"
     ingestion_hmac_secret: str = ""
     ingestion_token: str = ""
     middleware_secret: str = ""
@@ -36,7 +44,9 @@ class Settings(BaseSettings):
     database_pool_size: int = 8
     database_max_overflow: int = 4
     database_pool_timeout_seconds: int = 5
-    enabled_event_types: str = "vicidial.call.ended"
+    enabled_event_types: str = (
+        "vicidial.call.started,vicidial.call.connected,vicidial.call.ended"
+    )
     allowed_client_instances: str = "vicidial-server-b"
     live_writes_enabled: bool = False
     allow_non_test_campaigns: bool = False
@@ -59,6 +69,47 @@ class Settings(BaseSettings):
     vicidial_crl_file: str = ""
     callback_dispatch_enabled: bool = False
     messaging_enabled: bool = False
+    send_events: bool = False
+    broad_event_delivery_enabled: bool = False
+    production_n8n_enabled: bool = False
+    enable_external_delivery: bool = False
+    controlled_broad_event_activation: bool = False
+    broad_event_business_unit_allowlist: str = ""
+    broad_event_campaign_allowlist: str = ""
+    broad_event_workflow_allowlist: str = ""
+    broad_event_type_allowlist: str = ""
+    broad_event_activation_high_water_mark: str = ""
+    broad_event_submission_limit: int = 0
+    n8n_production_target_url: str = ""
+    n8n_production_target_identity: str = ""
+    n8n_production_image_digest: str = ""
+    n8n_production_instance_id: str = ""
+    n8n_production_version: str = ""
+    n8n_runtime_health_url: str = ""
+    webphone_origin_scheme: str = "https"
+    webphone_origin_host: str = "phone.codestra.agency"
+    webphone_expected_user: str = "preprod"
+    webphone_staging_campaign: str = "TRANSFER_TEST"
+    webphone_staging_endpoint: str = "6197"
+    n8n_workflow_package_sha256: str = ""
+    n8n_target_ca_file: str = ""
+    n8n_service_issuer: str = ""
+    n8n_service_audience: str = "codestra-middleware"
+    n8n_service_jwks_url: str = ""
+    n8n_service_client_id: str = "codestra-n8n-production"
+    middleware_n8n_token_url: str = ""
+    middleware_n8n_client_id: str = "codestra-middleware-production"
+    middleware_n8n_client_secret_file: str = ""
+    middleware_n8n_audience: str = "codestra-n8n-production"
+    middleware_n8n_scope: str = "n8n.events.submit"
+    odoo_results_client_id: str = "codestra-middleware-odoo-results"
+    odoo_service_credential_reference: str = ""
+    odoo_service_private_key_file: str = ""
+    odoo_result_delivery_enabled: bool = False
+    email_dispatch_enabled: bool = False
+    sms_dispatch_enabled: bool = False
+    allow_live_email: bool = False
+    allow_live_sms: bool = False
     ai_enrichment_enabled: bool = False
     report_delivery_enabled: bool = False
     outbox_worker_enabled: bool = False
@@ -69,6 +120,17 @@ class Settings(BaseSettings):
     odoo_concurrency: int = 4
     n8n_concurrency: int = 8
     recording_concurrency: int = 2
+    retention_worker_enabled: bool = True
+    retention_delete_enabled: bool = False
+    export_upload_enabled: bool = False
+    odoo_recording_write_enabled: bool = False
+    odoo_recording_hmac_secret: str = ""
+    odoo_recording_hmac_secret_file: str = ""
+    n8n_recording_workflow_enabled: bool = False
+    n8n_recording_binding_enabled: bool = False
+    n8n_recording_workflow_active: bool = False
+    recording_upload_url_ttl_seconds: int = 300
+    recording_playback_url_ttl_seconds: int = 120
     reconciliation_concurrency: int = 1
     keycloak_issuer: str = ""
     keycloak_audience: str = ""
@@ -102,6 +164,9 @@ class Settings(BaseSettings):
     webphone_endpoint_adapter_url: str = ""
     extension_allocator_enabled: bool = False
     telephony_provisioning_enabled: bool = False
+    telephony_command_worker_enabled: bool = False
+    telephony_service_client_id: str = "codestra-middleware-telephony"
+    telephony_credential_directory: str = ""
     vicidial_provisioning_enabled: bool = False
     postiz_internal_base_url: str = ""
     postiz_api_key_file: str = ""
@@ -116,22 +181,77 @@ class Settings(BaseSettings):
     telephony_reconciliation_enabled: bool = False
     telephony_notifications_enabled: bool = False
     telephony_evidence_enabled: bool = False
+    lead_automation_enabled: bool = False
+    lead_create_enabled: bool = False
+    lead_update_enabled: bool = False
+    lead_assignment_enabled: bool = False
+    lead_status_change_enabled: bool = False
+    lead_callback_create_enabled: bool = False
+    n8n_lead_binding_enabled: bool = False
+    n8n_result_processing_enabled: bool = False
+    odoo_lead_apply_enabled: bool = False
+    lead_automation_hmac_secret: str = ""
 
     def validate_safety(self) -> None:
+        broad_event_switches = (
+            self.send_events,
+            self.broad_event_delivery_enabled,
+            self.production_n8n_enabled,
+            self.n8n_production_workflows_enabled,
+        )
         production_switches = (
             self.live_writes_enabled,
             self.allow_non_test_campaigns,
-            self.n8n_production_workflows_enabled,
             self.vicidial_write_enabled,
             self.messaging_enabled,
+            self.enable_external_delivery,
+            self.email_dispatch_enabled,
+            self.sms_dispatch_enabled,
+            self.allow_live_email,
+            self.allow_live_sms,
             self.outbox_worker_enabled,
+            self.odoo_recording_write_enabled,
+            self.n8n_recording_workflow_enabled,
+            self.n8n_recording_binding_enabled,
+            self.n8n_recording_workflow_active,
             self.telephony_provisioning_enabled,
+            self.telephony_command_worker_enabled,
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.postiz_publish_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
+        if any(broad_event_switches):
+            if not all(broad_event_switches):
+                raise ValueError("broad-event activation requires every canonical gate")
+            required_scope = (
+                self.broad_event_business_unit_allowlist,
+                self.broad_event_campaign_allowlist,
+                self.broad_event_workflow_allowlist,
+                self.broad_event_type_allowlist,
+                self.broad_event_activation_high_water_mark,
+            )
+            if (
+                not self.controlled_broad_event_activation
+                or not all(value.strip() for value in required_scope)
+                or self.broad_event_submission_limit not in range(1, 26)
+            ):
+                raise ValueError(
+                    "broad-event activation requires bounded explicit scope"
+                )
+
+    @property
+    def broad_event_pipeline_enabled(self) -> bool:
+        """Require every internal broad-event gate; external delivery is separate."""
+        return all(
+            (
+                self.send_events,
+                self.broad_event_delivery_enabled,
+                self.production_n8n_enabled,
+                self.n8n_production_workflows_enabled,
+            )
+        )
 
     def load_secret_files(self) -> None:
         """Load runtime secrets without placing their values in environment metadata."""
@@ -141,6 +261,7 @@ class Settings(BaseSettings):
             ("middleware_secret", self.middleware_secret_file),
             # Ingestion deliberately has no legacy shared-secret fallback.
             ("ingestion_hmac_secret", self.vicidial_callback_hmac_secret_file),
+            ("odoo_recording_hmac_secret", self.odoo_recording_hmac_secret_file),
         )
         for attribute, filename in mappings:
             if filename:
@@ -162,6 +283,14 @@ class Settings(BaseSettings):
         value = path.read_text().strip()
         if not value:
             raise ValueError("Postiz API key file is empty")
+
+    def load_registry_snapshot_key(self) -> bytes:
+        path = Path(self.registry_snapshot_signing_key_file)
+        if not path.is_absolute() or not path.is_file():
+            raise ValueError("registry snapshot signing key file is unavailable")
+        value = path.read_bytes().strip()
+        if len(value) < 32:
+            raise ValueError("registry snapshot signing key is too short")
         return value
 
     @field_validator("vicidial_authorization_url", "vicidial_edge_url")
@@ -182,6 +311,38 @@ class Settings(BaseSettings):
         ):
             raise ValueError("VICIdial URL must use an approved private HTTPS endpoint")
         return value.rstrip("/")
+
+    @field_validator("n8n_production_target_url")
+    @classmethod
+    def validate_n8n_production_target_url(cls, value: str) -> str:
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "n8n.internal.codestra.agency"
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path != "/webhook/codestra/v1/events"
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("n8n target must be the approved internal webhook")
+        return value
+
+    @field_validator("n8n_workflow_package_sha256")
+    @classmethod
+    def validate_workflow_package_sha256(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise ValueError("workflow package identity must be an exact SHA-256")
+        return value
+
+    @field_validator("n8n_production_image_digest")
+    @classmethod
+    def validate_n8n_production_image_digest(cls, value: str) -> str:
+        if value and not re.fullmatch(r"sha256:[0-9a-f]{64}", value):
+            raise ValueError("n8n image identity must be an exact sha256 digest")
+        return value
 
     @field_validator("webphone_endpoint_adapter_url")
     @classmethod
@@ -214,7 +375,9 @@ class Settings(BaseSettings):
             return value
         path = Path(value)
         if not path.is_absolute() or path.parent != VICIDIAL_SECRET_ROOT:
-            raise ValueError("VICIdial mTLS files must be direct children of the secret mount")
+            raise ValueError(
+                "VICIdial mTLS files must be direct children of the secret mount"
+            )
         return value
 
     @property
@@ -269,8 +432,10 @@ class Settings(BaseSettings):
         values = json.loads(path.read_text())
         if not isinstance(values, dict) or not values:
             raise ValueError("publisher key file invalid")
-        return {key_id: base64.urlsafe_b64decode(value + "===")
-                for key_id, value in values.items()}
+        return {
+            key_id: base64.urlsafe_b64decode(value + "===")
+            for key_id, value in values.items()
+        }
 
     @staticmethod
     def _load_binary_secret(filename: str, label: str) -> bytes:
@@ -310,11 +475,15 @@ class Settings(BaseSettings):
 
     @property
     def enabled_events(self) -> frozenset[str]:
-        return frozenset(x.strip() for x in self.enabled_event_types.split(",") if x.strip())
+        return frozenset(
+            x.strip() for x in self.enabled_event_types.split(",") if x.strip()
+        )
 
     @property
     def ingestion_clients(self) -> frozenset[str]:
-        return frozenset(x.strip() for x in self.allowed_client_instances.split(",") if x.strip())
+        return frozenset(
+            x.strip() for x in self.allowed_client_instances.split(",") if x.strip()
+        )
 
 
 settings = Settings()

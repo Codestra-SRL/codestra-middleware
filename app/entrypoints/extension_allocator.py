@@ -1,4 +1,5 @@
 """Narrow extension inventory and reservation API."""
+
 from fastapi import FastAPI
 
 from app.api.v1.telephony import router

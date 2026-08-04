@@ -39,7 +39,9 @@ def test_cross_environment_duplicate_physical_id_is_rejected():
 
 
 def test_production_activation_is_fail_closed():
-    record = CampaignIdentity("production", "COD", "COD-WEB-OUT", "COD12345", active=True)
+    record = CampaignIdentity(
+        "production", "COD", "COD-WEB-OUT", "COD12345", active=True
+    )
     with pytest.raises(MappingValidationError, match="separate approval"):
         record.validate()
 

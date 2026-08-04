@@ -1,4 +1,5 @@
 """Shared runtime controls for API and worker entrypoints."""
+
 from __future__ import annotations
 
 import asyncio
@@ -9,9 +10,10 @@ import re
 import sys
 import time
 from collections import OrderedDict, deque
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import TypedDict
 from uuid import uuid4
 
 import uvicorn
@@ -23,17 +25,22 @@ from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
 from app.db.session import engine
 
-
 logger = logging.getLogger("codestra.runtime")
 WORKER_CYCLES = Counter(
     "codestra_worker_cycles_total", "Worker cycles", ["service", "result"]
 )
-WORKER_READY = Gauge(
-    "codestra_worker_ready", "Worker readiness", ["service"]
+WORKER_READY = Gauge("codestra_worker_ready", "Worker readiness", ["service"])
+FEATURE_FLAG_STATE = Gauge(
+    "codestra_feature_flag_state",
+    "Canonical fail-closed feature flag state",
+    ["service", "flag"],
 )
 CORRELATION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _RATE_WINDOWS: OrderedDict[str, deque[float]] = OrderedDict()
 MAX_RATE_IDENTITIES = 4096
+N8N_TRANSITION_PATH = re.compile(
+    r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -41,7 +48,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         value = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -66,6 +73,19 @@ def configure_logging() -> None:
 
 def validate_runtime(service: str, queue: str | None = None) -> None:
     settings.validate_safety()
+    canonical_flags = {
+        "send_events": settings.send_events,
+        "broad_event_delivery_enabled": settings.broad_event_delivery_enabled,
+        "production_n8n_enabled": settings.production_n8n_enabled,
+        "n8n_production_workflows_enabled": (settings.n8n_production_workflows_enabled),
+        "enable_external_delivery": settings.enable_external_delivery,
+    }
+    for flag, enabled in canonical_flags.items():
+        FEATURE_FLAG_STATE.labels(service=service, flag=flag).set(int(enabled))
+    logger.info(
+        "canonical feature flags loaded",
+        extra={"result": json.dumps(canonical_flags, sort_keys=True)},
+    )
     expected = os.getenv("SERVICE_NAME")
     if expected and expected != service:
         raise RuntimeError(f"SERVICE_NAME must be {service}")
@@ -78,7 +98,10 @@ def validate_runtime(service: str, queue: str | None = None) -> None:
     if service == "middleware-event-gateway":
         settings.quarantine_fingerprint_secret
         settings.quarantine_encryption_key
-    if service in {"middleware-integration-api", "middleware-policy-engine"} and not settings.middleware_secret:
+    if (
+        service in {"middleware-integration-api", "middleware-policy-engine"}
+        and not settings.middleware_secret
+    ):
         raise RuntimeError(f"{service} authorization configuration is incomplete")
     if service == "middleware-integration-api":
         settings.quarantine_fingerprint_secret
@@ -97,10 +120,18 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             return JSONResponse({"detail": "invalid content length"}, status_code=400)
         if content_length > settings.request_max_bytes:
             return JSONResponse({"detail": "request too large"}, status_code=413)
-        if request.url.path in {
-            "/api/v1/events/vicidial",
-            "/api/v2/telephony/canary",
-        }:
+        signed_write = request.method == "POST" and (
+            request.url.path
+            in {
+                "/api/v1/events/vicidial",
+                "/api/v2/telephony/canary",
+                "/api/v1/n8n/executions",
+                "/api/v1/n8n/executions/register",
+                "/api/v1/n8n/acknowledgements",
+            }
+            or N8N_TRANSITION_PATH.fullmatch(request.url.path) is not None
+        )
+        if signed_write:
             identity = request.client.host if request.client else "unknown"
             now = time.monotonic()
             window = _RATE_WINDOWS.setdefault(identity, deque())
@@ -122,10 +153,17 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "/api/v1/events/vicidial",
             "/api/v1/automation/events",
             "/api/v2/telephony/canary",
+            "/api/v1/n8n/executions",
+            "/api/v1/n8n/executions/register",
+            "/api/v1/n8n/acknowledgements",
         }
         if (
-            (request.url.path.startswith("/api/") or request.url.path.startswith("/v1/"))
+            (
+                request.url.path.startswith("/api/")
+                or request.url.path.startswith("/v1/")
+            )
             and request.url.path not in signed_paths
+            and not signed_write
         ):
             try:
                 verify_bearer(
@@ -169,6 +207,14 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "live_writes_enabled": settings.live_writes_enabled,
             "odoo_delivery_enabled": settings.odoo_delivery_enabled,
             "n8n_delivery_enabled": settings.n8n_delivery_enabled,
+            "send_events": settings.send_events,
+            "broad_event_delivery_enabled": settings.broad_event_delivery_enabled,
+            "production_n8n_enabled": settings.production_n8n_enabled,
+            "n8n_production_workflows_enabled": (
+                settings.n8n_production_workflows_enabled
+            ),
+            "enable_external_delivery": settings.enable_external_delivery,
+            "broad_event_pipeline_enabled": settings.broad_event_pipeline_enabled,
         }
 
     app.mount("/metrics", make_asgi_app())
@@ -190,8 +236,15 @@ def run_api(app: FastAPI, service: str) -> None:
 Cycle = Callable[[], Awaitable[dict[str, object]]]
 
 
+class WorkerState(TypedDict):
+    ready: bool
+    stopping: bool
+    last_success: str | None
+    last_error: str | None
+
+
 def worker_app(service: str, queue: str, cycle: Cycle) -> FastAPI:
-    state = {
+    state: WorkerState = {
         "ready": False,
         "stopping": False,
         "last_success": None,
@@ -205,7 +258,7 @@ def worker_app(service: str, queue: str, cycle: Cycle) -> FastAPI:
         while not state["stopping"]:
             try:
                 result = await cycle()
-                state["last_success"] = datetime.now(timezone.utc).isoformat()
+                state["last_success"] = datetime.now(UTC).isoformat()
                 state["last_error"] = None
                 WORKER_CYCLES.labels(service, "success").inc()
                 logger.info(

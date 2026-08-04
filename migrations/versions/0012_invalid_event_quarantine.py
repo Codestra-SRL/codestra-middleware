@@ -1,4 +1,5 @@
 """Authenticated invalid-event quarantine and bounded security rejections."""
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -9,8 +10,15 @@ branch_labels = None
 depends_on = None
 
 STATES = (
-    "PENDING_REVIEW", "UNDER_REVIEW", "CORRECTABLE", "REPLAY_APPROVED",
-    "REPLAYING", "REPLAYED", "RESOLVED_NO_REPLAY", "EXPIRED", "REJECTED",
+    "PENDING_REVIEW",
+    "UNDER_REVIEW",
+    "CORRECTABLE",
+    "REPLAY_APPROVED",
+    "REPLAYING",
+    "REPLAYED",
+    "RESOLVED_NO_REPLAY",
+    "EXPIRED",
+    "REJECTED",
 )
 
 
@@ -21,14 +29,21 @@ def upgrade():
         sa.Column("correlation_id", sa.String(128), nullable=False),
         sa.Column("claimed_publisher", sa.String(128)),
         sa.Column(
-            "authentication_state", sa.String(16),
-            nullable=False, server_default="UNVERIFIED",
+            "authentication_state",
+            sa.String(16),
+            nullable=False,
+            server_default="UNVERIFIED",
         ),
         sa.Column("key_id", sa.String(64)),
         sa.Column("reason_code", sa.String(64), nullable=False),
         sa.Column("payload_fingerprint", sa.String(64), nullable=False),
         sa.Column("source_ip_classification", sa.String(16), nullable=False),
-        sa.Column("received_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "received_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.CheckConstraint(
             "reason_code IN ('missing_authentication','unknown_key','invalid_signature',"
             "'altered_body','invalid_timestamp','expired_timestamp','future_timestamp',"
@@ -44,7 +59,9 @@ def upgrade():
             name="ck_security_rejection_unverified",
         ),
     )
-    op.create_index("ix_security_rejection_correlation", "security_rejection", ["correlation_id"])
+    op.create_index(
+        "ix_security_rejection_correlation", "security_rejection", ["correlation_id"]
+    )
     op.create_table(
         "invalid_event_quarantine",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -68,22 +85,51 @@ def upgrade():
         sa.Column("reviewed_at", sa.DateTime(timezone=True)),
         sa.Column("resolved_by", sa.String(128)),
         sa.Column("resolved_at", sa.DateTime(timezone=True)),
-        sa.Column("replayed_event_id", sa.BigInteger(), sa.ForeignKey("integration_event.id")),
+        sa.Column(
+            "replayed_event_id", sa.BigInteger(), sa.ForeignKey("integration_event.id")
+        ),
         sa.Column("replay_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("occurrence_count", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("legal_hold", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(
+            "legal_hold", sa.Boolean(), nullable=False, server_default=sa.false()
+        ),
         sa.Column("retention_policy_version", sa.String(32), nullable=False),
         sa.Column("retention_deadline", sa.DateTime(timezone=True), nullable=False),
         sa.Column("record_version", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("first_seen_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("last_seen_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("received_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "first_seen_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "last_seen_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "received_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.CheckConstraint("replay_count >= 0", name="ck_quarantine_replay_count"),
-        sa.CheckConstraint("occurrence_count >= 1", name="ck_quarantine_occurrence_count"),
-        sa.CheckConstraint("retention_deadline > received_at", name="ck_quarantine_retention"),
+        sa.CheckConstraint(
+            "occurrence_count >= 1", name="ck_quarantine_occurrence_count"
+        ),
+        sa.CheckConstraint(
+            "retention_deadline > received_at", name="ck_quarantine_retention"
+        ),
         sa.CheckConstraint("record_version >= 1", name="ck_quarantine_record_version"),
-        sa.CheckConstraint("(review_owner IS NULL) = (reviewed_at IS NULL)", name="ck_quarantine_review_consistency"),
-        sa.CheckConstraint("(resolved_by IS NULL) = (resolved_at IS NULL)", name="ck_quarantine_resolution_consistency"),
+        sa.CheckConstraint(
+            "(review_owner IS NULL) = (reviewed_at IS NULL)",
+            name="ck_quarantine_review_consistency",
+        ),
+        sa.CheckConstraint(
+            "(resolved_by IS NULL) = (resolved_at IS NULL)",
+            name="ck_quarantine_resolution_consistency",
+        ),
         sa.CheckConstraint(
             "status IN (" + ",".join(f"'{state}'" for state in STATES) + ")",
             name="ck_quarantine_state",
@@ -102,19 +148,36 @@ def upgrade():
             name="ck_quarantine_replay_eligibility",
         ),
     )
-    op.create_index("ix_quarantine_status_received", "invalid_event_quarantine", ["status", "received_at"])
-    op.create_index("ix_quarantine_publisher_received", "invalid_event_quarantine", ["authenticated_publisher_id", "received_at"])
-    op.create_index("ix_quarantine_correlation", "invalid_event_quarantine", ["server_correlation_id"])
-    op.create_index("ix_quarantine_fingerprint", "invalid_event_quarantine", ["payload_fingerprint"])
     op.create_index(
-        "ix_quarantine_retention_active", "invalid_event_quarantine",
-        ["retention_deadline"], postgresql_where=sa.text("legal_hold = false"),
+        "ix_quarantine_status_received",
+        "invalid_event_quarantine",
+        ["status", "received_at"],
+    )
+    op.create_index(
+        "ix_quarantine_publisher_received",
+        "invalid_event_quarantine",
+        ["authenticated_publisher_id", "received_at"],
+    )
+    op.create_index(
+        "ix_quarantine_correlation",
+        "invalid_event_quarantine",
+        ["server_correlation_id"],
+    )
+    op.create_index(
+        "ix_quarantine_fingerprint", "invalid_event_quarantine", ["payload_fingerprint"]
+    )
+    op.create_index(
+        "ix_quarantine_retention_active",
+        "invalid_event_quarantine",
+        ["retention_deadline"],
+        postgresql_where=sa.text("legal_hold = false"),
     )
     op.create_table(
         "quarantine_correction",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column(
-            "quarantine_id", postgresql.UUID(as_uuid=True),
+            "quarantine_id",
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("invalid_event_quarantine.id", ondelete="RESTRICT"),
             nullable=False,
         ),
@@ -127,9 +190,20 @@ def upgrade():
         sa.Column("encryption_nonce", sa.LargeBinary(), nullable=False),
         sa.Column("encryption_key_version", sa.String(32), nullable=False),
         sa.Column("sanitized_diff", postgresql.JSONB(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("correction_version >= 1", name="ck_quarantine_correction_version"),
-        sa.UniqueConstraint("quarantine_id", "correction_version", name="uq_quarantine_correction_version"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "correction_version >= 1", name="ck_quarantine_correction_version"
+        ),
+        sa.UniqueConstraint(
+            "quarantine_id",
+            "correction_version",
+            name="uq_quarantine_correction_version",
+        ),
     )
     op.execute(
         """

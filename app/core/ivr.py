@@ -1,4 +1,5 @@
 """Fail-closed, synthetic-only IVR control-plane domain services."""
+
 from __future__ import annotations
 
 import hashlib
@@ -10,25 +11,51 @@ from typing import Any, Final
 
 BUSINESS_UNITS: Final = {"TL", "DEV", "SCP", "SHARED"}
 LOOKUP_STATES: Final = {
-    "exact_match", "multiple_matches", "no_match", "restricted_match",
+    "exact_match",
+    "multiple_matches",
+    "no_match",
+    "restricted_match",
     "manual_verification_required",
 }
 APPOINTMENT_STATES: Final = {
-    "agent_available", "agent_busy", "agent_offline", "appointment_early",
-    "appointment_overdue", "appointment_not_found", "appointment_cancelled",
+    "agent_available",
+    "agent_busy",
+    "agent_offline",
+    "appointment_early",
+    "appointment_overdue",
+    "appointment_not_found",
+    "appointment_cancelled",
     "reschedule_required",
 }
 APPROVED_INTENTS: Final = {
-    "freight_quote", "dispatch_service", "medical_trip_support",
-    "website_development", "mobile_development", "ai_project",
-    "odoo_implementation", "existing_order", "reorder", "warranty",
-    "billing", "appointment", "cancellation", "support", "complaint",
+    "freight_quote",
+    "dispatch_service",
+    "medical_trip_support",
+    "website_development",
+    "mobile_development",
+    "ai_project",
+    "odoo_implementation",
+    "existing_order",
+    "reorder",
+    "warranty",
+    "billing",
+    "appointment",
+    "cancellation",
+    "support",
+    "complaint",
 }
 IVR_FEATURE_FLAGS: Final = {
-    "ENABLE_MAIN_IVR", "ENABLE_TL_IVR", "ENABLE_DEV_IVR", "ENABLE_SCP_IVR",
-    "ENABLE_IVR_CUSTOMER_LOOKUP", "ENABLE_IVR_APPOINTMENT_LOOKUP",
-    "ENABLE_IVR_CALLBACKS", "ENABLE_IVR_VOICEMAIL", "ENABLE_IVR_AI_INTENT",
-    "ENABLE_IVR_PRIORITY_ROUTING", "ENABLE_IVR_AFTER_HOURS",
+    "ENABLE_MAIN_IVR",
+    "ENABLE_TL_IVR",
+    "ENABLE_DEV_IVR",
+    "ENABLE_SCP_IVR",
+    "ENABLE_IVR_CUSTOMER_LOOKUP",
+    "ENABLE_IVR_APPOINTMENT_LOOKUP",
+    "ENABLE_IVR_CALLBACKS",
+    "ENABLE_IVR_VOICEMAIL",
+    "ENABLE_IVR_AI_INTENT",
+    "ENABLE_IVR_PRIORITY_ROUTING",
+    "ENABLE_IVR_AFTER_HOURS",
     "ENABLE_IVR_SCREEN_POP",
 }
 
@@ -99,13 +126,17 @@ DEFAULT_DIDS: Final = {
     "TST-MAIN": DidMapping("TST-MAIN", "staging", "SHARED", None, "main"),
     "TST-TL": DidMapping("TST-TL", "staging", "TL", "TL-GENERAL", "transportation"),
     "TST-DEV": DidMapping("TST-DEV", "staging", "DEV", "DEV-GENERAL", "development"),
-    "TST-SCP": DidMapping("TST-SCP", "staging", "SCP", "SCP-GENERAL", "senior-products"),
+    "TST-SCP": DidMapping(
+        "TST-SCP", "staging", "SCP", "SCP-GENERAL", "senior-products"
+    ),
     "TST-SUPPORT": DidMapping("TST-SUPPORT", "staging", "SHARED", None, "support"),
     "TST-APPT": DidMapping("TST-APPT", "staging", "SHARED", None, "appointments"),
 }
 
 
-def resolve_did(did_reference: str, mappings: dict[str, DidMapping] | None = None) -> DidMapping:
+def resolve_did(
+    did_reference: str, mappings: dict[str, DidMapping] | None = None
+) -> DidMapping:
     result = (mappings or DEFAULT_DIDS).get(did_reference)
     if not result or result.environment != "staging" or result.production_eligible:
         raise IvrDenied("unknown or production-eligible DID denied")
@@ -117,11 +148,16 @@ def select_main(session: IvrSession, keypad: str) -> IvrSession:
         return replace(session, ivr_path=session.ivr_path + ("invalid-input",))
     unit, campaign, node = MAIN_MENU[keypad]
     if keypad == "9":
-        return replace(session, final_language="es", ivr_path=session.ivr_path + (node,))
+        return replace(
+            session, final_language="es", ivr_path=session.ivr_path + (node,)
+        )
     if unit == "SHARED":
         return replace(session, ivr_path=session.ivr_path + (node,))
     return replace(
-        session, business_unit=unit, campaign=campaign, campaign_lock=campaign,
+        session,
+        business_unit=unit,
+        campaign=campaign,
+        campaign_lock=campaign,
         ivr_path=session.ivr_path + (node,),
     )
 
@@ -142,13 +178,17 @@ def validate_destination(destination: Destination, session: IvrSession) -> None:
 def sign_context(session: IvrSession, secret: bytes) -> str:
     if len(secret) < 32:
         raise ValueError("routing signing key is too short")
-    body = json.dumps({
-        "session_id": session.session_id,
-        "business_unit": session.business_unit,
-        "campaign": session.campaign_lock,
-        "language": session.final_language,
-        "correlation_id": session.correlation_id,
-    }, sort_keys=True, separators=(",", ":")).encode()
+    body = json.dumps(
+        {
+            "session_id": session.session_id,
+            "business_unit": session.business_unit,
+            "campaign": session.campaign_lock,
+            "language": session.final_language,
+            "correlation_id": session.correlation_id,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
     return hmac.new(secret, body, hashlib.sha256).hexdigest()
 
 
@@ -162,8 +202,9 @@ def customer_lookup(state: str, masked_reference: str) -> dict[str, str]:
     return {"state": state, "reference": masked_reference}
 
 
-def appointment_lookup(state: str, business_unit: str, campaign: str,
-                       session: IvrSession) -> dict[str, str]:
+def appointment_lookup(
+    state: str, business_unit: str, campaign: str, session: IvrSession
+) -> dict[str, str]:
     if state not in APPOINTMENT_STATES:
         raise ValueError("invalid appointment outcome")
     if session.business_unit != business_unit or session.campaign_lock != campaign:
@@ -171,39 +212,61 @@ def appointment_lookup(state: str, business_unit: str, campaign: str,
     return {"state": state, "business_unit": business_unit, "campaign": campaign}
 
 
-def classify_intent(intent: str, confidence: float, session: IvrSession,
-                    proposed_unit: str, proposed_campaign: str) -> dict[str, Any]:
+def classify_intent(
+    intent: str,
+    confidence: float,
+    session: IvrSession,
+    proposed_unit: str,
+    proposed_campaign: str,
+) -> dict[str, Any]:
     if intent not in APPROVED_INTENTS or not 0 <= confidence <= 1:
-        return {"intent": None, "confirmation_required": True, "fallback_menu": "keypad"}
-    if proposed_unit != session.business_unit or proposed_campaign != session.campaign_lock:
+        return {
+            "intent": None,
+            "confirmation_required": True,
+            "fallback_menu": "keypad",
+        }
+    if (
+        proposed_unit != session.business_unit
+        or proposed_campaign != session.campaign_lock
+    ):
         raise IvrDenied("AI cannot bypass campaign lock")
     return {
-        "intent": intent, "confidence": confidence,
-        "business_unit": proposed_unit, "campaign": proposed_campaign,
+        "intent": intent,
+        "confidence": confidence,
+        "business_unit": proposed_unit,
+        "campaign": proposed_campaign,
         "confirmation_required": confidence < 0.85,
         "fallback_menu": "keypad",
     }
 
 
-def reclassify(session: IvrSession, corrected_intent: str, new_session_id: str,
-               reason: str) -> tuple[IvrSession, IvrSession, dict[str, str]]:
+def reclassify(
+    session: IvrSession, corrected_intent: str, new_session_id: str, reason: str
+) -> tuple[IvrSession, IvrSession, dict[str, str]]:
     if corrected_intent not in APPROVED_INTENTS or not reason.strip():
         raise ValueError("approved intent and reason required")
     closed = replace(session, final_result="MISROUTED_IVR")
     linked = replace(
-        session, session_id=new_session_id, intent_code=corrected_intent,
+        session,
+        session_id=new_session_id,
+        intent_code=corrected_intent,
         ivr_path=session.ivr_path + ("controlled-reclassification",),
         final_result=None,
     )
-    return closed, linked, {
-        "original_session": session.session_id,
-        "linked_session": new_session_id,
-        "reason": reason,
-    }
+    return (
+        closed,
+        linked,
+        {
+            "original_session": session.session_id,
+            "linked_session": new_session_id,
+            "reason": reason,
+        },
+    )
 
 
 class IdempotencyLedger:
     """Thread-safe contract; production persistence is PostgreSQL-backed."""
+
     def __init__(self) -> None:
         self._values: dict[str, tuple[str, Any]] = {}
         self._lock = Lock()
@@ -214,7 +277,9 @@ class IdempotencyLedger:
             prior = self._values.get(key)
             if prior:
                 if prior[0] != digest:
-                    raise IdempotencyConflict("idempotency key reused with changed body")
+                    raise IdempotencyConflict(
+                        "idempotency key reused with changed body"
+                    )
                 return prior[1]
             self._values[key] = (digest, result)
             return result
@@ -222,11 +287,13 @@ class IdempotencyLedger:
 
 class FeaturePolicy:
     """Environment/unit/campaign overrides with a universally false default."""
+
     def __init__(self, overrides: dict[tuple[str, str, str, str], bool] | None = None):
         self._overrides = overrides or {}
 
-    def enabled(self, flag: str, environment: str, business_unit: str,
-                campaign: str) -> bool:
+    def enabled(
+        self, flag: str, environment: str, business_unit: str, campaign: str
+    ) -> bool:
         if flag not in IVR_FEATURE_FLAGS:
             raise ValueError("unknown IVR feature flag")
         return self._overrides.get((environment, business_unit, campaign, flag), False)
@@ -234,6 +301,7 @@ class FeaturePolicy:
 
 class FakeIvrAdapter:
     """Never answers, originates, registers, or changes a queue."""
+
     def route(self, destination: Destination, session: IvrSession) -> dict[str, str]:
         validate_destination(destination, session)
         return {"state": "synthetic_route_validated", "campaign": destination.campaign}

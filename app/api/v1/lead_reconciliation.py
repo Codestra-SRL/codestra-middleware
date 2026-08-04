@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 
 
-router = APIRouter(prefix="/api/v1/crm-vicidial/reconciliation", tags=["crm-vicidial-reconciliation"])
+router = APIRouter(
+    prefix="/api/v1/crm-vicidial/reconciliation", tags=["crm-vicidial-reconciliation"]
+)
 
 
 class StartRequest(BaseModel):
@@ -42,7 +44,10 @@ async def start_run(
 ):
     require_integration_admin(x_codestra_role)
     lock_name = f"crm-vicidial:{body.company_id}:{body.connector_id}"
-    locked = await db.scalar(text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": lock_name})
+    locked = await db.scalar(
+        text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": lock_name},
+    )
     if not locked:
         return {"status": "skipped", "reason": "PREVIOUS_RUN_ACTIVE"}
     run_id = uuid4()
@@ -53,13 +58,22 @@ async def start_run(
                     (id, company_id, connector_id, status, source_cursor, counts)
                 VALUES (:id, :company_id, :connector_id, 'running', :source_cursor, '{}'::jsonb)
             """),
-            {"id": run_id, "company_id": body.company_id, "connector_id": body.connector_id, "source_cursor": body.source_cursor},
+            {
+                "id": run_id,
+                "company_id": body.company_id,
+                "connector_id": body.connector_id,
+                "source_cursor": body.source_cursor,
+            },
         )
         await db.commit()
     except IntegrityError:
         await db.rollback()
         return {"status": "skipped", "reason": "PREVIOUS_RUN_ACTIVE"}
-    return {"sync_run_id": str(run_id), "status": "running", "overlap_window_seconds": 300}
+    return {
+        "sync_run_id": str(run_id),
+        "status": "running",
+        "overlap_window_seconds": 300,
+    }
 
 
 @router.post("/{run_id}/finish")
@@ -80,16 +94,33 @@ async def finish_run(
             WHERE id=:id AND status='running'
             RETURNING id
         """),
-        {"id": run_id, "completed_at": datetime.now(timezone.utc), "status": body.status, "next_cursor": body.next_cursor, "counts": __import__("json").dumps(body.counts), "error_summary": body.error_summary},
+        {
+            "id": run_id,
+            "completed_at": datetime.now(timezone.utc),
+            "status": body.status,
+            "next_cursor": body.next_cursor,
+            "counts": __import__("json").dumps(body.counts),
+            "error_summary": body.error_summary,
+        },
     )
     if row.scalar_one_or_none() is None:
         await db.rollback()
         raise HTTPException(409, "run is not active")
     await db.commit()
-    return {"sync_run_id": str(run_id), "status": body.status, "cursor_advanced": body.status == "succeeded"}
+    return {
+        "sync_run_id": str(run_id),
+        "status": body.status,
+        "cursor_advanced": body.status == "succeeded",
+    }
 
 
 @router.get("/metrics")
 async def metrics(db: AsyncSession = Depends(get_session)):
-    rows = (await db.execute(text("SELECT status, count(*) AS total FROM vicidial_sync_run GROUP BY status"))).mappings()
+    rows = (
+        await db.execute(
+            text(
+                "SELECT status, count(*) AS total FROM vicidial_sync_run GROUP BY status"
+            )
+        )
+    ).mappings()
     return {"sync_run_total": {row["status"]: row["total"] for row in rows}}

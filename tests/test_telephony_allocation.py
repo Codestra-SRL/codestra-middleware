@@ -24,8 +24,14 @@ def test_candidate_6110_only_available_with_every_authoritative_clear():
 
 
 def test_global_exclusions_always_fail_closed():
-    assert audit_extension(6101, clear_evidence()).classification == ExtensionState.EXCLUDED
-    assert audit_extension(1001, clear_evidence()).classification == ExtensionState.EXCLUDED
+    assert (
+        audit_extension(6101, clear_evidence()).classification
+        == ExtensionState.EXCLUDED
+    )
+    assert (
+        audit_extension(1001, clear_evidence()).classification
+        == ExtensionState.EXCLUDED
+    )
 
 
 def test_collision_precedence():
@@ -39,7 +45,9 @@ def test_collision_precedence():
 def test_history_ambiguity_holds_extension():
     evidence = clear_evidence()
     evidence["call_history"] = "AMBIGUOUS"
-    assert audit_extension(6110, evidence).classification == ExtensionState.HISTORICAL_HOLD
+    assert (
+        audit_extension(6110, evidence).classification == ExtensionState.HISTORICAL_HOLD
+    )
 
 
 def test_saga_does_not_skip_disabled_ready():
@@ -51,15 +59,34 @@ def test_saga_does_not_skip_disabled_ready():
 
 def test_event_contract_contains_required_fields():
     event = canonical_event(
-        "extension.reserved", "correlation-1", "idempotency-0001",
-        "codestra-extension-allocator", "service-account", "TRN-A001",
-        "transportation", "Transportation", "extension", "6110", 1,
+        "extension.reserved",
+        "correlation-1",
+        "idempotency-0001",
+        "codestra-extension-allocator",
+        "service-account",
+        "TRN-A001",
+        "transportation",
+        "Transportation",
+        "extension",
+        "6110",
+        1,
         {"extension": 6110},
     )
     required = {
-        "schema_version", "event_id", "correlation_id", "idempotency_key",
-        "occurred_at", "source", "actor", "employee_id", "business_unit_id",
-        "campaign_id", "object_type", "object_id", "revision", "payload",
+        "schema_version",
+        "event_id",
+        "correlation_id",
+        "idempotency_key",
+        "occurred_at",
+        "source",
+        "actor",
+        "employee_id",
+        "business_unit_id",
+        "campaign_id",
+        "object_type",
+        "object_id",
+        "revision",
+        "payload",
     }
     assert required <= event.keys()
     assert "password" not in str(event).lower()

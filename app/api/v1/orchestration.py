@@ -4,6 +4,7 @@ These APIs persist intent and disabled work only. They never create an account,
 return a secret, send mail, or write to VICIdial while production provisioning
 is disabled.
 """
+
 import hashlib
 from datetime import datetime, timezone
 from typing import Literal
@@ -93,7 +94,9 @@ async def create_provisioning_intent(
         response.headers["X-Idempotent-Replay"] = "true"
         return {"request_id": str(existing.id), "state": existing.state}
     record = OrchestrationRequest(
-        id=uuid4(), request_uid=body.request_uid, operation=body.operation,
+        id=uuid4(),
+        request_uid=body.request_uid,
+        operation=body.operation,
         business_unit=body.business_unit,
         subject_reference=body.subject_reference,
         department_reference=body.department_reference,
@@ -101,8 +104,10 @@ async def create_provisioning_intent(
         supervisor_reference=body.supervisor_reference,
         campaign_references=body.campaign_references,
         requested_resources=body.requested_resources,
-        correlation_id=body.correlation_id, idempotency_hash=key_hash,
-        state="disabled", expires_at=body.expires_at,
+        correlation_id=body.correlation_id,
+        idempotency_hash=key_hash,
+        state="disabled",
+        expires_at=body.expires_at,
     )
     db.add(record)
     await db.commit()
@@ -119,9 +124,7 @@ async def create_lead_sync_intent(
     _validate_unit(body.business_unit)
     key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
     payload = body.model_dump(mode="json")
-    payload_hash = hashlib.sha256(
-        repr(sorted(payload.items())).encode()
-    ).hexdigest()
+    payload_hash = hashlib.sha256(repr(sorted(payload.items())).encode()).hexdigest()
     existing = await db.scalar(
         select(LeadSyncRequest).where(LeadSyncRequest.idempotency_hash == key_hash)
     )
@@ -130,12 +133,16 @@ async def create_lead_sync_intent(
             raise HTTPException(409, "idempotency key conflict")
         return {"request_id": str(existing.id), "state": existing.state}
     record = LeadSyncRequest(
-        id=uuid4(), source_reference=body.source_reference,
+        id=uuid4(),
+        source_reference=body.source_reference,
         business_unit=body.business_unit,
         campaign_reference=body.campaign_reference,
-        list_reference=body.list_reference, canonical_payload=payload,
-        payload_hash=payload_hash, idempotency_hash=key_hash,
-        correlation_id=body.correlation_id, state="disabled",
+        list_reference=body.list_reference,
+        canonical_payload=payload,
+        payload_hash=payload_hash,
+        idempotency_hash=key_hash,
+        correlation_id=body.correlation_id,
+        state="disabled",
     )
     db.add(record)
     await db.commit()

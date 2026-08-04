@@ -1,4 +1,5 @@
 """Low-latency, fail-closed real-time control-plane primitives."""
+
 from __future__ import annotations
 
 import time
@@ -8,12 +9,20 @@ from threading import Lock
 from typing import Any
 
 FEATURE_FLAGS = {
-    "ENABLE_REALTIME_TELEPHONY_EVENTS", "ENABLE_REDIS_CALL_STATE",
-    "ENABLE_WEBSOCKET_SCREEN_POP", "ENABLE_LAZY_CUSTOMER_CONTEXT",
-    "ENABLE_WEBRTC_AGENT_PHONE", "ENABLE_LIVE_VAD", "ENABLE_STREAMING_STT",
-    "ENABLE_STREAMING_LLM", "ENABLE_STREAMING_TTS", "ENABLE_AI_BARGE_IN",
-    "ENABLE_AI_LOW_LATENCY_MODE", "ENABLE_LOCAL_AI_INFERENCE",
-    "ENABLE_EXTERNAL_AI_FALLBACK", "ENABLE_PRODUCTION_TRAFFIC",
+    "ENABLE_REALTIME_TELEPHONY_EVENTS",
+    "ENABLE_REDIS_CALL_STATE",
+    "ENABLE_WEBSOCKET_SCREEN_POP",
+    "ENABLE_LAZY_CUSTOMER_CONTEXT",
+    "ENABLE_WEBRTC_AGENT_PHONE",
+    "ENABLE_LIVE_VAD",
+    "ENABLE_STREAMING_STT",
+    "ENABLE_STREAMING_LLM",
+    "ENABLE_STREAMING_TTS",
+    "ENABLE_AI_BARGE_IN",
+    "ENABLE_AI_LOW_LATENCY_MODE",
+    "ENABLE_LOCAL_AI_INFERENCE",
+    "ENABLE_EXTERNAL_AI_FALLBACK",
+    "ENABLE_PRODUCTION_TRAFFIC",
 }
 
 
@@ -43,8 +52,15 @@ class TraceRecorder:
     def measure(self, name: str, operation):
         started = time.perf_counter_ns()
         result = operation()
-        self.spans.append(TraceSpan(
-            name, started, time.perf_counter_ns(), self.trace_id, self.correlation_id))
+        self.spans.append(
+            TraceSpan(
+                name,
+                started,
+                time.perf_counter_ns(),
+                self.trace_id,
+                self.correlation_id,
+            )
+        )
         return result
 
 
@@ -83,11 +99,14 @@ def authorize_socket(scope: SocketScope, event: ScreenPop) -> None:
         or event.campaign not in scope.campaigns
         or event.uniqueid != scope.active_call_id
     ):
-        raise RealtimeDenied("cross-agent, cross-unit, campaign, or call delivery denied")
+        raise RealtimeDenied(
+            "cross-agent, cross-unit, campaign, or call delivery denied"
+        )
 
 
 class ReplayBuffer:
     """Bounded stand-in for Redis Stream behavior; never durable truth."""
+
     def __init__(self, maximum: int = 1000):
         self._events: deque[ScreenPop] = deque(maxlen=maximum)
         self._seen: set[tuple[str, int]] = set()
@@ -103,8 +122,11 @@ class ReplayBuffer:
             return True
 
     def replay(self, uniqueid: str, last_sequence: int) -> tuple[ScreenPop, ...]:
-        return tuple(e for e in self._events
-                     if e.uniqueid == uniqueid and e.sequence > last_sequence)
+        return tuple(
+            e
+            for e in self._events
+            if e.uniqueid == uniqueid and e.sequence > last_sequence
+        )
 
 
 REDIS_KEY_TTLS = {
@@ -140,8 +162,12 @@ class CustomerReadModel:
 
 
 LAZY_CONTEXT_ORDER = (
-    "basic_card", "opportunity", "recent_interactions", "open_tickets",
-    "orders_and_payment_status", "full_history_on_request",
+    "basic_card",
+    "opportunity",
+    "recent_interactions",
+    "open_tickets",
+    "orders_and_payment_status",
+    "full_history_on_request",
 )
 
 
@@ -164,19 +190,42 @@ VAD_THRESHOLDS_MS = {
 }
 
 
-def webrtc_ready(*, registered: bool, audio_device: bool, websocket: bool,
-                 campaign_authorized: bool) -> bool:
+def webrtc_ready(
+    *, registered: bool, audio_device: bool, websocket: bool, campaign_authorized: bool
+) -> bool:
     return registered and audio_device and websocket and campaign_authorized
 
 
 def failure_degradation(dependency: str) -> dict[str, Any]:
-    policies = {
-        "stt": {"telephony_continues": True, "live_transcript": False, "queue_post_call": True},
-        "llm": {"telephony_continues": True, "fallback": "deterministic_human_transfer"},
-        "tts": {"telephony_continues": True, "fallback": "cached_announcement_human_transfer"},
-        "redis": {"telephony_continues": True, "new_ai_sessions": False, "cross_agent_delivery": False},
-        "odoo": {"telephony_continues": True, "persist_events": True, "reconcile_later": True},
-        "websocket": {"telephony_continues": True, "manual_lookup": True, "reconnect": True},
+    policies: dict[str, dict[str, Any]] = {
+        "stt": {
+            "telephony_continues": True,
+            "live_transcript": False,
+            "queue_post_call": True,
+        },
+        "llm": {
+            "telephony_continues": True,
+            "fallback": "deterministic_human_transfer",
+        },
+        "tts": {
+            "telephony_continues": True,
+            "fallback": "cached_announcement_human_transfer",
+        },
+        "redis": {
+            "telephony_continues": True,
+            "new_ai_sessions": False,
+            "cross_agent_delivery": False,
+        },
+        "odoo": {
+            "telephony_continues": True,
+            "persist_events": True,
+            "reconcile_later": True,
+        },
+        "websocket": {
+            "telephony_continues": True,
+            "manual_lookup": True,
+            "reconnect": True,
+        },
     }
     if dependency not in policies:
         raise ValueError("unknown dependency")

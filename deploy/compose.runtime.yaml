@@ -23,6 +23,7 @@ x-runtime: &runtime
     PORT: "8095"
     LOG_LEVEL: INFO
     LIVE_WRITES_ENABLED: "false"
+    ODOO_WRITE_ENABLED: "false"
     ALLOW_NON_TEST_CAMPAIGNS: "false"
     ODOO_DELIVERY_ENABLED: "false"
     N8N_DELIVERY_ENABLED: "false"
@@ -36,6 +37,35 @@ x-runtime: &runtime
     MESSAGING_ENABLED: "false"
     REPORT_DELIVERY_ENABLED: "false"
     VICIDIAL_CALLBACK_HMAC_SECRET_FILE: ""
+    SEND_EVENTS: "false"
+    BROAD_EVENT_DELIVERY_ENABLED: "false"
+    ENABLE_EXTERNAL_DELIVERY: "false"
+    VICIDIAL_WRITES_ENABLED: "false"
+    PRODUCTION_CALLBACKS_ENABLED: "false"
+    TRANSFERS_ENABLED: "false"
+    PRODUCTION_WEBRTC_ENABLED: "false"
+    PRODUCTION_N8N_ENABLED: "false"
+    ODOO_RESULT_DELIVERY_ENABLED: "false"
+    CONTROLLED_BROAD_EVENT_ACTIVATION: "false"
+    BROAD_EVENT_BUSINESS_UNIT_ALLOWLIST: ""
+    BROAD_EVENT_CAMPAIGN_ALLOWLIST: ""
+    BROAD_EVENT_WORKFLOW_ALLOWLIST: ""
+    BROAD_EVENT_TYPE_ALLOWLIST: ""
+    BROAD_EVENT_ACTIVATION_HIGH_WATER_MARK: ""
+    BROAD_EVENT_SUBMISSION_LIMIT: "0"
+    ALLOW_LIVE_EMAIL: "false"
+    ALLOW_LIVE_SMS: "false"
+    ALLOW_CAMPAIGN_ACTIVATION: "false"
+    EXTENSION_ALLOCATOR_ENABLED: "false"
+    TELEPHONY_PROVISIONING_ENABLED: "false"
+    VICIDIAL_PROVISIONING_ENABLED: "false"
+    PJSIP_PROVISIONING_ENABLED: "false"
+    WEBPHONE_SESSION_ISSUER_ENABLED: "false"
+    WEBPHONE_STAGING_PROVISIONING_ENABLED: "false"
+    WEBPHONE_KEYCLOAK_ENABLED: "false"
+    TELEPHONY_RECONCILIATION_ENABLED: "false"
+    TELEPHONY_NOTIFICATIONS_ENABLED: "false"
+    TELEPHONY_EVIDENCE_ENABLED: "false"
   healthcheck:
     test:
       - CMD
@@ -87,12 +117,13 @@ services:
   middleware-integration-api:
     <<: *runtime
     command: [python, -m, app.entrypoints.integration_api]
-    environment:
-      <<: *safe-flags
-      SERVICE_NAME: middleware-integration-api
-      QUARANTINE_ENCRYPTION_KEY_FILE: /run/secrets/quarantine-encryption-key
-      QUARANTINE_FINGERPRINT_SECRET_FILE: /run/secrets/quarantine-fingerprint-key
-      QUARANTINE_REVIEWER_SECRET_FILE: /run/secrets/quarantine-reviewer-key
+    networks:
+      - middleware_backend
+      - middleware_edge
+      - identity_service
+      - provisioning_private
+      - odoo_module_staging
+      - codestra_internal_integration
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
@@ -102,12 +133,34 @@ services:
       - /etc/codestra/secrets/middleware-runtime/quarantine-encryption-key:/run/secrets/quarantine-encryption-key:ro
       - /etc/codestra/secrets/middleware-runtime/quarantine-fingerprint-key:/run/secrets/quarantine-fingerprint-key:ro
       - /etc/codestra/secrets/middleware-runtime/quarantine-reviewer-key:/run/secrets/quarantine-reviewer-key:ro
-    networks:
-      - middleware_backend
-      - middleware_edge
-      - identity_service
-      - provisioning_private
-      - odoo_module_staging
+      - /etc/codestra/secrets/internal-n8n/middleware-client-secret:/run/secrets/middleware_n8n_client_secret:ro
+      - /etc/codestra/secrets/internal-n8n/odoo-results-client-secret:/run/secrets/odoo_results_client_secret:ro
+      - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-integration-api
+      QUARANTINE_ENCRYPTION_KEY_FILE: /run/secrets/quarantine-encryption-key
+      QUARANTINE_FINGERPRINT_SECRET_FILE: /run/secrets/quarantine-fingerprint-key
+      QUARANTINE_REVIEWER_SECRET_FILE: /run/secrets/quarantine-reviewer-key
+      N8N_PRODUCTION_TARGET_URL: https://n8n.internal.codestra.agency/webhook/codestra/v1/events
+      N8N_TARGET_CA_FILE: /run/secrets/internal_integration_ca
+      N8N_RUNTIME_HEALTH_URL: http://n8n:5678/healthz
+      MIDDLEWARE_N8N_TOKEN_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/token
+      MIDDLEWARE_N8N_CLIENT_ID: codestra-middleware-production
+      MIDDLEWARE_N8N_CLIENT_SECRET_FILE: /run/secrets/middleware_n8n_client_secret
+      MIDDLEWARE_N8N_AUDIENCE: codestra-n8n-production
+      MIDDLEWARE_N8N_SCOPE: n8n.events.submit
+      N8N_SERVICE_ISSUER: https://auth.codestra.agency/realms/codestra
+      N8N_SERVICE_AUDIENCE: codestra-middleware
+      N8N_SERVICE_JWKS_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/certs
+      N8N_SERVICE_CLIENT_ID: codestra-n8n-production
+      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/codestra/integration/v1/results
+      ODOO_RESULTS_TOKEN_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/token
+      ODOO_RESULTS_CLIENT_ID: codestra-middleware-odoo-results
+      ODOO_RESULTS_CLIENT_SECRET_FILE: /run/secrets/odoo_results_client_secret
+      ODOO_RESULTS_AUDIENCE: codestra-odoo
+      ODOO_RESULTS_SCOPE: odoo.integration.results.write
+      ODOO_RESULTS_CA_FILE: /run/secrets/internal_integration_ca
 
   middleware-policy-engine:
     <<: *runtime
@@ -162,6 +215,30 @@ services:
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-scheduler-database-url:/run/secrets/database_url:ro
 
+  middleware-odoo-result-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.odoo_result_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-odoo-result-worker
+      QUEUE_NAME: odoo-results
+      ODOO_RESULT_DELIVERY_ENABLED: "false"
+      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/codestra/integration/v1/results
+      ODOO_RESULTS_TOKEN_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/token
+      ODOO_RESULTS_CLIENT_ID: codestra-middleware-odoo-results
+      ODOO_RESULTS_CLIENT_SECRET_FILE: /run/secrets/odoo_results_client_secret
+      ODOO_RESULTS_AUDIENCE: codestra-odoo
+      ODOO_RESULTS_SCOPE: odoo.integration.results.write
+      ODOO_RESULTS_CA_FILE: /run/secrets/internal_integration_ca
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-odoo-result-worker-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/internal-n8n/odoo-results-client-secret:/run/secrets/odoo_results_client_secret:ro
+      - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
+    networks:
+      - middleware_backend
+      - identity_service
+      - codestra_internal_integration
+
   middleware-evidence-runner:
     <<: *worker
     command: [python, -m, app.entrypoints.evidence_runner]
@@ -172,6 +249,56 @@ services:
       WORKER_INTERVAL_SECONDS: "60"
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-evidence-runner-database-url:/run/secrets/database_url:ro
+
+  middleware-extension-allocator:
+    <<: *runtime
+    command: [python, -m, app.entrypoints.extension_allocator]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-extension-allocator
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-extension-allocator-database-url:/run/secrets/database_url:ro
+
+  middleware-telephony-provisioning:
+    <<: *runtime
+    command: [python, -m, app.entrypoints.telephony_provisioning]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-telephony-provisioning
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-telephony-provisioning-database-url:/run/secrets/database_url:ro
+
+  middleware-vicidial-adapter:
+    <<: *worker
+    command: [python, -m, app.entrypoints.vicidial_adapter]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-vicidial-adapter
+      QUEUE_NAME: telephony.vicidial.provisioning
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-vicidial-adapter-database-url:/run/secrets/database_url:ro
+
+  middleware-pjsip-adapter:
+    <<: *worker
+    command: [python, -m, app.entrypoints.pjsip_adapter]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-pjsip-adapter
+      QUEUE_NAME: telephony.pjsip.provisioning
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-pjsip-adapter-database-url:/run/secrets/database_url:ro
+
+  middleware-webphone-session-issuer:
+    <<: *runtime
+    command: [python, -m, app.entrypoints.webphone_session_issuer]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: codestra-webphone-session-issuer
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-webphone-session-issuer-database-url:/run/secrets/database_url:ro
+    networks:
+      - middleware_backend
+      - identity_service
 
 networks:
   middleware_backend:
@@ -189,6 +316,9 @@ networks:
   odoo_module_staging:
     external: true
     name: codestra-odoo19-module-staging_isolated
+  codestra_internal_integration:
+    external: true
+    name: codestra-internal-integration
 
 secrets:
   redis_url:

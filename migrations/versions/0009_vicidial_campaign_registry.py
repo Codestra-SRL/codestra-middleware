@@ -48,24 +48,65 @@ def upgrade():
         sa.Column("calling_hours_policy_code", sa.String(64)),
         sa.Column("appointment_policy_code", sa.String(64)),
         sa.Column("n8n_scope", sa.String(128)),
-        sa.Column("feature_flag_set", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column(
+            "feature_flag_set",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
         sa.Column("desired_state_hash", sa.String(64), nullable=False),
         sa.Column("observed_state_hash", sa.String(64)),
         sa.Column("last_applied_at", sa.DateTime(timezone=True)),
         sa.Column("last_read_back_at", sa.DateTime(timezone=True)),
-        sa.Column("drift_status", sa.String(24), nullable=False, server_default="not_observed"),
+        sa.Column(
+            "drift_status", sa.String(24), nullable=False, server_default="not_observed"
+        ),
         sa.Column("active", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.CheckConstraint("schema_version > 0", name="ck_vicidial_registry_schema_version"),
-        sa.CheckConstraint("mapping_version > 0", name="ck_vicidial_registry_mapping_version"),
-        sa.CheckConstraint("environment IN ('development','staging','production')", name="ck_vicidial_registry_environment"),
-        sa.CheckConstraint("business_unit_code IN ('MOY','COD','SCP','MBL','RLP','FTP','TRX','CAL')", name="ck_vicidial_registry_business_unit"),
-        sa.CheckConstraint("direction IN ('IN','OUT')", name="ck_vicidial_registry_direction"),
-        sa.CheckConstraint("vicidial_campaign_id ~ '^[A-Z0-9]{8}$'", name="ck_vicidial_registry_physical_id"),
-        sa.CheckConstraint("NOT (environment = 'production' AND active)", name="ck_vicidial_registry_production_inactive"),
-        sa.UniqueConstraint("environment", "canonical_campaign_code", name="uq_vicidial_registry_canonical_environment"),
-        sa.UniqueConstraint("vicidial_campaign_id", name="uq_vicidial_registry_physical_id"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.CheckConstraint(
+            "schema_version > 0", name="ck_vicidial_registry_schema_version"
+        ),
+        sa.CheckConstraint(
+            "mapping_version > 0", name="ck_vicidial_registry_mapping_version"
+        ),
+        sa.CheckConstraint(
+            "environment IN ('development','staging','production')",
+            name="ck_vicidial_registry_environment",
+        ),
+        sa.CheckConstraint(
+            "business_unit_code IN ('MOY','COD','SCP','MBL','RLP','FTP','TRX','CAL')",
+            name="ck_vicidial_registry_business_unit",
+        ),
+        sa.CheckConstraint(
+            "direction IN ('IN','OUT')", name="ck_vicidial_registry_direction"
+        ),
+        sa.CheckConstraint(
+            "vicidial_campaign_id ~ '^[A-Z0-9]{8}$'",
+            name="ck_vicidial_registry_physical_id",
+        ),
+        sa.CheckConstraint(
+            "NOT (environment = 'production' AND active)",
+            name="ck_vicidial_registry_production_inactive",
+        ),
+        sa.UniqueConstraint(
+            "environment",
+            "canonical_campaign_code",
+            name="uq_vicidial_registry_canonical_environment",
+        ),
+        sa.UniqueConstraint(
+            "vicidial_campaign_id", name="uq_vicidial_registry_physical_id"
+        ),
     )
 
 

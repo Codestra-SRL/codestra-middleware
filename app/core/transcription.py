@@ -1,4 +1,5 @@
 """Synthetic-only transcription control-plane contracts and redaction."""
+
 from __future__ import annotations
 
 import hashlib
@@ -9,21 +10,44 @@ from typing import Any
 from uuid import uuid4
 
 UNITS = {"TL", "DEV", "SCP"}
-SEGMENT_STATES = {"partial", "stabilizing", "final", "corrected", "redacted", "rejected"}
+SEGMENT_STATES = {
+    "partial",
+    "stabilizing",
+    "final",
+    "corrected",
+    "redacted",
+    "rejected",
+}
 RESOLUTIONS = {
-    "resolved_by_ivr", "resolved_by_ai_voice", "resolved_by_human",
-    "resolved_by_ai_and_human", "transferred_to_closer",
-    "transferred_to_support", "appointment_scheduled", "ticket_created",
-    "order_completed", "payment_completed", "follow_up_required", "escalated",
-    "customer_disconnected", "unresolved", "incorrectly_routed",
+    "resolved_by_ivr",
+    "resolved_by_ai_voice",
+    "resolved_by_human",
+    "resolved_by_ai_and_human",
+    "transferred_to_closer",
+    "transferred_to_support",
+    "appointment_scheduled",
+    "ticket_created",
+    "order_completed",
+    "payment_completed",
+    "follow_up_required",
+    "escalated",
+    "customer_disconnected",
+    "unresolved",
+    "incorrectly_routed",
 }
 FEATURE_FLAGS = {
-    "ENABLE_LIVE_TRANSCRIPTION", "ENABLE_FINAL_TRANSCRIPTION",
-    "ENABLE_WHISPERX_ALIGNMENT", "ENABLE_SPEAKER_DIARIZATION",
-    "ENABLE_TRANSCRIPT_REDACTION", "ENABLE_LIVE_KEYWORD_DETECTION",
-    "ENABLE_LIVE_AGENT_ASSIST", "ENABLE_AI_CALL_SUMMARY",
-    "ENABLE_INTENT_CLASSIFICATION", "ENABLE_RESOLUTION_CLASSIFICATION",
-    "ENABLE_QA_ANALYSIS", "ENABLE_COMPLIANCE_ANALYSIS",
+    "ENABLE_LIVE_TRANSCRIPTION",
+    "ENABLE_FINAL_TRANSCRIPTION",
+    "ENABLE_WHISPERX_ALIGNMENT",
+    "ENABLE_SPEAKER_DIARIZATION",
+    "ENABLE_TRANSCRIPT_REDACTION",
+    "ENABLE_LIVE_KEYWORD_DETECTION",
+    "ENABLE_LIVE_AGENT_ASSIST",
+    "ENABLE_AI_CALL_SUMMARY",
+    "ENABLE_INTENT_CLASSIFICATION",
+    "ENABLE_RESOLUTION_CLASSIFICATION",
+    "ENABLE_QA_ANALYSIS",
+    "ENABLE_COMPLIANCE_ANALYSIS",
     "ENABLE_TRANSCRIPT_SEARCH",
 }
 
@@ -65,9 +89,17 @@ class TranscriptSegment:
     text: str
 
 
-def create_audio_session(*, call_reference: str, business_unit: str, campaign: str,
-                         media_checksum: str, consent: bool, classification: str,
-                         retention_policy: str, correlation_id: str) -> AudioSession:
+def create_audio_session(
+    *,
+    call_reference: str,
+    business_unit: str,
+    campaign: str,
+    media_checksum: str,
+    consent: bool,
+    classification: str,
+    retention_policy: str,
+    correlation_id: str,
+) -> AudioSession:
     if business_unit not in UNITS or not campaign.startswith(f"{business_unit}-"):
         raise TranscriptionDenied("invalid business-unit campaign scope")
     if not consent:
@@ -75,12 +107,21 @@ def create_audio_session(*, call_reference: str, business_unit: str, campaign: s
     if not re.fullmatch(r"[a-f0-9]{64}", media_checksum):
         raise ValueError("SHA-256 media checksum required")
     return AudioSession(
-        str(uuid4()), call_reference, business_unit, campaign, media_checksum,
-        consent, classification, retention_policy, correlation_id,
+        str(uuid4()),
+        call_reference,
+        business_unit,
+        campaign,
+        media_checksum,
+        consent,
+        classification,
+        retention_policy,
+        correlation_id,
     )
 
 
-def finalize_audio_session(session: AudioSession, observed_checksum: str) -> AudioSession:
+def finalize_audio_session(
+    session: AudioSession, observed_checksum: str
+) -> AudioSession:
     if observed_checksum != session.media_checksum:
         raise ValueError("media integrity check failed")
     return replace(session, state="finalized")
@@ -93,15 +134,30 @@ def validate_segment(segment: TranscriptSegment) -> None:
         raise ValueError("invalid segment timestamps")
     if not 0 <= segment.confidence <= 1:
         raise ValueError("invalid confidence")
-    if segment.channel not in {"agent", "customer", "mixed", "supervisor", "interpreter"}:
+    if segment.channel not in {
+        "agent",
+        "customer",
+        "mixed",
+        "supervisor",
+        "interpreter",
+    }:
         raise ValueError("unknown channel")
 
 
 REDACTION_PATTERNS = (
     ("payment_card", re.compile(r"\b(?:\d[ -]*?){13,19}\b")),
     ("cvv", re.compile(r"(?i)\b(?:cvv|security code)\s*[:=]?\s*\d{3,4}\b")),
-    ("credential", re.compile(r"(?i)\b(?:password|api[_ -]?key|sip secret)\s*[:=]\s*\S+")),
-    ("private_key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S)),
+    (
+        "credential",
+        re.compile(r"(?i)\b(?:password|api[_ -]?key|sip secret)\s*[:=]\s*\S+"),
+    ),
+    (
+        "private_key",
+        re.compile(
+            r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+            re.S,
+        ),
+    ),
     ("government_id", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
 )
 
@@ -110,12 +166,18 @@ def redact(text: str) -> tuple[str, tuple[dict[str, Any], ...]]:
     output = text
     events: list[dict[str, Any]] = []
     for category, pattern in REDACTION_PATTERNS:
+
         def replacement(match: re.Match[str], category: str = category) -> str:
-            events.append({
-                "category": category,
-                "fingerprint": hashlib.sha256(match.group(0).encode()).hexdigest()[:16],
-            })
+            events.append(
+                {
+                    "category": category,
+                    "fingerprint": hashlib.sha256(match.group(0).encode()).hexdigest()[
+                        :16
+                    ],
+                }
+            )
             return f"[REDACTED:{category}]"
+
         output = pattern.sub(replacement, output)
     return output, tuple(events)
 
@@ -126,9 +188,17 @@ def channel_identity(channel: str, participant_map: dict[str, str]) -> tuple[str
     return "unknown", True
 
 
-def structured_analysis(*, primary_intent: str, secondary_intents: list[str],
-                        resolution: str, sentiment: str, objections: list[str],
-                        action_items: list[str], dnc: bool, confusion: bool) -> dict[str, Any]:
+def structured_analysis(
+    *,
+    primary_intent: str,
+    secondary_intents: list[str],
+    resolution: str,
+    sentiment: str,
+    objections: list[str],
+    action_items: list[str],
+    dnc: bool,
+    confusion: bool,
+) -> dict[str, Any]:
     if resolution not in RESOLUTIONS:
         raise ValueError("unsupported resolution")
     if sentiment not in {"positive", "neutral", "negative", "mixed", "unknown"}:

@@ -39,12 +39,24 @@ def test_existing_mapping_has_absolute_priority():
 def test_phone_and_email_ambiguity_never_auto_merges():
     one = Candidate("res.partner", 1)
     two = Candidate("res.partner", 2)
-    assert resolve_identity(
-        mapped=None, external_reference=None, phone_candidates=[one, two], email_candidates=[]
-    ).status == MatchStatus.REVIEW_REQUIRED
-    assert resolve_identity(
-        mapped=None, external_reference=None, phone_candidates=[], email_candidates=[one, two]
-    ).status == MatchStatus.REVIEW_REQUIRED
+    assert (
+        resolve_identity(
+            mapped=None,
+            external_reference=None,
+            phone_candidates=[one, two],
+            email_candidates=[],
+        ).status
+        == MatchStatus.REVIEW_REQUIRED
+    )
+    assert (
+        resolve_identity(
+            mapped=None,
+            external_reference=None,
+            phone_candidates=[],
+            email_candidates=[one, two],
+        ).status
+        == MatchStatus.REVIEW_REQUIRED
+    )
 
 
 def test_cross_channel_identity_conflict_blocks_update_and_create():
@@ -55,14 +67,17 @@ def test_cross_channel_identity_conflict_blocks_update_and_create():
         email_candidates=[Candidate("res.partner", 2)],
     )
     assert result.status == MatchStatus.IDENTITY_CONFLICT
-    assert decide_action(
-        result,
-        suppression_available=True,
-        suppression_active=False,
-        consent="granted",
-        eligible=True,
-        payload_changed=True,
-    ) == SyncAction.IDENTITY_CONFLICT
+    assert (
+        decide_action(
+            result,
+            suppression_available=True,
+            suppression_active=False,
+            consent="granted",
+            eligible=True,
+            payload_changed=True,
+        )
+        == SyncAction.IDENTITY_CONFLICT
+    )
 
 
 def test_suppression_fails_closed_before_create_or_update():
