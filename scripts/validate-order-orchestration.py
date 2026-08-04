@@ -28,13 +28,14 @@ for export in ORDER_DIR.glob("CdstOrder*.json"):
     assert "codestra_middleware_base_url" in text
     assert all(token not in text for token in ("odoo", "vicidial", "postiz"))
     node_ids = [node["id"] for node in document["nodes"]]
+    node_names = [node["name"] for node in document["nodes"]]
     assert len(node_ids) == len(set(node_ids))
     assert all("position" in node for node in document["nodes"])
     for source, branches in document.get("connections", {}).items():
-        assert source in node_ids
+        assert source in node_names
         for branch in branches.get("main", []):
             for connection in branch:
-                assert connection["node"] in node_ids
+                assert connection["node"] in node_names
 for entry in entries:
     assert entry["n8n_workflow_id"] in exports
     assert entry["active"] is False
