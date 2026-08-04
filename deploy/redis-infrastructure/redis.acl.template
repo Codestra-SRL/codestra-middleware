@@ -1,0 +1,5 @@
+# Secret-free ACL policy. Render password hashes at deployment time.
+user default off
+user middleware-service on #<MIDDLEWARE_PASSWORD_HASH> ~codestra:middleware:* ~codestra:idempotency:* ~codestra:nonce:* ~codestra:queue:* ~codestra:dead-letter:* ~codestra:session:* ~codestra:rate-limit:* ~codestra:lock:* ~codestra:integration-test:* ~bull:* &codestra:* &bull:* +@read +@write +@list +@set +@sortedset +@hash +@transaction +@connection +@pubsub +eval +evalsha +acl|whoami -@admin -flushall -flushdb -config -acl -shutdown -module -debug -replicaof -slaveof -migrate -swapdb -save -bgsave -keys
+user n8n-service on #<N8N_PASSWORD_HASH> ~n8n:* ~bull:* &n8n:* &bull:* +@read +@write +@list +@set +@sortedset +@hash +@transaction +@connection +@pubsub +subscribe +psubscribe +publish +eval +evalsha +acl|whoami -@admin -flushall -flushdb -config -acl -shutdown -module -debug -replicaof -slaveof -migrate -swapdb -save -bgsave -keys
+user redis-recovery on #<RECOVERY_PASSWORD_HASH> ~* &* +@all

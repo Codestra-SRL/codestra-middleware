@@ -1,0 +1,59 @@
+groups:
+  - name: codestra-redis
+    rules:
+      - alert: CodestraRedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels: {severity: critical, service: redis, environment: production}
+        annotations: {summary: Redis unavailable, description: Redis exporter reports the service down., runbook: docs/runbooks/redis/unavailable.md}
+      - alert: CodestraRedisExporterDown
+        expr: redis_exporter_last_scrape_error > 0
+        for: 5m
+        labels: {severity: critical, service: redis, environment: production}
+        annotations: {summary: Redis exporter unavailable, description: Redis metrics scraping is failing., runbook: docs/runbooks/redis/unavailable.md}
+      - alert: CodestraRedisHighMemory
+        expr: redis_memory_max_bytes > 0 and redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 10m
+        labels: {severity: warning, service: redis, environment: production}
+        annotations: {summary: Redis memory high, description: Redis memory utilization exceeds 85%., runbook: docs/runbooks/redis/memory.md}
+      - alert: CodestraRedisEvictions
+        expr: increase(redis_evicted_keys_total[5m]) > 0
+        labels: {severity: warning, service: redis, environment: production}
+        annotations: {summary: Redis evictions detected, description: Redis evicted keys in the last five minutes., runbook: docs/runbooks/redis/memory.md}
+      - alert: CodestraRedisPersistenceFailure
+        expr: redis_rdb_last_bgsave_status == 0 or redis_aof_last_rewrite_status == 0
+        for: 5m
+        labels: {severity: critical, service: redis, environment: production}
+        annotations: {summary: Redis persistence failure, description: RDB or AOF persistence reports failure., runbook: docs/runbooks/redis/persistence.md}
+      - alert: CodestraRedisHighLatency
+        expr: rate(redis_commands_processed_total[5m]) < 1
+        for: 15m
+        labels: {severity: warning, service: redis, environment: production}
+        annotations: {summary: Redis command throughput degraded, description: Investigate command latency and blocked clients., runbook: docs/runbooks/redis/unavailable.md}
+      - alert: CodestraRedisAuthenticationFailures
+        expr: increase(codestra_redis_auth_failures_total[5m]) > 0
+        labels: {severity: warning, service: redis, environment: production}
+        annotations: {summary: Redis authentication failures, description: Authentication failures require security review., runbook: docs/runbooks/redis/credentials.md}
+      - alert: CodestraRedisUnexpectedAclDenials
+        expr: increase(codestra_redis_acl_denials_total[5m]) > 0
+        labels: {severity: warning, service: redis, environment: production}
+        annotations: {summary: Unexpected Redis ACL denials, description: Review denied commands and namespace policy., runbook: docs/runbooks/redis/acl.md}
+      - alert: CodestraRedisBlockedClients
+        expr: redis_blocked_clients > 20
+        for: 10m
+        labels: {severity: warning, service: redis, environment: production}
+        annotations: {summary: Redis blocked clients high, description: Blocked clients exceed threshold., runbook: docs/runbooks/redis/unavailable.md}
+      - alert: CodestraRedisRejectedConnections
+        expr: increase(redis_rejected_connections_total[5m]) > 0
+        labels: {severity: warning, service: redis, environment: production}
+        annotations: {summary: Redis rejected connections, description: Redis rejected one or more connections., runbook: docs/runbooks/redis/credentials.md}
+      - alert: CodestraN8nQueueBacklog
+        expr: n8n_queue_depth > 100
+        for: 10m
+        labels: {severity: warning, service: n8n, environment: production}
+        annotations: {summary: n8n queue backlog, description: n8n queue depth exceeds threshold., runbook: docs/runbooks/redis/queue-backlog.md}
+      - alert: CodestraMiddlewareQueueBacklog
+        expr: codestra_queue_ready_depth > 100
+        for: 10m
+        labels: {severity: warning, service: middleware, environment: production}
+        annotations: {summary: Middleware queue backlog, description: Middleware queue depth exceeds threshold., runbook: docs/runbooks/redis/queue-backlog.md}

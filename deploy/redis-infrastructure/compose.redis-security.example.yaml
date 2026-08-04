@@ -1,0 +1,27 @@
+# Secret-free example overlay; external secrets are deployment managed.
+services:
+  redis:
+    image: redis:7.4.5
+    expose: ["6379"]
+    networks: [redis-private]
+    volumes:
+      - redis-data:/data
+      - ./redis.acl:/usr/local/etc/redis/users.acl:ro
+  middleware:
+    image: codestra/middleware:replace-at-deploy
+    networks: [redis-private]
+    secrets: [redis_middleware_username, redis_middleware_password]
+  n8n:
+    image: n8nio/n8n:replace-at-deploy
+    networks: [redis-private]
+    secrets: [redis_n8n_username, redis_n8n_password]
+networks:
+  redis-private:
+    internal: true
+volumes:
+  redis-data:
+secrets:
+  redis_middleware_username: {external: true}
+  redis_middleware_password: {external: true}
+  redis_n8n_username: {external: true}
+  redis_n8n_password: {external: true}
