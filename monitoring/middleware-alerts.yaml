@@ -100,3 +100,60 @@ groups:
         for: 15m
         labels: {severity: warning, service: middleware, component: order-orchestration, environment: production}
         annotations: {summary: "Approved-order approval backlog is high", description: "Orders are waiting for approval beyond the defined SLA.", runbook_url: "https://monitoring.codestra.co/runbooks/order-orchestration"}
+  - name: codestra-cross-system-providers
+    rules:
+      - alert: CodestraQwenUnavailable
+        expr: absent(up{job="qwen"})
+        for: 5m
+        labels: {severity: critical, service: middleware, component: qwen}
+        annotations: {summary: "Qwen unavailable", description: "The approved Qwen provider target is unavailable.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraQwenFailureRateHigh
+        expr: rate(codestra_ai_task_failures_total[10m]) > 0.2
+        for: 10m
+        labels: {severity: warning, service: middleware, component: qwen}
+        annotations: {summary: "Qwen failure rate high", description: "AI task failures exceed the safe threshold.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraVicidialAdapterUnavailable
+        expr: absent(up{job="vicidial-adapter"})
+        for: 5m
+        labels: {severity: critical, service: middleware, component: vicidial}
+        annotations: {summary: "VICIdial adapter unavailable", description: "The VICIdial adapter target is unavailable.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraVicidialCommandFailures
+        expr: rate(codestra_vicidial_command_failures_total[10m]) > 0.2
+        for: 10m
+        labels: {severity: warning, service: middleware, component: vicidial}
+        annotations: {summary: "VICIdial command failures high", description: "VICIdial command failures exceed the safe threshold.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraPostizAdapterUnavailable
+        expr: absent(up{job="postiz-adapter"})
+        for: 5m
+        labels: {severity: critical, service: middleware, component: postiz}
+        annotations: {summary: "Postiz adapter unavailable", description: "The Postiz adapter target is unavailable.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraPostizCommandFailures
+        expr: rate(codestra_postiz_command_failures_total[10m]) > 0.2
+        for: 10m
+        labels: {severity: warning, service: middleware, component: postiz}
+        annotations: {summary: "Postiz command failures high", description: "Postiz command failures exceed the safe threshold.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraCrossSystemQueueBacklog
+        expr: codestra_cross_system_queue_depth > 50
+        for: 10m
+        labels: {severity: warning, service: middleware, component: cross-system}
+        annotations: {summary: "Cross-system queue backlog", description: "Cross-system commands are queued beyond the safe threshold.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraCrossSystemCallbackFailures
+        expr: rate(codestra_cross_system_callback_failures_total[10m]) > 0
+        for: 5m
+        labels: {severity: critical, service: middleware, component: cross-system}
+        annotations: {summary: "Cross-system callback failures", description: "Provider callback delivery is failing.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraCrossSystemDeadLetterIncrease
+        expr: increase(codestra_cross_system_dead_letter_total[15m]) > 0
+        for: 5m
+        labels: {severity: critical, service: middleware, component: cross-system}
+        annotations: {summary: "Cross-system dead letters increased", description: "Cross-system commands entered dead letter.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraCrossSystemReconciliationMismatch
+        expr: increase(codestra_cross_system_reconciliation_mismatch_total[10m]) > 0
+        for: 5m
+        labels: {severity: critical, service: middleware, component: cross-system}
+        annotations: {summary: "Cross-system reconciliation mismatch", description: "Provider and middleware states disagree.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
+      - alert: CodestraCrossSystemExecutionStale
+        expr: codestra_cross_system_stale_execution_total > 0
+        for: 10m
+        labels: {severity: warning, service: middleware, component: cross-system}
+        annotations: {summary: "Cross-system execution stale", description: "A cross-system execution has stopped progressing.", runbook_url: "https://monitoring.codestra.co/runbooks/cross-system-providers"}
