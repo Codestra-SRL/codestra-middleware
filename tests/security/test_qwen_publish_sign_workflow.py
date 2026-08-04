@@ -139,8 +139,14 @@ def test_temporary_paths_are_initialized_only_at_runner_runtime():
 
 def test_signature_attestations_and_independent_verification_are_exact():
     assert "cosign sign --yes" in TEXT
-    for predicate_type in ("cyclonedx", "slsaprovenance", "openvex"):
+    for predicate_type in (
+        "cyclonedx",
+        "https://slsa.dev/provenance/v1",
+        "openvex",
+    ):
         assert f"--type {predicate_type}" in TEXT or '--type "${type}"' in TEXT
+    assert "--type slsaprovenance" not in TEXT
+    assert "v1-verification.json" in TEXT
     assert "independently-verify:\n    needs: publish-sign\n    runs-on: ubuntu-latest" in TEXT
     assert "--certificate-identity \"${EXPECTED_IDENTITY}\"" in TEXT
     assert "--certificate-oidc-issuer \"${EXPECTED_ISSUER}\"" in TEXT

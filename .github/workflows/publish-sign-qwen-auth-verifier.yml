@@ -284,7 +284,7 @@ jobs:
           cosign sign --yes "${subject}"
           cosign attest --yes --type cyclonedx \
             --predicate final-sbom.cdx.json "${subject}"
-          cosign attest --yes --type slsaprovenance \
+          cosign attest --yes --type https://slsa.dev/provenance/v1 \
             --predicate final-provenance.json "${subject}"
           cosign attest --yes --type openvex \
             --predicate final-openvex.json "${subject}"
@@ -369,17 +369,18 @@ jobs:
             --certificate-identity "${EXPECTED_IDENTITY}" \
             --certificate-oidc-issuer "${EXPECTED_ISSUER}" \
             "${subject}" > cosign-verification.json
-          for type in cyclonedx slsaprovenance openvex; do
+          for type in cyclonedx https://slsa.dev/provenance/v1 openvex; do
+            output_name="${type##*/}"
             cosign verify-attestation \
               --type "${type}" \
               --certificate-identity "${EXPECTED_IDENTITY}" \
               --certificate-oidc-issuer "${EXPECTED_ISSUER}" \
-              "${subject}" > "${type}-verification.json"
-            test "$(jq -r '.payload' "${type}-verification.json" | base64 --decode | jq -r '.subject[0].digest.sha256')" = "${IMAGE_DIGEST#sha256:}"
+              "${subject}" > "${output_name}-verification.json"
+            test "$(jq -r '.payload' "${output_name}-verification.json" | base64 --decode | jq -r '.subject[0].digest.sha256')" = "${IMAGE_DIGEST#sha256:}"
           done
           for pair in \
             'cyclonedx:final-sbom.cdx.json' \
-            'slsaprovenance:final-provenance.json' \
+            'v1:final-provenance.json' \
             'openvex:final-openvex.json'
           do
             type="${pair%%:*}"
@@ -390,7 +391,7 @@ jobs:
             cmp --silent \
               "${type}-verified-predicate.json" "${type}-expected-predicate.json"
           done
-          jq -r '.payload' slsaprovenance-verification.json | base64 --decode | \
+          jq -r '.payload' v1-verification.json | base64 --decode | \
             jq -e \
               --arg source "${CANDIDATE_COMMIT}" \
               --arg governance "${GOVERNANCE_HEAD}" \
