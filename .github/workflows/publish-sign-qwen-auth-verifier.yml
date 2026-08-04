@@ -77,7 +77,6 @@ jobs:
           test "${VEX_SHA256}" = "ba6ec01d89e3140a8538d9e5669be8b05f1e31ac3c475cf65a8d6907302dc1ff"
           test "${SBOM_SHA256}" = "380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
           test "${GITHUB_ACTOR}" != "kazan555"
-          git cat-file -e "${GOVERNANCE_HEAD}^{commit}"
 
       - name: Fetch and validate exact approved governance evidence
         shell: bash
