@@ -158,6 +158,14 @@ def test_signature_attestations_and_independent_verification_are_exact():
     assert "EXPECTED_ISSUER: https://token.actions.githubusercontent.com" in TEXT
 
 
+def test_attestation_discovery_retry_is_bounded_and_fails_closed():
+    assert "for attempt in 1 2 3 4 5 6; do" in TEXT
+    assert 'if [[ "${attempt}" -lt 6 ]]; then' in TEXT
+    assert "sleep 5" in TEXT
+    assert 'test "${verified}" = true' in TEXT
+    assert '"${output_name}-verification.json.tmp"' in TEXT
+
+
 def test_existing_middleware_signing_workflow_is_not_referenced_or_modified():
     assert "sign-middleware-release.yml" not in TEXT
     assert "ghcr.io/codestra-srl/codestra-middleware" not in TEXT
