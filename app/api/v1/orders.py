@@ -5,13 +5,13 @@ from fastapi import APIRouter, Header, HTTPException, Response, status
 from pydantic import Field
 
 from app.order_orchestration import (
+    STORE,
     ApprovalRequest,
     DeadLetterEnvelope,
     ErrorEnvelope,
     OrderEnvelope,
     OrderStatus,
     ResultEnvelope,
-    STORE,
     content_hash,
     validate_for_dispatch,
     verify_body_integrity,
@@ -74,7 +74,7 @@ async def approve_order(order_id: str, approval: ApprovalRequest,
         raise HTTPException(403, "self approval is not permitted")
     record["envelope"]["approval"].update(
         {"status": "approved", "approved_by": approval.approved_by,
-         "approved_at": datetime.now(timezone.utc).isoformat()}
+         "approved_at": datetime.now(UTC).isoformat()}
     )
     record["status"] = OrderStatus.APPROVED.value
     return record
