@@ -14,7 +14,14 @@ env:
   IMAGE_DIGEST: sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef
   OCI_ARCHIVE_PATH: /opt/codestra-jit-input/qwen-auth-verifier-a0423439705ee7f.oci.tar
   OCI_INDEX_MEDIA_TYPE: application/vnd.oci.image.index.v1+json
-  SKOPEO_VERSION: 1.24.0
+  ORAS_VERSION: 1.3.2
+  ORAS_ARCHIVE_URL: https://github.com/oras-project/oras/releases/download/v1.3.2/oras_1.3.2_linux_amd64.tar.gz
+  ORAS_CHECKSUMS_URL: https://github.com/oras-project/oras/releases/download/v1.3.2/oras_1.3.2_checksums.txt
+  ORAS_SIGNATURE_URL: https://github.com/oras-project/oras/releases/download/v1.3.2/oras_1.3.2_checksums.txt.asc
+  ORAS_KEYS_URL: https://raw.githubusercontent.com/oras-project/oras/v1.3.2/KEYS
+  ORAS_ARCHIVE_SHA256: 9229ccc6d17bb282039ad4a69abb16dcb887a5bce567c075d731d9b3c7ad8eaf
+  ORAS_SIGNING_KEY_FINGERPRINT: 2DA461D13B0C27845EDFA77FE462A3894CBAAA47 # gitleaks:allow
+  ORAS_GIT_COMMIT: fe425992fdfdf300a1cfb380bc4271b3e1a3d3db
   CANDIDATE_COMMIT: bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75
   GOVERNANCE_HEAD: 7c918e328f6336761f0c65540a65fae8b84e9117
   VEX_SHA256: ba6ec01d89e3140a8538d9e5669be8b05f1e31ac3c475cf65a8d6907302dc1ff
@@ -42,6 +49,8 @@ jobs:
     env:
       REGISTRY_AUTH_DIR: ${{ runner.temp }}/qwen-registry-auth
       REGISTRY_AUTH_FILE: ${{ runner.temp }}/qwen-registry-auth/config.json
+      ORAS_TMP_DIR: ${{ runner.temp }}/qwen-oras-1.3.2
+      ORAS_BIN: ${{ runner.temp }}/qwen-oras-1.3.2/oras
 
     steps:
       - name: Check out protected default branch
@@ -103,14 +112,68 @@ jobs:
             ' final-openvex.json >/dev/null
           cp "${LOCAL_SBOM_PATH}" final-sbom.cdx.json
 
-      - name: Verify daemonless Skopeo and exact read-only OCI archive
+      - name: Install signature-verified daemonless ORAS
         shell: bash
         run: |
           set -euo pipefail
-          command -v skopeo
+          test "${ORAS_VERSION}" = "1.3.2"
+          test "${ORAS_ARCHIVE_SHA256}" = "9229ccc6d17bb282039ad4a69abb16dcb887a5bce567c075d731d9b3c7ad8eaf"
+          test "${ORAS_SIGNING_KEY_FINGERPRINT}" = "2DA461D13B0C27845EDFA77FE462A3894CBAAA47"
+          test "${ORAS_GIT_COMMIT}" = "fe425992fdfdf300a1cfb380bc4271b3e1a3d3db"
+          install -d -m 0700 "${ORAS_TMP_DIR}" "${ORAS_TMP_DIR}/gnupg"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${ORAS_TMP_DIR}/oras.tar.gz" "${ORAS_ARCHIVE_URL}"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${ORAS_TMP_DIR}/checksums.txt" "${ORAS_CHECKSUMS_URL}"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${ORAS_TMP_DIR}/checksums.txt.asc" "${ORAS_SIGNATURE_URL}"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${ORAS_TMP_DIR}/KEYS" "${ORAS_KEYS_URL}"
+          chmod 0600 "${ORAS_TMP_DIR}"/{oras.tar.gz,checksums.txt,checksums.txt.asc,KEYS}
+          test "$(sha256sum "${ORAS_TMP_DIR}/oras.tar.gz" | cut -d' ' -f1)" = \
+            "${ORAS_ARCHIVE_SHA256}"
+          gpg --batch --homedir "${ORAS_TMP_DIR}/gnupg" \
+            --import "${ORAS_TMP_DIR}/KEYS" >/dev/null 2>&1
+          gpg --batch --homedir "${ORAS_TMP_DIR}/gnupg" --status-fd 1 \
+            --verify "${ORAS_TMP_DIR}/checksums.txt.asc" \
+            "${ORAS_TMP_DIR}/checksums.txt" 2>/dev/null > "${ORAS_TMP_DIR}/signature.status"
+          signer_fingerprint="$(awk '$2 == "VALIDSIG" {print $3}' \
+            "${ORAS_TMP_DIR}/signature.status")"
+          test "${signer_fingerprint}" = "${ORAS_SIGNING_KEY_FINGERPRINT}"
+          grep ' oras_1.3.2_linux_amd64.tar.gz$' "${ORAS_TMP_DIR}/checksums.txt" | \
+            sed "s#  oras_1.3.2_linux_amd64.tar.gz#  ${ORAS_TMP_DIR}/oras.tar.gz#" | \
+            sha256sum --check --strict
+          python3 - "${ORAS_TMP_DIR}/oras.tar.gz" <<'PY'
+          import sys
+          import tarfile
+          from pathlib import PurePosixPath
+
+          with tarfile.open(sys.argv[1], "r:gz") as archive:
+              members = archive.getmembers()
+              if {member.name for member in members} != {"LICENSE", "oras"}:
+                  raise SystemExit("unexpected ORAS archive members")
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or ".." in path.parts:
+                      raise SystemExit("unsafe ORAS archive path")
+                  if not member.isfile() or member.issym() or member.islnk():
+                      raise SystemExit("non-regular ORAS archive member")
+                  if bool(member.mode & 0o111) != (member.name == "oras"):
+                      raise SystemExit("unexpected ORAS executable member")
+          PY
+          tar --extract --gzip --file "${ORAS_TMP_DIR}/oras.tar.gz" \
+            --directory "${ORAS_TMP_DIR}" --no-same-owner --no-same-permissions oras
+          chmod 0500 "${ORAS_BIN}"
+          test "$("${ORAS_BIN}" version | awk '/^Version:/{print $2}')" = "${ORAS_VERSION}"
+          test "$("${ORAS_BIN}" version | awk '/^Git commit:/{print $3}')" = "${ORAS_GIT_COMMIT}"
+
+      - name: Verify exact read-only OCI archive with ORAS
+        shell: bash
+        run: |
+          set -euo pipefail
           command -v jq
           command -v tar
-          test "$(skopeo --version)" = "skopeo version ${SKOPEO_VERSION}"
+          test -x "${ORAS_BIN}"
           test -f "${OCI_ARCHIVE_PATH}"
           test ! -L "${OCI_ARCHIVE_PATH}"
           test ! -w "${OCI_ARCHIVE_PATH}"
@@ -129,6 +192,9 @@ jobs:
             sha256sum | cut -d' ' -f1)" = "${IMAGE_DIGEST#sha256:}"
           test "$(tar -xOf "${OCI_ARCHIVE_PATH}" "${archive_blob}" | \
             jq -r .mediaType)" = "${OCI_INDEX_MEDIA_TYPE}"
+          source_manifest_digest="$("${ORAS_BIN}" manifest fetch --oci-layout \
+            "${OCI_ARCHIVE_PATH}@${IMAGE_DIGEST}" | sha256sum | cut -d' ' -f1)"
+          test "sha256:${source_manifest_digest}" = "${IMAGE_DIGEST}"
 
       - name: Create temporary registry authentication
         shell: bash
@@ -138,8 +204,8 @@ jobs:
           set -euo pipefail
           install -d -m 0700 "${REGISTRY_AUTH_DIR}"
           umask 077
-          printf '%s' "${GH_TOKEN}" | skopeo login \
-            --authfile "${REGISTRY_AUTH_FILE}" \
+          printf '%s' "${GH_TOKEN}" | "${ORAS_BIN}" login \
+            --registry-config "${REGISTRY_AUTH_FILE}" \
             --username "${GITHUB_ACTOR}" \
             --password-stdin ghcr.io >/dev/null
           test -s "${REGISTRY_AUTH_FILE}"
@@ -151,18 +217,16 @@ jobs:
         run: |
           set -euo pipefail
           target="${IMAGE_REPOSITORY}:${PUBLISH_TAG}"
-          skopeo copy \
-            --all \
-            --preserve-digests \
-            --authfile "${REGISTRY_AUTH_FILE}" \
-            --digestfile published-digest.txt \
-            "oci-archive:${OCI_ARCHIVE_PATH}" \
-            "docker://${target}"
-          registry_digest="$(tr -d '[:space:]' < published-digest.txt)"
+          "${ORAS_BIN}" cp --no-tty --from-oci-layout \
+            --to-registry-config "${REGISTRY_AUTH_FILE}" \
+            "${OCI_ARCHIVE_PATH}@${IMAGE_DIGEST}" "${target}"
+          registry_digest="$("${ORAS_BIN}" resolve \
+            --registry-config "${REGISTRY_AUTH_FILE}" "${target}")"
           test "${registry_digest}" = "${IMAGE_DIGEST}"
-          remote_digest="$(skopeo inspect --raw \
-            --authfile "${REGISTRY_AUTH_FILE}" \
-            "docker://${target}" | sha256sum | cut -d' ' -f1)"
+          printf '%s\n' "${registry_digest}" > published-digest.txt
+          remote_digest="$("${ORAS_BIN}" manifest fetch \
+            --registry-config "${REGISTRY_AUTH_FILE}" "${target}" | \
+            sha256sum | cut -d' ' -f1)"
           test "sha256:${remote_digest}" = "${IMAGE_DIGEST}"
           printf 'registry_digest=%s\n' "${registry_digest}" >> "${GITHUB_OUTPUT}"
           printf 'subject=%s@%s\n' "${IMAGE_REPOSITORY}" "${registry_digest}" >> "${GITHUB_OUTPUT}"
@@ -249,7 +313,13 @@ jobs:
           if [[ -d "${REGISTRY_AUTH_DIR}" ]]; then
             rmdir -- "${REGISTRY_AUTH_DIR}"
           fi
+          if [[ -d "${ORAS_TMP_DIR}" ]]; then
+            test "${ORAS_TMP_DIR}" = "${RUNNER_TEMP}/qwen-oras-1.3.2"
+            find "${ORAS_TMP_DIR}" -depth -mindepth 1 -delete
+            rmdir -- "${ORAS_TMP_DIR}"
+          fi
           test ! -e "${REGISTRY_AUTH_FILE}"
+          test ! -e "${ORAS_TMP_DIR}"
 
   independently-verify:
     needs: publish-sign
