@@ -26,8 +26,8 @@ services:
       QWEN_TRUSTED_PROXY_CIDR: 10.250.241.2/32
       QWEN_ALLOWED_CLOCK_SKEW_SECONDS: "300"
     volumes:
-      - /etc/codestra/secrets/middleware-staging/qwen-ai-01/qwen-ai-01-hmac-20260804-01:/run/secrets/qwen-hmac:ro
-      - /etc/codestra/pki/middleware-private-ingress/client-ca.crt:/run/secrets/client-ca.crt:ro
+      - /run/codestra/qwen-auth-verifier-secrets/qwen-hmac:/run/secrets/qwen-hmac:ro
+      - /run/codestra/qwen-auth-verifier-secrets/client-ca.crt:/run/secrets/client-ca.crt:ro
       - qwen_auth_replay:/var/lib/codestra/qwen-auth-replay
     expose:
       - "8095"

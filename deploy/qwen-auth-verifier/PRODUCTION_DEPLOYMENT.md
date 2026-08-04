@@ -21,9 +21,13 @@ Neither Compose file publishes a verifier port.
    attestations.
 2. Back up the live Compose and Caddy files, including SHA-256 checksums.
 3. Require the HMAC and client-CA inputs to be regular, non-symlink files owned
-   by root and no more permissive than `0600`.
-4. Grant only UID 10001 read ACLs on those two source files. Record the prior
-   ACLs and remove the grants during rollback.
+   by root with mode exactly `0600`. Record their checksums and ACLs; do not add
+   an ACL or change either source file.
+4. Run `prepare-runtime-secrets` as root. It fail-closes unless `/run` is tmpfs,
+   removes only the two exact stale projection names, and projects them beneath
+   `/run/codestra/qwen-auth-verifier-secrets` as UID/GID 10001 mode `0600` in a
+   UID/GID 10001 mode `0700` directory. Verify projected and source checksums
+   match without recording credential contents.
 5. Create `codestra_qwen_auth_private` with `--internal` and subnet
    `10.250.241.0/29`; stop if that subnet overlaps any route or Docker network.
 6. Validate the combined live Compose plus reverse-proxy overlay and the
@@ -31,11 +35,17 @@ Neither Compose file publishes a verifier port.
 7. Insert `Caddyfile.production.snippet` inside the existing private mTLS
    `route` block immediately before the VICIdial matcher. Do not modify the
    VICIdial matcher.
-8. Validate Caddy before reload and arm an automatic rollback first.
+8. Initialize the named replay volume with `initialize-replay-volume`. The
+   reviewed script runs the signed verifier image once with no network and only
+   the `CHOWN` and `FOWNER` capabilities, removes the container on exit, and
+   enforces owner 10001:10001 and mode `0700`. It never creates a privileged
+   long-running service.
+9. Validate Caddy before reload and arm an automatic rollback first.
 
 ## Acceptance
 
-- The verifier container is healthy and has no published port.
+- The verifier sees both projected credentials as UID/GID 10001 mode `0600`,
+  is healthy, and has no published port.
 - Caddy and the verifier are the only members of the dedicated network.
 - Public-interface requests cannot reach the route.
 - Private requests from any source except `10.40.0.4` return `403`.
@@ -50,7 +60,8 @@ Neither Compose file publishes a verifier port.
 3. Stop and remove only the Qwen verifier Compose project.
 4. Disconnect and remove `codestra_qwen_auth_private` after confirming it has
    no endpoints.
-5. Remove only the two UID 10001 ACL entries added during deployment.
+5. Run `cleanup-runtime-secrets` and prove the projection directory is absent.
+   Confirm original source checksums, owner, mode, and ACLs are unchanged.
 6. Preserve the replay volume, signed evidence, and middleware-controlled
    identity files.
 7. Confirm the public route, private VICIdial route, and write-disable flags are
