@@ -17,8 +17,8 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.core.config import settings
 from app import metrics
+from app.core.config import settings
 
 
 class OrderStatus(str, Enum):
@@ -126,13 +126,13 @@ class OrderEnvelope(StrictModel):
     expires_at: datetime
 
     @model_validator(mode="after")
-    def validate_time_order(self) -> "OrderEnvelope":
+    def validate_time_order(self) -> OrderEnvelope:
         if self.expires_at <= self.requested_at:
             raise ValueError("expires_at must be after requested_at")
         return self
 
     @model_validator(mode="after")
-    def normalize_approval_fields(self) -> "OrderEnvelope":
+    def normalize_approval_fields(self) -> OrderEnvelope:
         if self.approval_required is None:
             self.approval_required = self.approval.required
         if self.approval_status is None:

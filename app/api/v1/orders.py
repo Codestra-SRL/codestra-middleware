@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
@@ -104,7 +104,7 @@ async def dispatch_order(order: OrderEnvelope,
     if record["content_hash"] != content_hash(order):
         raise HTTPException(409, "order content changed after intake")
     record["status"] = OrderStatus.DISPATCHED_TO_N8N.value
-    record["n8n_dispatch"] = {"workflow_code": order.workflow_code, "accepted_at": datetime.now(timezone.utc).isoformat()}
+    record["n8n_dispatch"] = {"workflow_code": order.workflow_code, "accepted_at": datetime.now(UTC).isoformat()}
     STORE.command(order.command_id, order.order_id)["status"] = OrderStatus.DISPATCHED_TO_N8N.value
     return {"accepted": True, "status": record["status"], "command_id": order.command_id, "trace_id": order.trace_id}
 
