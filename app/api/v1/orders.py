@@ -6,6 +6,7 @@ from pydantic import Field
 
 from app.order_orchestration import (
     ApprovalRequest,
+    DeadLetterEnvelope,
     ErrorEnvelope,
     OrderEnvelope,
     OrderStatus,
@@ -30,6 +31,11 @@ class ProgressRequest(OrderEnvelope):
 
 class ReconciliationRequest(OrderEnvelope):
     n8n_execution_id: str = Field(min_length=1, max_length=128)
+
+
+class ProgressEnvelope(OrderEnvelope):
+    progress_percent: int = Field(ge=0, le=100)
+    message: str = Field(max_length=256)
 
 
 def _integrity(body: Any, timestamp: str | None, nonce: str | None,
@@ -133,6 +139,37 @@ async def receive_error(error: ErrorEnvelope,
     return {"accepted": True, "status": record["status"], "order_id": error.order_id}
 
 
+@router.post("/integrations/n8n/progress", status_code=status.HTTP_202_ACCEPTED)
+async def receive_progress(progress: ProgressEnvelope,
+                           x_timestamp: str | None = Header(default=None),
+                           x_nonce: str | None = Header(default=None),
+                           x_signature: str | None = Header(default=None),
+                           x_body_sha256: str | None = Header(default=None)) -> dict[str, Any]:
+    _integrity(progress, x_timestamp, x_nonce, x_signature, x_body_sha256)
+    record = STORE.get(progress.order_id)
+    command = STORE.commands.get(progress.command_id)
+    if not command or record["command_id"] != progress.command_id:
+        raise HTTPException(409, "command or trace reference mismatch")
+    command["progress"].append({"percent": progress.progress_percent, "message": progress.message})
+    record["status"] = OrderStatus.RUNNING.value
+    return {"accepted": True, "status": record["status"], "order_id": progress.order_id}
+
+
+@router.post("/integrations/n8n/dead-letter", status_code=status.HTTP_202_ACCEPTED)
+async def receive_dead_letter(dead_letter: DeadLetterEnvelope,
+                              x_timestamp: str | None = Header(default=None),
+                              x_nonce: str | None = Header(default=None),
+                              x_signature: str | None = Header(default=None),
+                              x_body_sha256: str | None = Header(default=None)) -> dict[str, Any]:
+    _integrity(dead_letter, x_timestamp, x_nonce, x_signature, x_body_sha256)
+    record = STORE.get(dead_letter.order_id)
+    if record["command_id"] != dead_letter.command_id or record["trace_id"] != dead_letter.trace_id:
+        raise HTTPException(409, "command or trace reference mismatch")
+    record["status"] = OrderStatus.DEAD_LETTER.value
+    record["dead_letter"] = dead_letter.model_dump(mode="json")
+    return {"accepted": True, "status": record["status"], "order_id": dead_letter.order_id}
+
+
 @router.post("/integrations/n8n/reconciliation", status_code=status.HTTP_202_ACCEPTED)
 async def reconcile_order(order: OrderEnvelope,
                           x_timestamp: str | None = Header(default=None),
@@ -212,6 +249,18 @@ async def command_error(command_id: str, error: ErrorEnvelope,
     if error.command_id != command_id:
         raise HTTPException(409, "command reference mismatch")
     return await receive_error(error, x_timestamp, x_nonce, x_signature, x_body_sha256)
+
+
+@router.post("/orchestration/commands/{command_id}/dead-letter", status_code=status.HTTP_202_ACCEPTED)
+async def command_dead_letter(command_id: str, dead_letter: DeadLetterEnvelope,
+                              x_timestamp: str | None = Header(default=None),
+                              x_nonce: str | None = Header(default=None),
+                              x_signature: str | None = Header(default=None),
+                              x_body_sha256: str | None = Header(default=None)) -> dict[str, Any]:
+    _integrity(dead_letter, x_timestamp, x_nonce, x_signature, x_body_sha256)
+    if dead_letter.command_id != command_id:
+        raise HTTPException(409, "command reference mismatch")
+    return await receive_dead_letter(dead_letter, x_timestamp, x_nonce, x_signature, x_body_sha256)
 
 
 @router.post("/orchestration/commands/{command_id}/reconcile", status_code=status.HTTP_202_ACCEPTED)

@@ -14,6 +14,7 @@ registry = json.loads((ORDER_DIR / "workflow-registry.json").read_text())
 entries = registry["workflows"]
 assert registry["payload_schema"] == "codestra.order.command.v1"
 assert registry["result_schema"] == "codestra.order.result.v1"
+assert set(registry) >= {"payload_schema", "result_schema", "workflows"}
 assert len(entries) >= 10
 assert {item["workflow_code"] for item in entries} >= ALLOWED_WORKFLOWS
 for export in ORDER_DIR.glob("CdstOrder*.json"):
@@ -22,6 +23,8 @@ for export in ORDER_DIR.glob("CdstOrder*.json"):
     text = export.read_text().lower()
     assert "codestra_middleware_base_url" in text
     assert all(token not in text for token in ("odoo", "vicidial", "postiz"))
+for schema in ("error", "progress", "result", "reconciliation", "dead_letter"):
+    assert (ROOT / f"schemas/orders/codestra.order.{schema}.v1.json").exists()
 print("ORDER_ORCHESTRATION_ARTIFACT_GATE=PASS")
 print("N8N_DIRECT_ODOO_PATH_COUNT=0")
 print("N8N_DIRECT_VICIDIAL_PATH_COUNT=0")

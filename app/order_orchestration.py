@@ -178,6 +178,18 @@ class ErrorEnvelope(StrictModel):
     trace_id: str
 
 
+class DeadLetterEnvelope(StrictModel):
+    schema_version: str = Field(pattern="^codestra\\.order\\.dead_letter\\.v1$")
+    command_id: str
+    order_id: str
+    workflow_code: str
+    reason_code: str
+    reason: str = Field(max_length=512)
+    retry_count: int = Field(ge=0)
+    correlation_id: str
+    trace_id: str
+
+
 def content_hash(order: OrderEnvelope) -> str:
     data = order.model_dump(
         mode="json",
