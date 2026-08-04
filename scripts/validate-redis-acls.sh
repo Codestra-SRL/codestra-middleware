@@ -6,5 +6,7 @@ grep -Eq '^user default off' "$acl"
 grep -Eq '^user middleware-service on' "$acl"
 grep -Eq '^user n8n-service on' "$acl"
 grep -Eq -- '-flushall|-@admin' "$acl"
-! grep -Eq 'redis_password|QUEUE_BULL_REDIS_PASSWORD|BEGIN (RSA|OPENSSH) PRIVATE KEY' "$acl"
+if grep -Eq 'redis_password|QUEUE_BULL_REDIS_PASSWORD|BEGIN (RSA|OPENSSH) PRIVATE KEY' "$acl"; then
+  exit 1
+fi
 echo REDIS_ACL_POLICY_VALIDATION=PASS
