@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import hmac
 import json
-import time
-from collections import defaultdict, deque
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -13,9 +10,10 @@ from threading import Lock
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.internal.ai_jobs import WorkerPrincipal, authenticate_worker
 from app.core.config import settings
 
 PREFIX = "/internal/api/v1/ai"
@@ -72,19 +70,7 @@ ADAPTERS = {target: MockAdapter(target) for target in Target}
 _commands: dict[str, dict[str, Any]] = {}
 _idempotency: dict[tuple[str, str], tuple[str, str]] = {}
 _callback_idempotency: dict[tuple[str, str], str] = {}
-_nonces: dict[tuple[str, str], float] = {}
-_rate: dict[str, deque[float]] = defaultdict(deque)
 _lock = Lock()
-
-
-def _secret() -> bytes:
-    path = Path(settings.ai_hmac_secret_file)
-    if not settings.ai_hmac_secret_file or not path.is_absolute() or not path.is_file():
-        raise HTTPException(503, "AI service authentication is not configured")
-    value = path.read_bytes().strip()
-    if len(value) < 32:
-        raise HTTPException(503, "AI service authentication is not configured")
-    return value
 
 
 def _audit(event: str, **fields: Any) -> None:
@@ -99,46 +85,9 @@ def _audit(event: str, **fields: Any) -> None:
 
 
 async def authenticate(
-    request: Request,
-    x_service_id: str = Header(alias="X-Service-ID"),
-    x_timestamp: str = Header(alias="X-Timestamp"),
-    x_nonce: str = Header(alias="X-Nonce", min_length=16, max_length=128),
-    x_signature: str = Header(alias="X-Signature", min_length=64, max_length=64),
+    principal: WorkerPrincipal = Depends(authenticate_worker),
 ) -> str:
-    now = time.time()
-    try:
-        timestamp = int(x_timestamp)
-    except ValueError as exc:
-        raise HTTPException(401, "invalid timestamp") from exc
-    if x_service_id != settings.ai_service_id or abs(now - timestamp) > settings.ai_signature_ttl_seconds:
-        _audit("authentication.denied", service_id=x_service_id, reason="identity_or_timestamp")
-        raise HTTPException(401, "authentication denied")
-    body = await request.body()
-    digest = hashlib.sha256(body).hexdigest()
-    canonical = "\n".join((request.method, request.url.path, x_service_id, x_timestamp, x_nonce, digest))
-    expected = hmac.new(_secret(), canonical.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, x_signature.lower()):
-        _audit("authentication.denied", service_id=x_service_id, reason="signature")
-        raise HTTPException(401, "authentication denied")
-    with _lock:
-        expired = [key for key, expiry in _nonces.items() if expiry <= now]
-        for key in expired:
-            del _nonces[key]
-        nonce_key = (x_service_id, x_nonce)
-        if nonce_key in _nonces:
-            _audit("authentication.denied", service_id=x_service_id, reason="replay")
-            raise HTTPException(409, "replay detected")
-        _nonces[nonce_key] = now + settings.ai_signature_ttl_seconds
-        bucket = _rate[x_service_id]
-        while bucket and bucket[0] <= now - 60:
-            bucket.popleft()
-        if len(bucket) >= settings.ai_rate_limit_per_minute:
-            raise HTTPException(429, "rate limit exceeded")
-        bucket.append(now)
-    request.state.ai_service_id = x_service_id
-    _audit("authentication.accepted", service_id=x_service_id, method=request.method,
-           path=request.url.path, body_hash=digest)
-    return x_service_id
+    return principal.service_id
 
 
 def _context(correlation_id: str | None, idempotency_key: str | None) -> tuple[str, str]:

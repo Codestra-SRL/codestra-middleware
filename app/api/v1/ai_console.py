@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import ai_jobs
 from app.core.config import settings
+from app.core.jwt_auth import JWTAuthError, KeycloakValidator
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai-console"])
@@ -35,21 +37,37 @@ class MessageRequest(StrictModel):
 
 
 class Tenant:
-    def __init__(self, organization_id: UUID, workspace_id: UUID, user_id: str):
+    def __init__(self, organization_id: UUID, workspace_id: UUID, user_id: str,
+                 roles: frozenset[str]):
         self.organization_id = organization_id
         self.workspace_id = workspace_id
         self.user_id = user_id
+        self.roles = roles
 
 
 def tenant(
     authorization: Annotated[str, Header(alias="Authorization")],
-    organization_id: Annotated[UUID, Header(alias="X-Organization-ID")],
-    workspace_id: Annotated[UUID, Header(alias="X-Workspace-ID")],
-    user_id: Annotated[str, Header(alias="X-User-ID", min_length=1, max_length=128)],
 ) -> Tenant:
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(401, "authentication required")
-    return Tenant(organization_id, workspace_id, user_id)
+    try:
+        scheme, separator, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not separator or not token:
+            raise JWTAuthError("bearer authorization required")
+        claims: dict[str, Any] = KeycloakValidator(
+            issuer=settings.keycloak_issuer,
+            audience=settings.keycloak_audience,
+            jwks_url=settings.keycloak_jwks_url,
+            authorized_parties=frozenset(value.strip()
+                for value in settings.keycloak_authorized_parties.split(",") if value.strip()),
+        ).validate(token)
+        organization_id = UUID(str(claims["organization_id"]))
+        workspace_id = UUID(str(claims["workspace_id"]))
+        user_id = str(claims["sub"])
+        roles = frozenset(claims.get("realm_access", {}).get("roles", []))
+        if not roles.intersection({"codestra_ai_user", "codestra_ai_developer", "codestra_admin"}):
+            raise JWTAuthError("AI role denied")
+    except (JWTAuthError, KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(401, "authentication required") from exc
+    return Tenant(organization_id, workspace_id, user_id, roles)
 
 
 def request_context(value: Annotated[str, Header(alias="X-Correlation-ID")]) -> str:
@@ -74,6 +92,10 @@ async def create_message(conversation_id: UUID, body: MessageRequest,
                          db: AsyncSession = Depends(get_session)) -> dict[str, object]:
     if len(body.content.encode()) > settings.ai_job_max_context_bytes:
         raise HTTPException(413, "context limit exceeded")
+    if body.task_type == "coding" and not subject.roles.intersection(
+        {"codestra_ai_developer", "codestra_admin"}
+    ):
+        raise HTTPException(403, "coding role required")
     allowed = {item.strip() for item in settings.ai_job_project_allowlist.split(",") if item.strip()}
     if body.task_type == "coding" and (not body.project_key or body.project_key not in allowed):
         raise HTTPException(403, "project is not approved")

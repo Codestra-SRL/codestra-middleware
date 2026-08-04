@@ -73,9 +73,11 @@ class Settings(BaseSettings):
     ai_service_id: str = "qwen"
     ai_worker_service_id: str = "qwen-ai-01"
     ai_worker_source_cidrs: str = "10.40.0.4/32"
-    ai_worker_certificate_serial: str = "3001"
+    ai_worker_trusted_proxy_cidr: str = "10.250.241.2/32"
+    ai_worker_certificate_serial: str = "12289"
     ai_worker_spiffe_id: str = "spiffe://codestra.internal/service/qwen-ai-01"
-    ai_worker_required_scopes: str = "ai.auth ai.worker"
+    ai_worker_hmac_key_id: str = "qwen-ai-01-hmac-20260804-01"
+    ai_worker_client_ca_file: str = ""
     ai_hmac_secret_file: str = ""
     ai_audit_log_file: str = ""
     ai_signature_ttl_seconds: int = 300

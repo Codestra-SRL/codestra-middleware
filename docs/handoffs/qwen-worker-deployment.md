@@ -9,7 +9,8 @@ Run this only from the local Codex session on the Qwen deployment zone (`10.40.0
 - Worker service: `qwen-ai-01`
 - Certificate serial: `3001`
 - SPIFFE ID: `spiffe://codestra.internal/service/qwen-ai-01`
-- Required scopes: `ai.auth ai.worker`
+- Permissions are bound server-side to `qwen-ai-01`. The worker must never send
+  certificate-identity or authorization-scope headers.
 - Verification endpoint: `POST /internal/api/v1/ai/auth/verify`
 - Worker endpoints: claim, heartbeat, chunks, complete, fail, and cancellation check under `/internal/api/v1/ai/worker/`
 
@@ -28,8 +29,21 @@ Run this only from the local Codex session on the Qwen deployment zone (`10.40.0
 
 ## Required verification
 
-- Positive: valid mTLS identity, current timestamp, unique nonce, exact scopes, and valid raw-body HMAC returns verified.
-- Negative: wrong service, serial, SPIFFE ID, scope, source, body hash, or signature is rejected.
+- Every request uses exactly `X-Service-ID`, `X-HMAC-Key-ID`, `X-Timestamp`,
+  `X-Nonce`, `X-Body-SHA256`, `X-Signature`, and `X-Correlation-ID`.
+- Compute lowercase hexadecimal `BODY_DIGEST = SHA256(raw_body)` and lowercase
+  hexadecimal `X-Signature = HMAC-SHA256(secret, canonical)` where canonical is
+  `UPPERCASE_METHOD + "\n" + EXACT_PATH + "\n" + SERVICE_ID + "\n" +
+  TIMESTAMP + "\n" + NONCE + "\n" + BODY_DIGEST`, with no terminal newline.
+- Positive: valid mTLS identity, current Unix-seconds timestamp, unique nonce,
+  exact raw-body digest, and valid HMAC returns the endpoint's fixed server-side
+  scope.
+- Negative: wrong service or key ID, invalid certificate, altered body,
+  incorrect digest/signature, expired/future timestamp, replay, and a source
+  other than `10.40.0.4` are rejected.
+- Send no `X-Client-Certificate-Serial`, `X-Client-SPIFFE-ID`, or
+  `X-Service-Scopes`; middleware discards these if supplied and derives identity
+  solely from the Caddy-verified client certificate.
 - Expiry: timestamp beyond the allowed skew is rejected.
 - Replay: reusing a nonce is rejected.
 - Fencing: a stale fencing token cannot heartbeat, append, complete, or fail a job.

@@ -14,6 +14,14 @@ depends_on = None
 
 def upgrade() -> None:
     statements = ("""
+    CREATE TABLE ai_service_nonces (
+      service_id text NOT NULL, nonce_digest char(64) NOT NULL,
+      received_at timestamptz NOT NULL, expires_at timestamptz NOT NULL,
+      correlation_id text,
+      PRIMARY KEY(service_id, nonce_digest),
+      CONSTRAINT ck_ai_nonce_digest CHECK (nonce_digest ~ '^[0-9a-f]{64}$')
+    )
+    """, "CREATE INDEX ix_ai_service_nonce_expiry ON ai_service_nonces(expires_at)", """
     CREATE TABLE ai_conversations (
       id uuid PRIMARY KEY, organization_id uuid NOT NULL, workspace_id uuid NOT NULL,
       created_by text NOT NULL, title text NOT NULL, status text NOT NULL DEFAULT 'active',
@@ -85,6 +93,6 @@ def downgrade() -> None:
         "DROP TABLE ai_audit_events", "DROP TABLE ai_worker_heartbeats",
         "DROP TABLE ai_job_attempts", "DROP TABLE ai_job_chunks",
         "DROP TABLE ai_generation_jobs", "DROP TABLE ai_messages",
-        "DROP TABLE ai_conversations",
+        "DROP TABLE ai_conversations", "DROP TABLE ai_service_nonces",
     ):
         op.execute(statement)

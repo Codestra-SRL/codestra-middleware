@@ -67,6 +67,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
     }
 )
 SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
+SELF_AUTHENTICATED_PREFIXES = ("/api/v1/ai/",)
 N8N_TRANSITION_PATH = re.compile(
     r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
 )
@@ -90,6 +91,7 @@ async def control_request_guard(request: Request, call_next):
             request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
         )
         and request.url.path not in SELF_AUTHENTICATED_PATHS
+        and not request.url.path.startswith(SELF_AUTHENTICATED_PREFIXES)
     ):
         try:
             verify_bearer(
