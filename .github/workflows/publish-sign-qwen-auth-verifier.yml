@@ -46,13 +46,17 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    env:
-      REGISTRY_AUTH_DIR: ${{ runner.temp }}/qwen-registry-auth
-      REGISTRY_AUTH_FILE: ${{ runner.temp }}/qwen-registry-auth/config.json
-      ORAS_TMP_DIR: ${{ runner.temp }}/qwen-oras-1.3.2
-      ORAS_BIN: ${{ runner.temp }}/qwen-oras-1.3.2/oras
-
     steps:
+      - name: Initialize run-scoped temporary paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${RUNNER_TEMP}"
+          printf 'REGISTRY_AUTH_DIR=%s/qwen-registry-auth\n' "${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+          printf 'REGISTRY_AUTH_FILE=%s/qwen-registry-auth/config.json\n' "${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+          printf 'ORAS_TMP_DIR=%s/qwen-oras-1.3.2\n' "${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+          printf 'ORAS_BIN=%s/qwen-oras-1.3.2/oras\n' "${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+
       - name: Check out protected default branch
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -328,11 +332,15 @@ jobs:
     permissions:
       contents: read
       packages: read
-    env:
-      REGISTRY_AUTH_DIR: ${{ runner.temp }}/qwen-verify-registry-auth
-      REGISTRY_AUTH_FILE: ${{ runner.temp }}/qwen-verify-registry-auth/config.json
-
     steps:
+      - name: Initialize independent run-scoped temporary paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${RUNNER_TEMP}"
+          printf 'REGISTRY_AUTH_DIR=%s/qwen-verify-registry-auth\n' "${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+          printf 'REGISTRY_AUTH_FILE=%s/qwen-verify-registry-auth/config.json\n' "${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+
       - name: Download exact run-scoped signing evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:

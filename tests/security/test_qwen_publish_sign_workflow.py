@@ -122,6 +122,14 @@ def test_exact_daemonless_destination_and_archive_are_enforced():
     assert 'test ! -e "${ORAS_TMP_DIR}"' in TEXT
 
 
+def test_temporary_paths_are_initialized_only_at_runner_runtime():
+    assert "${{ runner.temp }}" not in TEXT
+    assert TEXT.count('test -n "${RUNNER_TEMP}"') == 2
+    assert '"${RUNNER_TEMP}" >> "${GITHUB_ENV}"' in TEXT
+    assert "Initialize run-scoped temporary paths" in TEXT
+    assert "Initialize independent run-scoped temporary paths" in TEXT
+
+
 def test_signature_attestations_and_independent_verification_are_exact():
     assert "cosign sign --yes" in TEXT
     for predicate_type in ("cyclonedx", "slsaprovenance", "openvex"):
