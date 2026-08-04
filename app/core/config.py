@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     odoo_delivery_enabled: bool = False
     n8n_delivery_enabled: bool = False
     n8n_event_delivery_enabled: bool = False
+    order_orchestration_enabled: bool = False
+    n8n_order_dispatch_enabled: bool = False
     n8n_production_workflows_enabled: bool = False
     automation_actions_enabled: bool = False
     odoo_automation_writes_enabled: bool = False
@@ -75,6 +77,7 @@ class Settings(BaseSettings):
     ai_worker_source_cidrs: str = "10.40.0.4/32"
     ai_worker_trusted_proxy_cidr: str = "10.250.241.2/32"
     ai_worker_certificate_serial: str = "12289"
+    ai_worker_certificate_ip: str = "10.40.0.4"
     ai_worker_spiffe_id: str = "spiffe://codestra.internal/service/qwen-ai-01"
     ai_worker_hmac_key_id: str = "qwen-ai-01-hmac-20260804-01"
     ai_worker_client_ca_file: str = ""
@@ -130,6 +133,10 @@ class Settings(BaseSettings):
     allow_live_email: bool = False
     allow_live_sms: bool = False
     ai_enrichment_enabled: bool = False
+    qwen_base_url_file: str = ""
+    qwen_api_key_file: str = ""
+    litellm_base_url_file: str = ""
+    litellm_api_key_file: str = ""
     report_delivery_enabled: bool = False
     outbox_worker_enabled: bool = False
     outbox_max_attempts: int = 5
@@ -187,6 +194,14 @@ class Settings(BaseSettings):
     telephony_service_client_id: str = "codestra-middleware-telephony"
     telephony_credential_directory: str = ""
     vicidial_provisioning_enabled: bool = False
+    postiz_internal_base_url: str = ""
+    postiz_api_key_file: str = ""
+    postiz_organization_reference: str = ""
+    postiz_timeout_seconds: float = 10.0
+    postiz_delivery_enabled: bool = False
+    postiz_publish_enabled: bool = False
+    postiz_media_upload_enabled: bool = False
+    postiz_analytics_enabled: bool = False
     pjsip_provisioning_enabled: bool = False
     webphone_session_issuer_enabled: bool = False
     telephony_reconciliation_enabled: bool = False
@@ -231,6 +246,7 @@ class Settings(BaseSettings):
             self.telephony_command_worker_enabled,
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
+            self.postiz_publish_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
@@ -285,6 +301,46 @@ class Settings(BaseSettings):
                     raise ValueError(f"required {attribute} secret file is empty")
                 setattr(self, attribute, value)
 
+    @staticmethod
+    def _optional_secret(filename: str, label: str) -> str:
+        if not filename:
+            return ""
+        path = Path(filename)
+        if not path.is_absolute() or not path.is_file():
+            raise ValueError(f"{label} secret file is unavailable")
+        value = path.read_text().strip()
+        if not value:
+            raise ValueError(f"{label} secret file is empty")
+        return value
+
+    @property
+    def qwen_base_url(self) -> str:
+        return self._optional_secret(self.qwen_base_url_file, "Qwen base URL")
+
+    @property
+    def qwen_api_key(self) -> str:
+        return self._optional_secret(self.qwen_api_key_file, "Qwen API key")
+
+    @property
+    def litellm_base_url(self) -> str:
+        return self._optional_secret(self.litellm_base_url_file, "LiteLLM base URL")
+
+    @property
+    def litellm_api_key(self) -> str:
+        return self._optional_secret(self.litellm_api_key_file, "LiteLLM API key")
+
+    @property
+    def postiz_api_key(self) -> str:
+        if not self.postiz_api_key_file:
+            return ""
+        path = Path(self.postiz_api_key_file)
+        if not path.is_absolute() or not path.is_file():
+            raise ValueError("Postiz API key file is unavailable")
+        value = path.read_text().strip()
+        if not value:
+            raise ValueError("Postiz API key file is empty")
+
+        return value
     def load_registry_snapshot_key(self) -> bytes:
         path = Path(self.registry_snapshot_signing_key_file)
         if not path.is_absolute() or not path.is_file():

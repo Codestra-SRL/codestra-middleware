@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from functools import lru_cache
 from typing import Any
 from typing import Annotated, Literal
 from uuid import UUID
@@ -18,9 +19,6 @@ from app.core import ai_jobs
 from app.core.config import settings
 from app.core.jwt_auth import JWTAuthError, KeycloakValidator
 from app.db.session import get_session
-
-router = APIRouter(prefix="/api/v1/ai", tags=["ai-console"])
-
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -45,6 +43,20 @@ class Tenant:
         self.roles = roles
 
 
+@lru_cache(maxsize=1)
+def _validator() -> KeycloakValidator:
+    return KeycloakValidator(
+        issuer=settings.keycloak_issuer,
+        audience=settings.keycloak_audience,
+        jwks_url=settings.keycloak_jwks_url,
+        authorized_parties=frozenset(
+            value.strip()
+            for value in settings.keycloak_authorized_parties.split(",")
+            if value.strip()
+        ),
+    )
+
+
 def tenant(
     authorization: Annotated[str, Header(alias="Authorization")],
 ) -> Tenant:
@@ -52,13 +64,7 @@ def tenant(
         scheme, separator, token = authorization.partition(" ")
         if scheme.lower() != "bearer" or not separator or not token:
             raise JWTAuthError("bearer authorization required")
-        claims: dict[str, Any] = KeycloakValidator(
-            issuer=settings.keycloak_issuer,
-            audience=settings.keycloak_audience,
-            jwks_url=settings.keycloak_jwks_url,
-            authorized_parties=frozenset(value.strip()
-                for value in settings.keycloak_authorized_parties.split(",") if value.strip()),
-        ).validate(token)
+        claims: dict[str, Any] = _validator().validate(token)
         organization_id = UUID(str(claims["organization_id"]))
         workspace_id = UUID(str(claims["workspace_id"]))
         user_id = str(claims["sub"])
@@ -68,6 +74,16 @@ def tenant(
     except (JWTAuthError, KeyError, TypeError, ValueError) as exc:
         raise HTTPException(401, "authentication required") from exc
     return Tenant(organization_id, workspace_id, user_id, roles)
+
+
+# Every current and future route on this router is authenticated independently
+# of the outer compatibility middleware. FastAPI caches the repeated dependency
+# call per request, so endpoint parameters receive the same validated principal.
+router = APIRouter(
+    prefix="/api/v1/ai",
+    tags=["ai-console"],
+    dependencies=[Depends(tenant)],
+)
 
 
 def request_context(value: Annotated[str, Header(alias="X-Correlation-ID")]) -> str:

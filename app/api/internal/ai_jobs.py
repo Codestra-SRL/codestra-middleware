@@ -5,13 +5,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import ipaddress
+import base64
+import binascii
 import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import unquote
 from uuid import UUID
 
 from cryptography import x509
@@ -83,8 +84,8 @@ def _source_allowed(host: str) -> bool:
 
 def _certificate_identity(encoded_certificate: str) -> None:
     try:
-        certificate = x509.load_pem_x509_certificate(
-            unquote(encoded_certificate).encode("ascii")
+        certificate = x509.load_der_x509_certificate(
+            base64.b64decode(encoded_certificate, validate=True)
         )
         ca_path = Path(settings.ai_worker_client_ca_file)
         if not ca_path.is_absolute() or ca_path.is_symlink() or not ca_path.is_file():
@@ -101,6 +102,11 @@ def _certificate_identity(encoded_certificate: str) -> None:
         ).value.get_values_for_type(x509.UniformResourceIdentifier)
         if uris != [settings.ai_worker_spiffe_id]:
             raise ValueError("SPIFFE")
+        addresses = certificate.extensions.get_extension_for_class(
+            x509.SubjectAlternativeName
+        ).value.get_values_for_type(x509.IPAddress)
+        if addresses != [ipaddress.ip_address(settings.ai_worker_certificate_ip)]:
+            raise ValueError("IP SAN")
         usage = certificate.extensions.get_extension_for_class(x509.KeyUsage).value
         if not usage.digital_signature:
             raise ValueError("key usage")
@@ -109,7 +115,13 @@ def _certificate_identity(encoded_certificate: str) -> None:
         ).value
         if ExtendedKeyUsageOID.CLIENT_AUTH not in extended:
             raise ValueError("client auth")
-    except (InvalidSignature, ValueError, UnicodeError, x509.ExtensionNotFound) as exc:
+    except (
+        InvalidSignature,
+        ValueError,
+        UnicodeError,
+        binascii.Error,
+        x509.ExtensionNotFound,
+    ) as exc:
         raise HTTPException(401, "authentication denied") from exc
 
 
@@ -146,7 +158,9 @@ async def authenticate_worker(
     nonce: Annotated[str, Header(alias="X-Nonce", min_length=16, max_length=128)],
     body_digest: Annotated[str, Header(alias="X-Body-SHA256")],
     signature: Annotated[str, Header(alias="X-Signature", min_length=64, max_length=64)],
-    certificate: Annotated[str, Header(alias="X-Codestra-Client-Certificate")],
+    certificate: Annotated[
+        str, Header(alias="X-Codestra-Client-Certificate-DER")
+    ],
     source_ip: Annotated[str, Header(alias="X-Codestra-Source-IP")],
     correlation_id: Annotated[str, Header(alias="X-Correlation-ID", min_length=8, max_length=128)],
     db: AsyncSession = Depends(get_session),

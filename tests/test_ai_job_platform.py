@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import hmac
 import ipaddress
@@ -6,7 +7,6 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import quote
 from uuid import uuid4
 
 import pytest
@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -45,6 +46,25 @@ def test_worker_contract_has_one_canonical_auth_and_no_memory_replay_store():
         assert spoofable not in source
 
 
+def test_ai_router_enforces_authentication_for_future_routes():
+    assert ai_console.router.dependencies
+    assert any(item.dependency is ai_console.tenant for item in ai_console.router.dependencies)
+
+    isolated = FastAPI()
+    isolated.include_router(ai_console.router)
+
+    @ai_console.router.get("/_future-auth-regression")
+    async def future_route():
+        return {"unexpected": True}
+
+    # Re-include to model a newly introduced route in a new application process.
+    guarded = FastAPI()
+    guarded.include_router(ai_console.router)
+    with TestClient(guarded) as client:
+        result = client.get("/api/v1/ai/_future-auth-regression")
+    assert result.status_code in {401, 422}
+
+
 def test_nonce_migration_is_atomic_durable_and_reversible():
     migration = (Path(__file__).resolve().parents[1]
                  / "migrations/versions/0030_ai_job_platform.py").read_text()
@@ -67,7 +87,11 @@ def worker_headers(method: str, path: str, body: bytes, certificate: bytes,
         "X-Timestamp": timestamp,
         "X-Nonce": nonce, "X-Signature": hmac.new(SECRET, canonical.encode(), hashlib.sha256).hexdigest(),
         "X-Body-SHA256": digest,
-        "X-Codestra-Client-Certificate": quote(certificate.decode(), safe=""),
+        "X-Codestra-Client-Certificate-DER": base64.b64encode(
+            x509.load_pem_x509_certificate(certificate).public_bytes(
+                serialization.Encoding.DER
+            )
+        ).decode("ascii"),
         "X-Codestra-Source-IP": "10.40.0.4",
         "X-Correlation-ID": f"corr-{nonce}",
         "X-Client-Certificate-Serial": "attacker-controlled",
@@ -87,14 +111,14 @@ def certificates(tmp_path):
           .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
           .sign(ca_key, hashes.SHA256()))
     leaf_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "qwen-ai-01")])
-    def issue(*, serial=12289,
+    def issue(*, serial=12289, ip_san="10.40.0.4",
               spiffe="spiffe://codestra.internal/service/qwen-ai-01",
               digital_signature=True, client_auth=True, signer=ca_key, issuer=ca_name):
         leaf_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         builder = (x509.CertificateBuilder().subject_name(leaf_name).issuer_name(issuer)
             .public_key(leaf_key.public_key()).serial_number(serial)
             .not_valid_before(now - timedelta(minutes=1)).not_valid_after(now + timedelta(hours=1))
-            .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("10.40.0.4")),
+            .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address(ip_san)),
                 x509.UniformResourceIdentifier(spiffe)]), critical=False)
             .add_extension(x509.KeyUsage(digital_signature=digital_signature, content_commitment=False,
                 key_encipherment=False, data_encipherment=False, key_agreement=False,
@@ -113,6 +137,7 @@ def certificates(tmp_path):
         "valid": issue(),
         "wrong_serial": issue(serial=12290),
         "wrong_spiffe": issue(spiffe="spiffe://codestra.internal/service/wrong"),
+        "wrong_ip": issue(ip_san="10.40.0.5"),
         "no_client_auth": issue(client_auth=False),
         "no_digital_signature": issue(digital_signature=False),
         "unapproved_ca": issue(signer=other_key, issuer=other_name),
@@ -174,13 +199,22 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
         key_id="wrong-key")
     assert (await auth_client.post(verify_path, headers=wrong_key)).status_code == 403
     missing_certificate = worker_headers("POST", verify_path, b"", client_certificate)
-    del missing_certificate["X-Codestra-Client-Certificate"]
+    del missing_certificate["X-Codestra-Client-Certificate-DER"]
     assert (await auth_client.post(verify_path, headers=missing_certificate)).status_code == 422
+    malformed_certificate = worker_headers(
+        "POST", verify_path, b"", client_certificate
+    )
+    malformed_certificate["X-Codestra-Client-Certificate-DER"] = "not-base64%%%"
+    assert (
+        await auth_client.post(
+            verify_path, headers=malformed_certificate
+        )
+    ).status_code == 401
     wrong_source = worker_headers("POST", verify_path, b"", client_certificate)
     wrong_source["X-Codestra-Source-IP"] = "10.40.0.5"
     assert (await auth_client.post(verify_path, headers=wrong_source)).status_code == 404
     for certificate_name in (
-        "wrong_serial", "wrong_spiffe", "no_client_auth",
+        "wrong_serial", "wrong_spiffe", "wrong_ip", "no_client_auth",
         "no_digital_signature", "unapproved_ca",
     ):
         rejected = worker_headers("POST", verify_path, b"", certificate_set[certificate_name])
@@ -273,4 +307,5 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     isolated = await client.get(f"/api/v1/ai/jobs/{job_id}/stream", headers=base_headers)
     assert '"code":"not_found"' in isolated.text
     await client.aclose()
+    app.dependency_overrides.clear()
     await engine.dispose()
