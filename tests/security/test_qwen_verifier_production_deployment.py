@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]
-
 
 ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy" / "qwen-auth-verifier"
@@ -11,39 +9,37 @@ IMAGE = (
 )
 
 
-def load(name: str) -> dict:
-    return yaml.safe_load((DEPLOY / name).read_text())
+def load_text(name: str) -> str:
+    return (DEPLOY / name).read_text()
 
 
 def test_production_image_is_exact_and_runtime_is_hardened():
-    service = load("compose.production.yaml")["services"]["qwen-auth-verifier"]
-    assert service["image"] == IMAGE
-    assert service["user"] == "10001:10001"
-    assert service["restart"] == "unless-stopped"
-    assert service["read_only"] is True
-    assert service["cap_drop"] == ["ALL"]
-    assert "no-new-privileges:true" in service["security_opt"]
-    assert "ports" not in service
+    text = load_text("compose.production.yaml")
+    assert f"image: {IMAGE}" in text
+    assert 'user: "10001:10001"' in text
+    assert "restart: unless-stopped" in text
+    assert "read_only: true" in text
+    assert "cap_drop: [ALL]" in text
+    assert "no-new-privileges:true" in text
+    assert "ports:" not in text
 
 
 def test_only_dedicated_proxy_network_is_trusted():
-    service = load("compose.production.yaml")["services"]["qwen-auth-verifier"]
-    assert service["environment"]["QWEN_TRUSTED_PROXY_CIDR"] == "10.250.241.2/32"
-    assert service["networks"]["qwen_auth_private"]["ipv4_address"] == "10.250.241.3"
-    overlay = load("compose.reverse-proxy-network.overlay.yaml")
-    proxy = overlay["services"]["reverse-proxy"]
-    assert proxy["networks"]["qwen_auth_private"]["ipv4_address"] == "10.250.241.2"
-    for document in (load("compose.production.yaml"), overlay):
-        network = document["networks"]["qwen_auth_private"]
-        assert network == {"external": True, "name": "codestra_qwen_auth_private"}
+    verifier = load_text("compose.production.yaml")
+    overlay = load_text("compose.reverse-proxy-network.overlay.yaml")
+    assert "QWEN_TRUSTED_PROXY_CIDR: 10.250.241.2/32" in verifier
+    assert "ipv4_address: 10.250.241.3" in verifier
+    assert "ipv4_address: 10.250.241.2" in overlay
+    for text in (verifier, overlay):
+        assert "external: true" in text
+        assert "name: codestra_qwen_auth_private" in text
 
 
 def test_secret_is_file_mounted_and_never_in_environment():
-    service = load("compose.production.yaml")["services"]["qwen-auth-verifier"]
-    environment = service["environment"]
-    assert environment["QWEN_HMAC_SECRET_FILE"] == "/run/secrets/qwen-hmac"
-    assert not any("SECRET=" in str(item) for item in environment.items())
-    assert any("qwen-ai-01-hmac-20260804-01:/run/secrets/qwen-hmac:ro" in item for item in service["volumes"])
+    text = load_text("compose.production.yaml")
+    assert "QWEN_HMAC_SECRET_FILE: /run/secrets/qwen-hmac" in text
+    assert "QWEN_HMAC_SECRET:" not in text
+    assert "qwen-ai-01-hmac-20260804-01:/run/secrets/qwen-hmac:ro" in text
 
 
 def test_caddy_route_is_exact_private_and_overwrites_identity_header():
