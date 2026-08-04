@@ -146,7 +146,7 @@ def test_signature_attestations_and_independent_verification_are_exact():
     ):
         assert f"--type {predicate_type}" in TEXT or '--type "${type}"' in TEXT
     assert "--type slsaprovenance" not in TEXT
-    assert "v1-verification.json" in TEXT
+    assert 'output_name="${type##*/}"' in TEXT
     assert "independently-verify:\n    needs: publish-sign\n    runs-on: ubuntu-latest" in TEXT
     assert "--certificate-identity \"${EXPECTED_IDENTITY}\"" in TEXT
     assert "--certificate-oidc-issuer \"${EXPECTED_ISSUER}\"" in TEXT
@@ -164,6 +164,14 @@ def test_attestation_discovery_retry_is_bounded_and_fails_closed():
     assert "sleep 5" in TEXT
     assert 'test "${verified}" = true' in TEXT
     assert '"${output_name}-verification.json.tmp"' in TEXT
+
+
+def test_multiple_verified_attestations_require_an_exact_predicate_match():
+    assert "while IFS= read -r payload; do" in TEXT
+    assert ".subject[0].digest.sha256" in TEXT
+    assert 'matches=$((matches + 1))' in TEXT
+    assert 'test "${matches}" -ge 1' in TEXT
+    assert "v1-verified-predicate.json" in TEXT
 
 
 def test_existing_middleware_signing_workflow_is_not_referenced_or_modified():
