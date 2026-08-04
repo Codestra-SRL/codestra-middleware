@@ -4,6 +4,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 for f in "$root"/scripts/*.sh; do bash -n "$f"; done
 bash -n "$root/deploy/redis-infrastructure/scripts/redis-secret-entrypoint.sh"
 bash "$root/deploy/redis-infrastructure/tests/test_n8n_secret_entrypoint.sh"
+test -x "$root/scripts/validate-n8n-entrypoint.sh"
+test -x "$root/scripts/validate-redis-isolation.sh"
 docker compose -f "$root/deploy/redis-infrastructure/compose.profiles.example.yaml" config >/dev/null
 python3 -m json.tool "$root/monitoring/grafana/redis-overview.dashboard.json" >/dev/null
 python3 "$root/tests/test_redis_infrastructure.py"
