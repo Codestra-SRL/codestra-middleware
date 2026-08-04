@@ -8,6 +8,10 @@ does not deploy the Qwen worker, enable a job API, or authorize business writes.
 - Image: `ghcr.io/codestra-srl/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef`
 - Private source: `10.40.0.4/32`
 - Private route: `POST /internal/api/v1/ai/auth/verify`
+- Client certificate serial: OpenSSL hexadecimal `3001`, whose X.509 integer
+  value is decimal `12289`. The verifier configuration accepts an integer and
+  therefore must use `QWEN_CERTIFICATE_SERIAL=12289`; it must not interpret the
+  display form as decimal.
 - Caddy-to-verifier network: `10.250.241.0/29`, internal, with Caddy at
   `10.250.241.2` and the verifier at `10.250.241.3`
 
@@ -19,28 +23,30 @@ Neither Compose file publishes a verifier port.
 
 1. Independently verify the exact image signature and all approved
    attestations.
-2. Back up the live Compose and Caddy files, including SHA-256 checksums.
-3. Require the HMAC and client-CA inputs to be regular, non-symlink files owned
+2. Require `openssl x509 -noout -serial` to report `serial=3001` and a strict
+   X.509 parser to report integer `12289`; stop if either differs.
+3. Back up the live Compose and Caddy files, including SHA-256 checksums.
+4. Require the HMAC and client-CA inputs to be regular, non-symlink files owned
    by root with mode exactly `0600`. Record their checksums and ACLs; do not add
    an ACL or change either source file.
-4. Run `prepare-runtime-secrets` as root. It fail-closes unless `/run` is tmpfs,
+5. Run `prepare-runtime-secrets` as root. It fail-closes unless `/run` is tmpfs,
    removes only the two exact stale projection names, and projects them beneath
    `/run/codestra/qwen-auth-verifier-secrets` as UID/GID 10001 mode `0600` in a
    UID/GID 10001 mode `0700` directory. Verify projected and source checksums
    match without recording credential contents.
-5. Create `codestra_qwen_auth_private` with `--internal` and subnet
+6. Create `codestra_qwen_auth_private` with `--internal` and subnet
    `10.250.241.0/29`; stop if that subnet overlaps any route or Docker network.
-6. Validate the combined live Compose plus reverse-proxy overlay and the
+7. Validate the combined live Compose plus reverse-proxy overlay and the
    verifier Compose before applying either.
-7. Insert `Caddyfile.production.snippet` inside the existing private mTLS
+8. Insert `Caddyfile.production.snippet` inside the existing private mTLS
    `route` block immediately before the VICIdial matcher. Do not modify the
    VICIdial matcher.
-8. Initialize the named replay volume with `initialize-replay-volume`. The
+9. Initialize the named replay volume with `initialize-replay-volume`. The
    reviewed script runs the signed verifier image once with no network and only
    the `CHOWN` and `FOWNER` capabilities, removes the container on exit, and
    enforces owner 10001:10001 and mode `0700`. It never creates a privileged
    long-running service.
-9. Validate Caddy before reload and arm an automatic rollback first.
+10. Validate Caddy before reload and arm an automatic rollback first.
 
 ## Acceptance
 

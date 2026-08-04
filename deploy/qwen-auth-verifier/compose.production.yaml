@@ -20,7 +20,8 @@ services:
       QWEN_HMAC_KEY_ID: qwen-ai-01-hmac-20260804-01
       QWEN_HMAC_SECRET_FILE: /run/secrets/qwen-hmac
       QWEN_CLIENT_CA_FILE: /run/secrets/client-ca.crt
-      QWEN_CERTIFICATE_SERIAL: "3001"
+      # X.509 INTEGER value for the canonical OpenSSL hexadecimal serial 3001.
+      QWEN_CERTIFICATE_SERIAL: "12289"
       QWEN_CERTIFICATE_URI_SAN: spiffe://codestra.internal/service/qwen-ai-01
       QWEN_REPLAY_DIRECTORY: /var/lib/codestra/qwen-auth-replay
       QWEN_TRUSTED_PROXY_CIDR: 10.250.241.2/32

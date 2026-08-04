@@ -45,6 +45,15 @@ def test_secret_is_file_mounted_and_never_in_environment():
     assert "/etc/codestra/pki" not in text
 
 
+def test_certificate_serial_uses_exact_x509_integer_value():
+    compose = load_text("compose.production.yaml")
+    runbook = load_text("PRODUCTION_DEPLOYMENT.md")
+    assert 'QWEN_CERTIFICATE_SERIAL: "12289"' in compose
+    assert 'QWEN_CERTIFICATE_SERIAL: "3001"' not in compose
+    assert "OpenSSL hexadecimal `3001`" in runbook
+    assert "integer `12289`" in runbook
+
+
 def test_projection_is_tmpfs_only_exact_and_permission_strict():
     prepare = load_text("prepare-runtime-secrets")
     cleanup = load_text("cleanup-runtime-secrets")
