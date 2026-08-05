@@ -195,6 +195,17 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    call_intelligence_enabled: bool = True
+    call_recording_processing_enabled: bool = False
+    call_transcription_enabled: bool = False
+    call_analysis_enabled: bool = False
+    call_qa_enabled: bool = False
+    call_compliance_alerts_enabled: bool = False
+    call_odoo_update_enabled: bool = False
+    call_callback_activity_create_enabled: bool = False
+    call_transcription_mock_enabled: bool = True
+    call_analysis_mock_enabled: bool = True
+    call_recording_processing_policy: str = "CALL_RECORDING_PROCESSING_DISABLED"
 
     def validate_safety(self) -> None:
         broad_event_switches = (
