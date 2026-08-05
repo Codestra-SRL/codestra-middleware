@@ -2913,3 +2913,50 @@ class DisasterRecoveryEvidence(Base):
     checksum: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     restore_status: Mapped[str] = mapped_column(String(24), nullable=False, default="UNVERIFIED")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TradingAccount(Base):
+    __tablename__ = "trading_account"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    customer_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    account_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    base_currency: Mapped[str] = mapped_column(String(16), nullable=False, default="USD")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE", index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TradingInstrument(Base):
+    __tablename__ = "trading_instrument"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    asset_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TradingOrder(Base):
+    __tablename__ = "trading_order"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    account_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    instrument_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    order_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TradingLedgerEntry(Base):
+    __tablename__ = "trading_ledger_entry"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    account_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    entry_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    debit_minor: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    credit_minor: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    external_reference: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
