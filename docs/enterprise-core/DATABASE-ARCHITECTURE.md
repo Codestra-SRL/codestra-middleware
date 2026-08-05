@@ -27,6 +27,13 @@ forward/rollback/forward, tenant isolation, query-plan, and exact-head CI gates
 before the next wave starts. `iam_tenant` is the root-scope exception: it does
 not receive a self-referential tenant or workspace identifier.
 
+Wave 2 governs the authoritative enterprise event control plane:
+`enterprise_event`, `enterprise_event_replay`, `enterprise_event_subscription`,
+and `enterprise_event_delivery`. The event log remains append-only while its
+governance metadata is backfilled transactionally. Domain-owned command and
+audit tables remain in their owning migration waves; for example, notification
+and telephony commands are Wave 4 rather than duplicated in the control plane.
+
 PostgreSQL is the authoritative transactional store. Redis is a bounded cache
 and notification accelerator; Qdrant stores embeddings only behind
 middleware-enforced tenant and workspace filters. Applications receive no
