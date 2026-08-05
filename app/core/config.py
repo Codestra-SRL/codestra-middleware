@@ -244,6 +244,17 @@ class Settings(BaseSettings):
     saas_automatic_suspension_enabled: bool = False
     saas_automatic_deletion_enabled: bool = False
     saas_production_enabled: bool = False
+    marketplace_enabled: bool = False
+    marketplace_admin_enabled: bool = False
+    marketplace_customer_ui_enabled: bool = False
+    marketplace_official_plugins_enabled: bool = False
+    marketplace_partner_plugins_enabled: bool = False
+    marketplace_community_plugins_enabled: bool = False
+    marketplace_real_billing_enabled: bool = False
+    marketplace_automatic_install_enabled: bool = False
+    marketplace_automatic_upgrade_enabled: bool = False
+    marketplace_production_install_enabled: bool = False
+    marketplace_destructive_uninstall_enabled: bool = False
     ai_gateway_model_code: str = "qwen-primary"
     ai_gateway_model_status: str = "TESTING"
     lead_discovery_mock_enabled: bool = False
