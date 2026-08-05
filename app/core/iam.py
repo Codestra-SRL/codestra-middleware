@@ -15,9 +15,9 @@ class IAMAuthorizationError(ValueError):
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "platform_owner": frozenset({"*"}),
-    "platform_admin": frozenset({"identity.read", "identity.write", "audit.read"}),
+    "platform_admin": frozenset({"identity.read", "identity.write", "audit.read", "event.read", "event.publish", "event.replay"}),
     "security_admin": frozenset(
-        {"identity.read", "identity.write", "policy.manage", "audit.read", "session.revoke"}
+        {"identity.read", "identity.write", "policy.manage", "audit.read", "session.revoke", "event.read", "event.replay"}
     ),
     "tenant_owner": frozenset({"identity.read", "identity.write", "workspace.manage"}),
     "tenant_admin": frozenset({"identity.read", "identity.write", "workspace.manage"}),
