@@ -29,6 +29,7 @@ from app.api.v1.ai import router as ai_router
 from app.api.v1.provider_commands import router as provider_commands_router
 from app.api.v1.identity import router as identity_router
 from app.api.v1.enterprise_events import router as enterprise_events_router
+from app.api.v1.odoo_business import router as odoo_business_router
 from app.integrations.postiz.routes import router as postiz_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -60,6 +61,7 @@ app.include_router(commands_router)
 app.include_router(recordings_router)
 app.include_router(identity_router)
 app.include_router(enterprise_events_router)
+app.include_router(odoo_business_router)
 app.mount("/metrics", make_asgi_app())
 
 SIGNED_WEBHOOK_PATHS = frozenset(
@@ -94,6 +96,9 @@ OIDC_EVENT_PATH = re.compile(r"^/api/v1/events/[0-9a-fA-F-]{36}(?:/replay)?$")
 OIDC_EVENT_OPERATIONS_PATH = re.compile(
     r"^/api/v1/events/(?:subscriptions|deliveries/[0-9a-fA-F-]{36}/retry)$"
 )
+OIDC_BUSINESS_PATH = re.compile(
+    r"^/api/v1/business/(?:resource-types|commands(?:/[0-9a-fA-F-]{36}(?:/(?:approval|cancel))?)?|reconciliations)$"
+)
 OIDC_IDENTITY_ADMIN_PATH = re.compile(
     r"^/api/v1/users(?:/[0-9a-fA-F-]{36}/sessions/revoke)?$"
 )
@@ -123,6 +128,7 @@ async def control_request_guard(request: Request, call_next):
         and request.url.path not in OIDC_AUTHENTICATED_PATHS
         and not OIDC_EVENT_PATH.fullmatch(request.url.path)
         and not OIDC_EVENT_OPERATIONS_PATH.fullmatch(request.url.path)
+        and not OIDC_BUSINESS_PATH.fullmatch(request.url.path)
         and not OIDC_IDENTITY_ADMIN_PATH.fullmatch(request.url.path)
     ):
         try:

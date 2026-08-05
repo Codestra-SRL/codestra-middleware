@@ -15,15 +15,19 @@ class IAMAuthorizationError(ValueError):
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "platform_owner": frozenset({"*"}),
-    "platform_admin": frozenset({"identity.read", "identity.write", "audit.read", "event.read", "event.publish", "event.replay"}),
+    "platform_admin": frozenset({
+        "identity.read", "identity.write", "audit.read", "event.read",
+        "event.publish", "event.replay", "business.read", "business.write",
+        "business.approve", "business.reconcile",
+    }),
     "security_admin": frozenset(
         {"identity.read", "identity.write", "policy.manage", "audit.read", "session.revoke", "event.read", "event.replay"}
     ),
-    "tenant_owner": frozenset({"identity.read", "identity.write", "workspace.manage"}),
-    "tenant_admin": frozenset({"identity.read", "identity.write", "workspace.manage"}),
+    "tenant_owner": frozenset({"identity.read", "identity.write", "workspace.manage", "business.read", "business.write", "business.approve", "business.reconcile"}),
+    "tenant_admin": frozenset({"identity.read", "identity.write", "workspace.manage", "business.read", "business.write", "business.approve", "business.reconcile"}),
     "department_manager": frozenset({"identity.read", "department.manage"}),
     "supervisor": frozenset({"identity.read", "voice.read"}),
-    "agent": frozenset({"crm.read", "crm.write", "voice.read"}),
+    "agent": frozenset({"crm.read", "crm.write", "voice.read", "business.read", "business.write"}),
     "customer": frozenset({"portal.read"}),
     "api_client": frozenset(),
     "ai_employee": frozenset({"memory.read", "knowledge.search"}),
