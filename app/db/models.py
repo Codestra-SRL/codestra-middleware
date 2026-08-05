@@ -3215,3 +3215,58 @@ class AIToolReconciliation(Base):
     request_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     outcome: Mapped[str] = mapped_column(String(32), nullable=False, default="UNKNOWN")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIDepartment(Base):
+    __tablename__ = "ai_department"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    department_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    human_manager_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    ai_manager_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    budget_limit: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AICollaborationSession(Base):
+    __tablename__ = "ai_collaboration_session"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    goal_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    owning_department_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    manager_employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    human_owner_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    participant_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    delegation_depth_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIDelegation(Base):
+    __tablename__ = "ai_delegation"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    collaboration_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    source_employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    depth: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIHandoff(Base):
+    __tablename__ = "ai_handoff"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    collaboration_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    sender_employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    receiver_employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
