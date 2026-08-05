@@ -3072,9 +3072,38 @@ class AIEmployeeTask(Base):
     tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     employee_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    goal_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    team_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    workflow_code: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    workflow_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
     approval_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIWorkforceGoal(Base):
+    __tablename__ = "ai_workforce_goal"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    goal_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    target_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIWorkforceTeam(Base):
+    __tablename__ = "ai_workforce_team"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    team_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    department_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    human_owner_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
