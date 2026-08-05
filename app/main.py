@@ -24,6 +24,7 @@ from app.api.v1.publisher import router as publisher_router
 from app.api.v1.recordings import router as recordings_router
 from app.api.v1.customer_portal import router as customer_portal_router
 from app.api.v1.bi import router as bi_router
+from app.api.v1.saas import router as saas_router
 from app.api.v1.registry import router as registry_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.social import router as social_router
@@ -66,6 +67,7 @@ app.include_router(commands_router)
 app.include_router(recordings_router)
 app.include_router(customer_portal_router)
 app.include_router(bi_router)
+app.include_router(saas_router)
 app.mount("/metrics", make_asgi_app())
 
 
