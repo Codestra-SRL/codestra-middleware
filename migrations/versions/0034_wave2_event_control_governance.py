@@ -26,6 +26,99 @@ def _require_common_columns(table: str) -> None:
     op.create_check_constraint(f"ck_{table}_version", table, "version >= 1")
 
 
+def _create_governance_triggers() -> None:
+    op.execute("""
+        CREATE FUNCTION govern_enterprise_event_insert()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            NEW.created_at := COALESCE(NEW.created_at, NEW.recorded_at);
+            NEW.updated_at := COALESCE(NEW.updated_at, NEW.recorded_at);
+            NEW.created_by := COALESCE(NEW.created_by, NEW.recorded_by);
+            NEW.updated_by := COALESCE(NEW.updated_by, NEW.recorded_by);
+            NEW.version := COALESCE(NEW.version, 1);
+            NEW.audit_id := COALESCE(NEW.audit_id, gen_random_uuid());
+            RETURN NEW;
+        END $$
+    """)
+    op.execute("""
+        CREATE TRIGGER enterprise_event_govern_insert
+        BEFORE INSERT ON enterprise_event
+        FOR EACH ROW EXECUTE FUNCTION govern_enterprise_event_insert()
+    """)
+    op.execute("""
+        CREATE FUNCTION govern_enterprise_replay_insert()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            NEW.created_by := COALESCE(NEW.created_by, NEW.requested_by);
+            NEW.updated_by := COALESCE(NEW.updated_by, NEW.requested_by);
+            NEW.version := COALESCE(NEW.version, 1);
+            NEW.audit_id := COALESCE(NEW.audit_id, gen_random_uuid());
+            RETURN NEW;
+        END $$
+    """)
+    op.execute("""
+        CREATE TRIGGER enterprise_replay_govern_insert
+        BEFORE INSERT ON enterprise_event_replay
+        FOR EACH ROW EXECUTE FUNCTION govern_enterprise_replay_insert()
+    """)
+    op.execute("""
+        CREATE FUNCTION govern_enterprise_subscription_insert()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            NEW.updated_at := COALESCE(NEW.updated_at, NEW.created_at, now());
+            NEW.updated_by := COALESCE(NEW.updated_by, NEW.created_by);
+            NEW.version := COALESCE(NEW.version, 1);
+            NEW.audit_id := COALESCE(NEW.audit_id, gen_random_uuid());
+            RETURN NEW;
+        END $$
+    """)
+    op.execute("""
+        CREATE TRIGGER enterprise_subscription_govern_insert
+        BEFORE INSERT ON enterprise_event_subscription
+        FOR EACH ROW EXECUTE FUNCTION govern_enterprise_subscription_insert()
+    """)
+    op.execute("""
+        CREATE FUNCTION govern_enterprise_delivery_insert()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        DECLARE actor text;
+        BEGIN
+            SELECT created_by INTO actor
+            FROM enterprise_event_subscription
+            WHERE id=NEW.subscription_id;
+            NEW.created_by := COALESCE(NEW.created_by, actor);
+            NEW.updated_by := COALESCE(NEW.updated_by, actor);
+            NEW.version := COALESCE(NEW.version, 1);
+            NEW.audit_id := COALESCE(NEW.audit_id, gen_random_uuid());
+            RETURN NEW;
+        END $$
+    """)
+    op.execute("""
+        CREATE TRIGGER enterprise_delivery_govern_insert
+        BEFORE INSERT ON enterprise_event_delivery
+        FOR EACH ROW EXECUTE FUNCTION govern_enterprise_delivery_insert()
+    """)
+    op.execute("""
+        CREATE FUNCTION govern_enterprise_control_update()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            NEW.updated_at := now();
+            NEW.updated_by := COALESCE(NEW.updated_by, OLD.updated_by);
+            NEW.version := OLD.version + 1;
+            RETURN NEW;
+        END $$
+    """)
+    for table in (
+        "enterprise_event_replay",
+        "enterprise_event_subscription",
+        "enterprise_event_delivery",
+    ):
+        op.execute(f"""
+            CREATE TRIGGER {table}_govern_update
+            BEFORE UPDATE ON {table}
+            FOR EACH ROW EXECUTE FUNCTION govern_enterprise_control_update()
+        """)
+
+
 def upgrade() -> None:
     # The append-only trigger is removed only inside this transactional migration
     # so existing immutable rows can receive governance metadata. It is recreated
@@ -120,6 +213,8 @@ def upgrade() -> None:
     op.alter_column("enterprise_event_delivery", "updated_by", nullable=False)
     _require_common_columns("enterprise_event_delivery")
 
+    _create_governance_triggers()
+
     op.create_index(
         "ix_enterprise_event_replay_scope_status",
         "enterprise_event_replay",
@@ -144,6 +239,30 @@ def downgrade() -> None:
         "ix_enterprise_event_subscription_scope_enabled",
         table_name="enterprise_event_subscription",
     )
+
+    for table in (
+        "enterprise_event_delivery",
+        "enterprise_event_subscription",
+        "enterprise_event_replay",
+    ):
+        op.execute(f"DROP TRIGGER {table}_govern_update ON {table}")
+    op.execute("DROP FUNCTION govern_enterprise_control_update()")
+    op.execute(
+        "DROP TRIGGER enterprise_delivery_govern_insert "
+        "ON enterprise_event_delivery"
+    )
+    op.execute("DROP FUNCTION govern_enterprise_delivery_insert()")
+    op.execute(
+        "DROP TRIGGER enterprise_subscription_govern_insert "
+        "ON enterprise_event_subscription"
+    )
+    op.execute("DROP FUNCTION govern_enterprise_subscription_insert()")
+    op.execute(
+        "DROP TRIGGER enterprise_replay_govern_insert ON enterprise_event_replay"
+    )
+    op.execute("DROP FUNCTION govern_enterprise_replay_insert()")
+    op.execute("DROP TRIGGER enterprise_event_govern_insert ON enterprise_event")
+    op.execute("DROP FUNCTION govern_enterprise_event_insert()")
     op.drop_index(
         "ix_enterprise_event_replay_scope_status",
         table_name="enterprise_event_replay",

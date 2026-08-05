@@ -28,3 +28,8 @@ def test_wave2_preserves_immutability_and_is_reversible():
     assert "ix_enterprise_event_replay_scope_status" in text
     assert "ix_enterprise_event_subscription_scope_enabled" in text
     assert text.count('_drop_common_columns("enterprise_event') == 4
+    assert "govern_enterprise_event_insert" in text
+    assert "govern_enterprise_replay_insert" in text
+    assert "govern_enterprise_subscription_insert" in text
+    assert "govern_enterprise_delivery_insert" in text
+    assert "govern_enterprise_control_update" in text
