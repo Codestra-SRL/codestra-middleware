@@ -2862,3 +2862,54 @@ class RevOpsCommission(Base):
     amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING_REVIEW")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EnterpriseIdentityProvider(Base):
+    __tablename__ = "enterprise_identity_provider"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    provider_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="STAGING")
+    credential_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class GovernanceEvidence(Base):
+    __tablename__ = "governance_evidence"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    control_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="COLLECTED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IntegrationWebhookEvent(Base):
+    __tablename__ = "integration_webhook_event"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="RECEIVED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataPipelineRun(Base):
+    __tablename__ = "data_pipeline_run"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    source: Mapped[str] = mapped_column(String(96), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="STAGING")
+    row_scope_enforced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DisasterRecoveryEvidence(Base):
+    __tablename__ = "disaster_recovery_evidence"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    service: Mapped[str] = mapped_column(String(96), nullable=False)
+    encrypted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    off_server: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    checksum: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    restore_status: Mapped[str] = mapped_column(String(24), nullable=False, default="UNVERIFIED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

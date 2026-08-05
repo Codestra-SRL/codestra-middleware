@@ -35,6 +35,7 @@ from app.api.v1.finance import router as finance_router
 from app.api.v1.legal import router as legal_router
 from app.api.v1.support import router as support_router
 from app.api.v1.revops import router as revops_router
+from app.api.v1.enterprise import router as enterprise_router
 from app.api.v1.registry import router as registry_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.social import router as social_router
@@ -88,6 +89,7 @@ app.include_router(finance_router)
 app.include_router(legal_router)
 app.include_router(support_router)
 app.include_router(revops_router)
+app.include_router(enterprise_router)
 app.mount("/metrics", make_asgi_app())
 
 
