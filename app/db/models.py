@@ -3367,3 +3367,48 @@ class ControlTowerAction(Base):
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="REQUESTED")
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIPilotProgram(Base):
+    __tablename__ = "ai_pilot_program"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="PROPOSED", index=True)
+    max_tenants: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIPilotAdmission(Base):
+    __tablename__ = "ai_pilot_admission"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    autonomy_level: Mapped[str] = mapped_column(String(32), nullable=False)
+    human_owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="VALIDATING", index=True)
+    budget_limit: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    suspended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIPilotReadinessCheck(Base):
+    __tablename__ = "ai_pilot_readiness_check"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    admission_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    gate: Mapped[str] = mapped_column(String(48), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False, default="BLOCKED")
+    evidence_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIPilotSuspension(Base):
+    __tablename__ = "ai_pilot_suspension"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    admission_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    operator_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
