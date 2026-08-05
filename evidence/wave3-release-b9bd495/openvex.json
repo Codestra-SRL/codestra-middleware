@@ -1,0 +1,181 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://codestra.co/vex/wave3/b9bd495ef65272463803b721698e5645316959cc",
+  "author": "Codestra automated release-evidence generator",
+  "role": "Automated scanner evidence issuer; not the independent Security Owner",
+  "timestamp": "2026-08-05T14:51:11Z",
+  "version": 1,
+  "tooling": "grype",
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-11940"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.15.0b4. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-11972"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.15.0b4. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-15308"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.15.0. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-3298"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.13.14,3.14.5rc1,3.15.0b1. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-3644"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.13.13,3.14.4,3.15.0a8. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-4224"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.13.13,3.14.4,3.15.0a8. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-4786"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.13.14,3.14.5rc1,3.15.0b1. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-6100"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.13.14,3.14.5rc1,3.15.0b1. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-7210"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.13.14,3.14.6,3.15.0b2. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-9669"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/codestra/middleware@sha256%3A9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215?repository_url=local%2Fcodestra",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python@3.12.13"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "Exact image sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215; source b9bd495ef65272463803b721698e5645316959cc; installed python 3.12.13; scanner fixes: 3.13.14,3.14.6,3.15.0b3. No suppression, waiver, or not_affected conclusion. Independent Security Owner disposition required."
+    }
+  ]
+}

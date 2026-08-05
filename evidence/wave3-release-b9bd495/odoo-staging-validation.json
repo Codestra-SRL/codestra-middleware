@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-08-05T14:52:05Z",
+  "odoo_delivery_enabled": false,
+  "staging_schema_approval": {
+    "status": "BLOCKED",
+    "evidence_file": null,
+    "reason": "No authoritative Wave 3 Odoo staging schema approval file was supplied or found."
+  },
+  "staging_credentials": {
+    "status": "BLOCKED",
+    "base_url": "ABSENT",
+    "database": "ABSENT",
+    "client_id": "ABSENT",
+    "client_secret_file": "ABSENT",
+    "reason": "Expected Wave 3 protected inputs are absent. Existing unrelated Odoo staging secrets were not reused."
+  },
+  "existing_secret_metadata": {
+    "odoo19_staging_env": {
+      "owner": "root",
+      "group": "root",
+      "mode": "0600",
+      "accepted_for_wave3": false
+    }
+  },
+  "real_odoo_write_count": 0,
+  "production_changes": "NONE"
+}

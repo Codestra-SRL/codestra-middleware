@@ -1,0 +1,61 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "codestra/middleware",
+      "digest": {
+        "sha256": "9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215"
+      }
+    }
+  ],
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://codestra.co/buildtypes/docker-local/v1",
+      "externalParameters": {
+        "source_repository": "https://github.com/Codestra-SRL/codestra-middleware",
+        "source_commit": "b9bd495ef65272463803b721698e5645316959cc",
+        "image_name": "codestra/middleware:wave3-b9bd495ef65272463803b721698e5645316959cc"
+      },
+      "internalParameters": {
+        "production_changes": "NONE",
+        "odoo_delivery_enabled": false
+      },
+      "resolvedDependencies": [
+        {
+          "uri": "git+https://github.com/Codestra-SRL/codestra-middleware@b9bd495ef65272463803b721698e5645316959cc",
+          "digest": {
+            "gitCommit": "b9bd495ef65272463803b721698e5645316959cc",
+            "sha256": "a236e528afd7c3f46dc874fe823b86fafcda0dd891c1eed4da44c74b9ce4d685"
+          }
+        },
+        {
+          "uri": "docker-image://docker.io/library/python:3.12.13-alpine",
+          "digest": {
+            "sha256": "6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df"
+          }
+        }
+      ]
+    },
+    "runDetails": {
+      "builder": {
+        "id": "https://codestra.co/builders/middleware-local-evidence/v1"
+      },
+      "metadata": {
+        "invocationId": "wave3-release-evidence-b9bd495ef65272463803b721698e5645316959cc",
+        "startedOn": "2026-08-05T14:51:11Z",
+        "finishedOn": "2026-08-05T14:51:11Z"
+      },
+      "byproducts": [
+        {
+          "name": "imageDigest",
+          "content": "sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215"
+        },
+        {
+          "name": "productionChanges",
+          "content": "NONE"
+        }
+      ]
+    }
+  }
+}
