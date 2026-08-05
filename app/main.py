@@ -63,6 +63,7 @@ from app.api.v1.core_platform import router as core_platform_router
 from app.api.v1.data_factory import router as data_factory_router
 from app.api.v1.integration_platform import router as integration_platform_router
 from app.api.v1.commercial_platform import router as commercial_platform_router
+from app.api.v1.telephony_control import router as telephony_control_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -106,6 +107,7 @@ app.include_router(core_platform_router)
 app.include_router(data_factory_router)
 app.include_router(integration_platform_router)
 app.include_router(commercial_platform_router)
+app.include_router(telephony_control_router)
 app.include_router(social_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)

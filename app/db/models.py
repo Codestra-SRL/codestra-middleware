@@ -3729,6 +3729,74 @@ class CommercialBillingReference(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class TelephonyCampaignControl(Base):
+    __tablename__ = "telephony_campaign_control"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    campaign_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    dialing_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="INTERNAL_TEST")
+    max_lines: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    activation_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    production_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TelephonySuppressionCheck(Base):
+    __tablename__ = "telephony_suppression_check"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    phone_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    scope: Mapped[str] = mapped_column(String(24), nullable=False, default="TENANT")
+    reason: Mapped[str] = mapped_column(String(48), nullable=False)
+    suppressed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TelephonyUsageRecord(Base):
+    __tablename__ = "telephony_usage_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    usage_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    billing_period: Mapped[str] = mapped_column(String(32), nullable=False, default="UNASSIGNED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TelephonySecurityFinding(Base):
+    __tablename__ = "telephony_security_finding"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    component: Mapped[str] = mapped_column(String(96), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="OPEN")
+    evidence_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TelephonyReleaseControl(Base):
+    __tablename__ = "telephony_release_control"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    release_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    release_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    backup_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    rollback_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    security_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    routing_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    monitoring_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    production_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class CoreServiceRegistry(Base):
     __tablename__ = "core_service_registry"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
