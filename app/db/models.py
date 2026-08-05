@@ -3509,3 +3509,35 @@ class CommercialSLAInstance(Base):
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="NOT_STARTED", index=True)
     target_seconds: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ReleaseRecord(Base):
+    __tablename__ = "release_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    release_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    environment: Mapped[str] = mapped_column(String(24), nullable=False, default="STAGING")
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    rollback_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    artifact_checksum: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ReleaseGate(Base):
+    __tablename__ = "release_gate"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    release_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    gate: Mapped[str] = mapped_column(String(48), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False, default="BLOCKED")
+    evidence_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ReleaseApproval(Base):
+    __tablename__ = "release_approval"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    release_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    reviewer_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    decision: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
