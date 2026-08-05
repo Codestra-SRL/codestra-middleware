@@ -18,7 +18,7 @@ def test_enterprise_delivery_concurrency_restart_and_dead_letter():
     database_url = os.environ.get("TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("requires an explicitly provisioned disposable database")
-    assert "enterprise" in database_url
+    assert any(marker in database_url for marker in ("enterprise", "rehearsal"))
     if database_url.startswith("postgresql://"):
         database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     asyncio.run(_scenario(database_url))
