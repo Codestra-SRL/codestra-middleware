@@ -27,6 +27,7 @@ from app.api.v1.integrations import router as integrations_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.ai import router as ai_router
 from app.api.v1.provider_commands import router as provider_commands_router
+from app.api.v1.logistics import router as logistics_router
 from app.integrations.postiz.routes import router as postiz_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -50,6 +51,7 @@ app.include_router(telephony_router)
 app.include_router(orders_router)
 app.include_router(ai_router)
 app.include_router(provider_commands_router)
+app.include_router(logistics_router)
 app.include_router(integrations_router)
 app.include_router(postiz_router)
 app.include_router(campaign_search_router)
@@ -77,6 +79,7 @@ N8N_TRANSITION_PATH = re.compile(
 RECORDING_EXPORTER_PATH = re.compile(
     r"^/api/v1/recordings(?:/reservations|/REC-[0-9a-f]{32}/(?:complete|failure))$"
 )
+LOGISTICS_JWT_PATH = re.compile(r"^/api/v1/logistics(?:/|$)")
 
 
 @app.middleware("http")
@@ -94,6 +97,7 @@ async def control_request_guard(request: Request, call_next):
             request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
         )
         and request.url.path not in SELF_AUTHENTICATED_PATHS
+        and not LOGISTICS_JWT_PATH.match(request.url.path)
     ):
         try:
             verify_bearer(

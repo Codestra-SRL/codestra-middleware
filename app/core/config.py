@@ -195,6 +195,20 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    logistics_platform_enabled: bool = True
+    logistics_staging_enabled: bool = True
+    logistics_customer_portal_enabled: bool = True
+    logistics_dispatch_enabled: bool = True
+    logistics_driver_mobile_enabled: bool = True
+    logistics_public_tracking_enabled: bool = True
+    logistics_ai_enabled: bool = True
+    logistics_notifications_enabled: bool = False
+    logistics_real_routing_provider_enabled: bool = False
+    logistics_automatic_dispatch_enabled: bool = False
+    logistics_automatic_pricing_enabled: bool = False
+    logistics_automatic_claim_decisions_enabled: bool = False
+    logistics_production_enabled: bool = False
+    logistics_tracking_secret_file: str = ""
 
     def validate_safety(self) -> None:
         broad_event_switches = (
@@ -223,6 +237,12 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.postiz_publish_enabled,
+            self.logistics_notifications_enabled,
+            self.logistics_real_routing_provider_enabled,
+            self.logistics_automatic_dispatch_enabled,
+            self.logistics_automatic_pricing_enabled,
+            self.logistics_automatic_claim_decisions_enabled,
+            self.logistics_production_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
