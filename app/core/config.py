@@ -582,6 +582,14 @@ class Settings(BaseSettings):
     automatic_entitlement_expansion_enabled: bool = False
     automatic_customer_suspension_enabled: bool = False
     automatic_customer_data_deletion_enabled: bool = False
+    release_management_enabled: bool = False
+    release_staging_enabled: bool = False
+    release_canary_enabled: bool = False
+    release_blue_green_enabled: bool = False
+    release_rollback_enabled: bool = False
+    release_production_enabled: bool = False
+    automatic_production_deployment_enabled: bool = False
+    automatic_production_rollback_enabled: bool = False
     trading_real_customer_funds_enabled: bool = False
     ai_production_promotion_enabled: bool = False
     ai_gateway_model_code: str = "qwen-primary"
