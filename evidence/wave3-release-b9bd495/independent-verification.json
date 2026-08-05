@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-08-05T14:51:11Z",
+  "image_digest": "sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215",
+  "source_commit": "b9bd495ef65272463803b721698e5645316959cc",
+  "registry_subject": "ghcr.io/codestra-srl/codestra-middleware",
+  "registry_digest_present": false,
+  "cosign_signature_status": "BLOCKED_NOT_PUBLISHED_AND_SOURCE_NOT_ON_MAIN",
+  "signature_identity": null,
+  "transparency_log_status": "NOT_AVAILABLE",
+  "sbom_attestation_status": "NOT_SIGNED",
+  "provenance_attestation_status": "NOT_SIGNED",
+  "openvex_attestation_status": "NOT_SIGNED",
+  "independent_verification_status": "BLOCKED",
+  "verifier": null,
+  "conclusion": "NOT_RELEASE_READY"
+}

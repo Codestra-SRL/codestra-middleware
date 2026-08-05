@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-08-05T14:51:11Z",
+  "image_digest": "sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215",
+  "source_commit": "b9bd495ef65272463803b721698e5645316959cc",
+  "trivy": {
+    "critical": 0,
+    "high": 0,
+    "fixable_critical": 0,
+    "fixable_high": 0
+  },
+  "grype": {
+    "critical": 0,
+    "high": 10,
+    "fixable_critical": 0,
+    "fixable_high": 10
+  },
+  "openvex_status": "UNDER_INVESTIGATION",
+  "security_owner_decision": "REQUIRED",
+  "vulnerability_gate": "BLOCKED"
+}

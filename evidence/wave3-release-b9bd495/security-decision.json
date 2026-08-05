@@ -1,0 +1,11 @@
+{
+  "generated_at": "2026-08-05T14:51:11Z",
+  "image_digest": "sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215",
+  "source_commit": "b9bd495ef65272463803b721698e5645316959cc",
+  "decision": "PENDING_INDEPENDENT_SECURITY_OWNER",
+  "security_owner": null,
+  "unaccepted_critical_count": 0,
+  "unaccepted_high_count": 10,
+  "release_authorized": false,
+  "notes": "This record is not an approval and cannot satisfy the protected signing gate."
+}

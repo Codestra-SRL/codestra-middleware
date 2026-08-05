@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-08-05T14:52:05Z",
+  "image": {
+    "name": "codestra/middleware:wave3-b9bd495ef65272463803b721698e5645316959cc",
+    "digest": "sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215",
+    "local_image_id": "sha256:9417dc4d6b489e157580d746e8edda66678f5c7cf8beb5a565f73f6ded654215",
+    "oci_revision": "b9bd495ef65272463803b721698e5645316959cc",
+    "binding_status": "PASS_LOCAL"
+  },
+  "source": {
+    "commit": "b9bd495ef65272463803b721698e5645316959cc",
+    "exact_head_ci": "PASS",
+    "pr": 152,
+    "pr_state": "DRAFT",
+    "on_protected_main": false
+  },
+  "registry": {
+    "approved_repository": "ghcr.io/codestra-srl/codestra-middleware",
+    "digest_present": false,
+    "status": "BLOCKED"
+  },
+  "release": {
+    "sbom": "GENERATED",
+    "provenance": "GENERATED_LOCAL_UNATTESTED",
+    "openvex": "GENERATED_UNDER_INVESTIGATION",
+    "cosign_signature": "BLOCKED",
+    "independent_verification": "BLOCKED",
+    "release_ready": false,
+    "raw_trivy_sha256": "61bb563213676ca8f8a1c991bf5592feef1165fd12c08ea621cfa1306ab79e4c",
+    "raw_grype_sha256": "59fde066f5a77d4009afc632df6fdba5b5bcdaa9da39376a2228c6a4d29c3b08",
+    "raw_image_inspect_sha256": "c0166fff7af942af53adb6c5e5640c24fbad4c32322d53b5d28f2efd8ff37530",
+    "raw_scan_storage": "root-only local evidence; not committed"
+  },
+  "controls": {
+    "odoo_delivery_enabled": false,
+    "production_changes": "NONE",
+    "real_odoo_write_count": 0
+  }
+}
