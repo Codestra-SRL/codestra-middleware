@@ -28,6 +28,8 @@ from app.api.v1.saas import router as saas_router
 from app.api.v1.marketplace import router as marketplace_router
 from app.api.v1.developer import router as developer_router
 from app.api.v1.mobile import router as mobile_router
+from app.api.v1.voice import router as voice_router
+from app.api.v1.ai_governance import router as ai_governance_router
 from app.api.v1.registry import router as registry_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.social import router as social_router
@@ -74,6 +76,8 @@ app.include_router(saas_router)
 app.include_router(marketplace_router)
 app.include_router(developer_router)
 app.include_router(mobile_router)
+app.include_router(voice_router)
+app.include_router(ai_governance_router)
 app.mount("/metrics", make_asgi_app())
 
 
