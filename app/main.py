@@ -32,6 +32,7 @@ from app.api.v1.voice import router as voice_router
 from app.api.v1.ai_governance import router as ai_governance_router
 from app.api.v1.healthcare import router as healthcare_router
 from app.api.v1.finance import router as finance_router
+from app.api.v1.legal import router as legal_router
 from app.api.v1.registry import router as registry_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.social import router as social_router
@@ -82,6 +83,7 @@ app.include_router(voice_router)
 app.include_router(ai_governance_router)
 app.include_router(healthcare_router)
 app.include_router(finance_router)
+app.include_router(legal_router)
 app.mount("/metrics", make_asgi_app())
 
 
