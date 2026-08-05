@@ -3412,3 +3412,47 @@ class AIPilotSuspension(Base):
     operator_id: Mapped[str] = mapped_column(String(128), nullable=False)
     reason: Mapped[str] = mapped_column(String(512), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AINamedCustomerPilot(Base):
+    __tablename__ = "ai_named_customer_pilot"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(40), nullable=False, default="DRAFT", index=True)
+    current_phase: Mapped[str] = mapped_column(String(64), nullable=False, default="PHASE_0_PREPARATION")
+    acceptance_status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+    evidence_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    real_activation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AINamedPilotObservationDay(Base):
+    __tablename__ = "ai_named_pilot_observation_day"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    pilot_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    day_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="NO_DATA")
+    review_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    simulated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AINamedPilotAcceptance(Base):
+    __tablename__ = "ai_named_pilot_acceptance"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    pilot_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+    conditions: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AINamedPilotFeedback(Base):
+    __tablename__ = "ai_named_pilot_feedback"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    pilot_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="CAPTURED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
