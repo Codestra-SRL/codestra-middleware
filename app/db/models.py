@@ -3586,3 +3586,48 @@ class BusinessCommand(Base):
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="REQUESTED", index=True)
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EnterpriseDataRecord(Base):
+    __tablename__ = "enterprise_data_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    classification: Mapped[str] = mapped_column(String(24), nullable=False, default="INTERNAL")
+    source_system: Mapped[str] = mapped_column(String(96), nullable=False)
+    source_version: Mapped[str] = mapped_column(String(64), nullable=False, default="v1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataLineageRecord(Base):
+    __tablename__ = "data_lineage_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    transformation: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IntegrationConnector(Base):
+    __tablename__ = "integration_connector"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    connector_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT", index=True)
+    sandbox_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EnterpriseIntegrationEvent(Base):
+    __tablename__ = "enterprise_integration_event"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    connector_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="RECEIVED", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

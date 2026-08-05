@@ -58,6 +58,7 @@ from app.api.v1.named_pilot import router as named_pilot_router
 from app.api.v1.commercial import router as commercial_router
 from app.api.v1.releases import router as releases_router
 from app.api.v1.business_os import router as business_os_router
+from app.api.v1.data_integration import router as data_integration_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -96,6 +97,7 @@ app.include_router(named_pilot_router)
 app.include_router(commercial_router)
 app.include_router(releases_router)
 app.include_router(business_os_router)
+app.include_router(data_integration_router)
 app.include_router(social_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)
