@@ -138,3 +138,8 @@ AI_MODEL_INPUT_TOKENS = Counter(
 AI_MODEL_OUTPUT_TOKENS = Counter(
     "codestra_ai_model_output_tokens_total", "AI model output tokens", ["model_code"]
 )
+AI_CONTROL_CENTER_REQUESTS = Counter("codestra_ai_control_center_requests_total", "Control Center API requests", ["route", "status"])
+AI_CONTROL_CENTER_DURATION = Histogram("codestra_ai_control_center_request_duration_seconds", "Control Center API duration", ["route"])
+AI_CONTROL_CENTER_ERRORS = Counter("codestra_ai_control_center_errors_total", "Control Center API errors", ["route"])
+AI_CONTROL_CENTER_PERMISSION_DENIALS = Counter("codestra_ai_control_center_permission_denials_total", "Control Center permission denials", ["permission"])
+AI_CONTROL_CENTER_REALTIME = Gauge("codestra_ai_control_center_realtime_connections", "Control Center realtime connections")

@@ -252,6 +252,19 @@ class Settings(BaseSettings):
     call_recording_processing_policy: str = "CALL_RECORDING_PROCESSING_DISABLED"
     call_transcription_max_attempts: int = 3
     call_analysis_max_attempts: int = 3
+    ai_control_center_enabled: bool = True
+    ai_control_center_overview_enabled: bool = True
+    ai_control_center_leads_enabled: bool = True
+    ai_control_center_calls_enabled: bool = True
+    ai_control_center_agent_assist_enabled: bool = True
+    ai_control_center_knowledge_enabled: bool = True
+    ai_control_center_models_enabled: bool = True
+    ai_control_center_prompts_enabled: bool = True
+    ai_control_center_workflows_enabled: bool = True
+    ai_control_center_security_enabled: bool = True
+    ai_control_center_audit_enabled: bool = True
+    ai_control_center_feature_flag_writes_enabled: bool = False
+    ai_control_center_production_actions_enabled: bool = False
 
     def validate_safety(self) -> None:
         broad_event_switches = (
