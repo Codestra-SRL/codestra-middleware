@@ -102,6 +102,10 @@ class MockPostlyAdapter:
         result = {
             "event_id": command["event_id"],
             "correlation_id": command["correlation_id"],
+            "idempotency_key": command["idempotency_key"],
+            "organization_id": command["organization_id"],
+            "workspace_id": command["workspace_id"],
+            "content_job_id": command["content_job_id"],
             "state": "scheduled",
             "occurred_at": self.now().isoformat(),
             "postly_group_id": group_id,
@@ -122,9 +126,14 @@ class MockPostlyAdapter:
     def find(self, command: dict[str, Any]) -> dict[str, Any] | None:
         integration_ids = {item for item in command["integration_ids"]}
         for result in self.posts.values():
-            if {
-                x["integration_id"] for x in result["provider_results"]
-            } == integration_ids:
+            if (
+                result.get("idempotency_key") == command["idempotency_key"]
+                and result.get("organization_id") == command["organization_id"]
+                and result.get("workspace_id") == command["workspace_id"]
+                and result.get("content_job_id") == command["content_job_id"]
+                and {x["integration_id"] for x in result["provider_results"]}
+                == integration_ids
+            ):
                 return result
         return None
 

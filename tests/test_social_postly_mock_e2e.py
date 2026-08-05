@@ -105,3 +105,38 @@ def test_uncertain_write_reconciles_without_retrying_write():
     assert control.reconcile(job.content_job_id).state == SocialState.SCHEDULED
     assert control.adapter.calls == calls
     assert len(control.adapter.posts) == 1
+
+
+def test_reconciliation_is_bound_to_workspace_and_idempotency_claim():
+    control = SocialControlPlane(now=lambda: NOW)
+    first = approved(control)
+    control.adapter.fail_next = "timeout_after_write"
+    control.schedule(first.content_job_id)
+
+    other = request()
+    other.update(
+        {
+            "workspace_id": "WS-OTHER",
+            "content_job_id": "JOB-OTHER",
+            "correlation_id": "COR-OTHER",
+        }
+    )
+    second = control.create(other)
+    control.accept_n8n_proposal(
+        second.content_job_id,
+        {
+            "content_job_id": second.content_job_id,
+            "content_version": 1,
+            "language": "en",
+            "caption": "other workspace",
+            "status": "proposal_only",
+        },
+    )
+    control.approve(
+        second.content_job_id,
+        approval_id="APR-OTHER",
+        approved_by="USR-OTHER",
+        content_version=1,
+    )
+    assert control.reconcile(second.content_job_id).state == SocialState.APPROVED
+    assert control.reconcile(first.content_job_id).state == SocialState.SCHEDULED
