@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.db.models import AuditEvent, Incident, IncidentEvent, ReadinessGate, BackupVerification
+from app.db.models import AuditEvent, Incident, IncidentEvent, ReadinessGate, BackupVerification, ExpansionStage, ExpansionObservation
+from app.core.expansion import evaluate_observation, ObservationSnapshot, transition, ExpansionGateError
 from app.workers.dead_letter import list_dead_letters, replay
 from app.workers.outbox import queue_metrics, recover_expired_leases
 from app.workers.reconciliation import reconcile_internal_outbox
@@ -113,3 +114,59 @@ async def backups(db: AsyncSession = Depends(get_session), role: str = Header(""
     require_ops_role(role)
     rows = (await db.scalars(select(BackupVerification).order_by(BackupVerification.created_at.desc()).limit(200))).all()
     return {"items": [{"id": str(row.id), "system_code": row.system_code, "state": row.state, "encrypted": row.encrypted, "off_server": row.off_server, "restore_tested": row.restore_tested, "last_verified_at": row.last_verified_at} for row in rows]}
+
+
+@router.get("/expansion/stages")
+async def expansion_stages(db: AsyncSession = Depends(get_session), role: str = Header("", alias="X-Codestra-Role")):
+    require_ops_role(role)
+    rows = (await db.scalars(select(ExpansionStage).order_by(ExpansionStage.created_at.desc()))).all()
+    return {"items": [{"id": str(r.id), "stage_code": r.stage_code, "status": r.status, "limits": r.limits, "gate_outcome": r.gate_outcome, "stop_reason": r.stop_reason} for r in rows]}
+
+
+@router.post("/expansion/stages", status_code=202)
+async def create_expansion_stage(body: dict, db: AsyncSession = Depends(get_session), role: str = Header("", alias="X-Codestra-Role")):
+    require_ops_role(role)
+    code = str(body.get("stage_code", "")).strip()
+    if not code or len(code) > 64 or not isinstance(body.get("limits", {}), dict):
+        raise HTTPException(422, "stage_code and limits are required")
+    stage = ExpansionStage(stage_code=code, limits=body["limits"], correlation_id=str(body.get("correlation_id", uuid4())))
+    db.add(stage)
+    await db.flush()
+    db.add(AuditEvent(action="expansion.stage.created", subject=str(stage.id), correlation_id=stage.correlation_id, decision="accepted", redacted_payload={"stage_code": code, "limits": body["limits"]}))
+    await db.commit()
+    return {"stage_id": str(stage.id), "status": stage.status}
+
+
+@router.post("/expansion/stages/{stage_id}/observe", status_code=202)
+async def observe_expansion_stage(stage_id: UUID, body: dict, db: AsyncSession = Depends(get_session), role: str = Header("", alias="X-Codestra-Role")):
+    require_ops_role(role)
+    stage = await db.get(ExpansionStage, stage_id)
+    if not stage:
+        raise HTTPException(404, "expansion stage not found")
+    try:
+        snapshot = ObservationSnapshot(**{k: body.get(k, 0) for k in ObservationSnapshot.__dataclass_fields__})
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, "invalid observation snapshot") from exc
+    outcome = evaluate_observation(snapshot)
+    stage.gate_outcome = outcome
+    if outcome == "FAIL_ROLLBACK":
+        stage.stop_reason = "automatic stop gate triggered"
+    db.add(ExpansionObservation(stage_id=stage.id, outcome=outcome, snapshot=body))
+    db.add(AuditEvent(action="expansion.observation.evaluated", subject=str(stage.id), correlation_id=stage.correlation_id, decision=outcome, redacted_payload={"outcome": outcome}))
+    await db.commit()
+    return {"stage_id": str(stage.id), "outcome": outcome}
+
+
+@router.post("/expansion/stages/{stage_id}/transition")
+async def transition_expansion_stage(stage_id: UUID, body: dict, db: AsyncSession = Depends(get_session), role: str = Header("", alias="X-Codestra-Role")):
+    require_ops_role(role)
+    stage = await db.get(ExpansionStage, stage_id)
+    if not stage:
+        raise HTTPException(404, "expansion stage not found")
+    try:
+        stage.status = transition(stage.status, str(body.get("status", "")))
+    except ExpansionGateError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    db.add(AuditEvent(action="expansion.stage.transitioned", subject=str(stage.id), correlation_id=stage.correlation_id, decision="accepted", redacted_payload={"status": stage.status}))
+    await db.commit()
+    return {"stage_id": str(stage.id), "status": stage.status}
