@@ -1,7 +1,7 @@
 #!/usr/bin/dash
 set -eu
 
-image=ghcr.io/codestra-srl/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef
+image=ghcr.io/codestra-srl/qwen-auth-verifier@sha256:cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390
 volume=codestra-qwen-auth-verifier_qwen_auth_replay
 
 /usr/bin/docker volume create "$volume" >/dev/null

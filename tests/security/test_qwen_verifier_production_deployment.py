@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy" / "qwen-auth-verifier"
 IMAGE = (
     "ghcr.io/codestra-srl/qwen-auth-verifier@sha256:"
-    "a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef"
+    "cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390"
 )
 
 
@@ -75,7 +75,7 @@ def test_replay_init_is_bounded_deterministic_and_networkless():
     assert "--cap-drop ALL" in text
     assert "--cap-add CHOWN --cap-add FOWNER" in text
     assert "--entrypoint python" in text
-    assert "@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef" in text
+    assert "@sha256:cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390" in text
     assert "os.chown(p,10001,10001)" in text
     assert "os.chmod(p,0o700)" in text
 
