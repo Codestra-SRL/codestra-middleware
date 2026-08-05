@@ -274,6 +274,17 @@ class Settings(BaseSettings):
     failure_injection_production_enabled: bool = False
     automatic_production_failover_enabled: bool = False
     automatic_production_activation_enabled: bool = False
+    scraper_real_http_fetch_enabled: bool = False
+    scraper_browser_enabled: bool = False
+    scraper_search_connector_enabled: bool = False
+    contact_verification_enabled: bool = False
+    email_verification_enabled: bool = False
+    phone_verification_enabled: bool = False
+    agent_assist_platform_enabled: bool = True
+    agent_assist_real_calls_enabled: bool = False
+    agent_assist_real_audio_enabled: bool = False
+    agent_assist_automatic_actions_enabled: bool = False
+    postiz_publishing_enabled: bool = False
 
     def validate_safety(self) -> None:
         broad_event_switches = (
