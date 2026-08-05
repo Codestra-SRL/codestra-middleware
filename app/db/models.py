@@ -3270,3 +3270,52 @@ class AIHandoff(Base):
     receiver_employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIEmployeeEvaluationRun(Base):
+    __tablename__ = "ai_employee_evaluation_run"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    employee_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    dataset_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    human_reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIEmployeeScorecard(Base):
+    __tablename__ = "ai_employee_scorecard"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    period: Mapped[str] = mapped_column(String(24), nullable=False)
+    performance_state: Mapped[str] = mapped_column(String(32), nullable=False, default="UNASSESSED")
+    evidence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIEmployeeChangeProposal(Base):
+    __tablename__ = "ai_employee_change_proposal"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    proposal_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="CAPTURED", index=True)
+    proposed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AILearningApproval(Base):
+    __tablename__ = "ai_learning_approval"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    proposal_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    reviewer_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    decision: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
