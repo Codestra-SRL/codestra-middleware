@@ -265,6 +265,15 @@ class Settings(BaseSettings):
     ai_control_center_audit_enabled: bool = True
     ai_control_center_feature_flag_writes_enabled: bool = False
     ai_control_center_production_actions_enabled: bool = False
+    operations_platform_enabled: bool = True
+    incident_management_enabled: bool = True
+    readiness_gates_enabled: bool = True
+    backup_verification_enabled: bool = True
+    restore_drill_enabled: bool = True
+    failure_injection_staging_enabled: bool = True
+    failure_injection_production_enabled: bool = False
+    automatic_production_failover_enabled: bool = False
+    automatic_production_activation_enabled: bool = False
 
     def validate_safety(self) -> None:
         broad_event_switches = (

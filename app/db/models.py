@@ -1458,6 +1458,87 @@ class CallIntelligenceAttempt(Base):
     __table_args__ = (UniqueConstraint("call_job_id", "stage", "attempt_number", name="uq_call_intelligence_attempt"),)
 
 
+class ServiceInventory(Base):
+    __tablename__ = "service_inventory"
+    service_code: Mapped[str] = mapped_column(String(96), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    server_ip: Mapped[str] = mapped_column(String(64), nullable=False)
+    environment: Mapped[str] = mapped_column(String(24), nullable=False)
+    criticality: Mapped[str] = mapped_column(String(16), nullable=False)
+    health_endpoint: Mapped[str | None] = mapped_column(String(255))
+    metrics_endpoint: Mapped[str | None] = mapped_column(String(255))
+    dependencies: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    backup_policy: Mapped[str | None] = mapped_column(String(128))
+    recovery_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    rto_target: Mapped[str | None] = mapped_column(String(32))
+    rpo_target: Mapped[str | None] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="UNKNOWN")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class Incident(Base):
+    __tablename__ = "incident"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    incident_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="DETECTED", index=True)
+    environment: Mapped[str] = mapped_column(String(24), nullable=False)
+    service_codes: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    tenant_impact: Mapped[str | None] = mapped_column(String(64))
+    customer_impact: Mapped[str | None] = mapped_column(String(255))
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mitigated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    owner_id: Mapped[str | None] = mapped_column(String(128))
+    commander_id: Mapped[str | None] = mapped_column(String(128))
+    root_cause: Mapped[str | None] = mapped_column(Text)
+    resolution_summary: Mapped[str | None] = mapped_column(Text)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IncidentEvent(Base):
+    __tablename__ = "incident_event"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    incident_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(128))
+    payload_safe: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ReadinessGate(Base):
+    __tablename__ = "readiness_gate"
+    gate_code: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="NOT_STARTED")
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    owner: Mapped[str | None] = mapped_column(String(128))
+    reviewer: Mapped[str | None] = mapped_column(String(128))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blocking_findings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    waiver_reference: Mapped[str | None] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class BackupVerification(Base):
+    __tablename__ = "backup_verification"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    system_code: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    backup_reference: Mapped[str] = mapped_column(String(512), nullable=False)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="CURRENT_UNVERIFIED")
+    checksum: Mapped[str | None] = mapped_column(String(128))
+    encrypted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    off_server: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    restore_tested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    restore_result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class PolicyDecision(Base):
     __tablename__ = "policy_decision"
     id: Mapped[UUID] = mapped_column(
