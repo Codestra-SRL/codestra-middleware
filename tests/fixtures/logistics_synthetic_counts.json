@@ -1,0 +1,15 @@
+{
+  "synthetic_only": true,
+  "tenants": 3,
+  "customers": 15,
+  "orders": 50,
+  "shipments": 40,
+  "loads": 10,
+  "drivers": 15,
+  "vehicles": 12,
+  "stops": 100,
+  "exceptions": 20,
+  "claims": 10,
+  "documents": 30,
+  "invoices": 20
+}
