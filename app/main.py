@@ -50,6 +50,7 @@ from app.api.v1.ai_control_center import router as ai_control_center_router
 from app.api.v1.ai_workforce import router as ai_workforce_router
 from app.api.v1.ai_memory_knowledge import router as ai_memory_knowledge_router
 from app.api.v1.ai_tools import router as ai_tools_router
+from app.api.v1.ai_collaboration import router as ai_collaboration_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -80,6 +81,7 @@ app.include_router(ai_control_center_router)
 app.include_router(ai_workforce_router)
 app.include_router(ai_memory_knowledge_router)
 app.include_router(ai_tools_router)
+app.include_router(ai_collaboration_router)
 app.include_router(social_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)
