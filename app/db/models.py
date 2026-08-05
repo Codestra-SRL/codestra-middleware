@@ -3121,3 +3121,49 @@ class AIEmployeeDelegation(Base):
     collaborator_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class MemoryRecord(Base):
+    __tablename__ = "memory_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    employee_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    memory_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    memory_scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    classification: Mapped[str] = mapped_column(String(24), nullable=False, default="INTERNAL")
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="CAPTURED", index=True)
+    source_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    legal_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class KnowledgeSource(Base):
+    __tablename__ = "knowledge_source"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    classification: Mapped[str] = mapped_column(String(24), nullable=False, default="INTERNAL")
+    source_uri_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(128), nullable=False)
+    publication_state: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT")
+    indexing_state: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    legal_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class MemoryRetrievalRequest(Base):
+    __tablename__ = "memory_retrieval_request"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    requested_scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    authorization_decision: Mapped[str] = mapped_column(String(24), nullable=False, default="DENIED")
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
