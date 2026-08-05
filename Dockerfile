@@ -10,6 +10,7 @@ WORKDIR /usr/src
 RUN apk add --no-cache \
       build-base=0.5-r4 \
       bzip2-dev=1.0.8-r6 \
+      cargo=1.96.1-r0 \
       curl=8.21.0-r0 \
       expat-dev=2.8.2-r0 \
       gdbm-dev=1.26-r0 \
@@ -19,6 +20,7 @@ RUN apk add --no-cache \
       openssl-dev=3.5.7-r0 \
       patch=2.8-r0 \
       readline-dev=8.3.3-r1 \
+      rust=1.96.1-r0 \
       sqlite-dev=3.53.2-r0 \
       tar=1.35-r5 \
       xz-dev=5.8.3-r0 \
@@ -47,9 +49,9 @@ PATCHES
 RUN tar -xJf Python-3.12.13.tar.xz \
  && awk 'found || index($0, "diff --git a/Include/pyexpat.h") == 1 { found=1; print }' \
       upstream-patches/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f.patch \
-      > upstream-patches/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f-3.12-rest.patch \
- && cd Python-3.12.13 \
- && for patch_file in \
+      > upstream-patches/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f-3.12-rest.patch
+WORKDIR /usr/src/Python-3.12.13
+RUN for patch_file in \
       ../upstream-patches/be13e86f6b9788a6f4d0419dffef72cbae5865c9.patch \
       ../upstream-patches/7f0dc59c9a70f8f3b4da33d7c4a2ba552a7acc21.patch \
       ../upstream-patches/7933f4bf7131aa4140750f9404f5de0aa2969ced.patch \
@@ -88,9 +90,15 @@ LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-
       io.codestra.python.version="3.12.13"
 USER root
 WORKDIR /build
+RUN apk add --no-cache \
+      cargo=1.96.1-r0 \
+      openssl-dev=3.5.7-r0 \
+      rust=1.96.1-r0
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
 COPY requirements.lock requirements-test.lock ./
+RUN python -m pip install --no-cache-dir --disable-pip-version-check \
+      --upgrade 'pip>=26.1.2'
 RUN python -m pip install --no-cache-dir --disable-pip-version-check \
       --require-hashes -r requirements.lock
 
@@ -126,6 +134,9 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
+RUN /opt/venv/bin/python -m pip uninstall --yes pip setuptools msgpack \
+ && /usr/local/bin/python -m pip uninstall --yes pip setuptools msgpack
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3)"
 USER 10001:10001
 EXPOSE 8095
 CMD ["python", "-m", "app.entrypoints.integration_api"]
