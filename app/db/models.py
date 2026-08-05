@@ -1327,6 +1327,137 @@ class VicidialCanaryEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class CallIntelligenceJob(Base):
+    __tablename__ = "call_intelligence_job"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    vicidial_call_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    vicidial_uniqueid: Mapped[str] = mapped_column(String(128), nullable=False)
+    odoo_lead_id: Mapped[int | None] = mapped_column(BigInteger)
+    campaign_id: Mapped[str | None] = mapped_column(String(128))
+    agent_user: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="CALL_COMPLETED", index=True)
+    language: Mapped[str | None] = mapped_column(String(16))
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    recording_reference_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    transcript_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    analysis_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    qa_review_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_class: Mapped[str | None] = mapped_column(String(64))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    safe_error_message: Mapped[str | None] = mapped_column(String(512))
+    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key", name="uq_call_intelligence_job_idempotency"), UniqueConstraint("tenant_id", "vicidial_uniqueid", name="uq_call_intelligence_job_uniqueid"))
+
+
+class CallRecordingReference(Base):
+    __tablename__ = "call_recording_reference"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    call_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, unique=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    recording_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    storage_reference: Mapped[str] = mapped_column(String(512), nullable=False)
+    format: Mapped[str] = mapped_column(String(16), nullable=False)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    checksum: Mapped[str | None] = mapped_column(String(128))
+    recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retention_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    access_policy: Mapped[str] = mapped_column(String(64), nullable=False, default="AUTHENTICATED_SHORT_LIVED")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="AVAILABLE", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CallTranscript(Base):
+    __tablename__ = "call_transcript"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    call_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, unique=True)
+    model_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    language: Mapped[str] = mapped_column(String(16), nullable=False)
+    language_confidence: Mapped[float] = mapped_column()
+    speaker_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transcript_text_encrypted_or_protected: Mapped[str] = mapped_column(Text, nullable=False)
+    segments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    redaction_status: Mapped[str] = mapped_column(String(24), nullable=False, default="REDACTED")
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CallAnalysis(Base):
+    __tablename__ = "call_analysis"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    call_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, unique=True)
+    prompt_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    sentiment: Mapped[str] = mapped_column(String(16), nullable=False)
+    disposition_recommendation: Mapped[str | None] = mapped_column(String(128))
+    objections: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    products_discussed: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    commitments: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    callback_recommendation: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    next_best_action: Mapped[str | None] = mapped_column(Text)
+    compliance_findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    coaching_recommendations: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    confidence: Mapped[float] = mapped_column()
+    raw_result_safe: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CallQAScore(Base):
+    __tablename__ = "call_qa_score"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    call_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, unique=True)
+    scorecard_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    scores: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    overall_score: Mapped[float] = mapped_column()
+    severity: Mapped[str] = mapped_column(String(32), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(24), nullable=False, default="REVIEW_REQUIRED")
+    reviewed_by: Mapped[str | None] = mapped_column(String(128))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CallComplianceAlert(Base):
+    __tablename__ = "call_compliance_alert"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    call_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    alert_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_reference: Mapped[str] = mapped_column(String(512), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="OPEN")
+    assigned_to: Mapped[str | None] = mapped_column(String(128))
+    resolved_by: Mapped[str | None] = mapped_column(String(128))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CallIntelligenceAttempt(Base):
+    __tablename__ = "call_intelligence_attempt"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    call_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    service_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    error_class: Mapped[str | None] = mapped_column(String(64))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    safe_error_message: Mapped[str | None] = mapped_column(String(512))
+    __table_args__ = (UniqueConstraint("call_job_id", "stage", "attempt_number", name="uq_call_intelligence_attempt"),)
+
+
 class PolicyDecision(Base):
     __tablename__ = "policy_decision"
     id: Mapped[UUID] = mapped_column(
