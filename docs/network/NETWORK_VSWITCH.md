@@ -9,7 +9,13 @@ Neighbor evidence:
 | Address | MAC learned | State |
 |---|---|---|
 | 10.40.0.4 | bc:fc:e7:69:04:d1 | STALE/reachable on probe |
-| 10.40.0.2 | none | unreachable |
+| 10.40.0.2 | none; neighbor state `INCOMPLETE` | unreachable at Layer 2 |
+
+The comparison probe learned Qwen's MAC immediately while VICIdial remained
+`INCOMPLETE`. Middleware selected the same directly connected VLAN interface
+and source address for both destinations, and the VLAN interface reported zero
+RX/TX errors or drops. This isolates the current failure to the VICIdial/vSwitch
+side of the Layer-2 path rather than middleware routing or VLAN health.
 
 No Netplan, VLAN, route, MTU, or firewall state was changed. Remediation for
 10.40.0.2 must occur in the VICIdial local zone: verify its tagged VLAN 4001

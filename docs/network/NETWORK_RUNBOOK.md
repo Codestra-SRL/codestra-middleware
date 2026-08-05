@@ -25,6 +25,34 @@ firewall permits the existing allowlisted contracts. Preserve public routes,
 SSH, Asterisk, carriers, trunks, dial plans, and campaigns. Any network change
 requires a backup and automatic rollback timer.
 
+Copy/paste read-only collection for the VICIdial local Codex session:
+
+```bash
+set -euo pipefail
+test "$(curl --fail --silent --max-time 10 https://api.ipify.org)" = "65.21.67.207"
+hostname -f
+. /etc/os-release; printf 'OS=%s %s\n' "$NAME" "$VERSION_ID"
+uname -r
+ip -br address
+ip -d link
+ip -4 route
+ip -6 route
+ip route get 10.40.0.1
+ping -n -c 5 -W 1 10.40.0.1 || true
+ip neigh show
+ss -H -lntup
+ufw status verbose || true
+nft list ruleset
+timedatectl show -p NTPSynchronized -p Timezone
+systemctl --failed --no-pager
+docker network ls 2>/dev/null || true
+```
+
+Return the output with secrets and private-key material excluded. If
+10.40.0.2/24 or VLAN 4001 is absent, prepare a Netplan backup and rollback
+timer, but do not apply a network change until the local session has verified
+the physical parent and current public default route.
+
 ## Acceptance
 
 All four local reports must agree on addresses, MTU, routes, DNS, certificate
