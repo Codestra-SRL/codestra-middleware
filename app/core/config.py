@@ -195,6 +195,19 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    supervisor_console_enabled: bool = False
+    supervisor_console_staging_enabled: bool = True
+    supervisor_realtime_enabled: bool = True
+    supervisor_agent_commands_enabled: bool = False
+    supervisor_campaign_commands_enabled: bool = False
+    supervisor_recording_access_enabled: bool = False
+    supervisor_transcript_access_enabled: bool = True
+    supervisor_agent_assist_enabled: bool = True
+    supervisor_workforce_enabled: bool = True
+    supervisor_ai_insights_enabled: bool = True
+    supervisor_production_enabled: bool = False
+    supervisor_rate_limit_per_minute: int = 120
+    supervisor_max_event_bytes: int = 32768
 
     def validate_safety(self) -> None:
         broad_event_switches = (
@@ -223,6 +236,9 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.postiz_publish_enabled,
+            self.supervisor_production_enabled,
+            self.supervisor_agent_commands_enabled,
+            self.supervisor_campaign_commands_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
