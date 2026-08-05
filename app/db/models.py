@@ -3016,3 +3016,37 @@ class TradingDisclosureAcceptance(Base):
     version: Mapped[str] = mapped_column(String(32), nullable=False)
     accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TradingLicensingGap(Base):
+    __tablename__ = "trading_licensing_gap"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    jurisdiction: Mapped[str] = mapped_column(String(96), nullable=False, default="UNKNOWN")
+    evidence_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="OPEN")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TradingPilotApproval(Base):
+    __tablename__ = "trading_pilot_approval"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    account_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT")
+    synthetic_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    legal_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    security_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    compliance_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TradingPilotEvidence(Base):
+    __tablename__ = "trading_pilot_evidence"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    pilot_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    evidence_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="MISSING")
+    reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

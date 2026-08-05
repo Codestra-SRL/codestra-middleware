@@ -443,6 +443,12 @@ class Settings(BaseSettings):
     trading_crypto_custody_enabled: bool = False
     trading_copy_trading_enabled: bool = False
     trading_ai_execution_enabled: bool = False
+    trading_pilot_governance_enabled: bool = False
+    trading_pilot_synthetic_only_enabled: bool = True
+    trading_live_readiness_enabled: bool = False
+    trading_pilot_activation_enabled: bool = False
+    trading_pilot_customer_outreach_enabled: bool = False
+    trading_real_customer_funds_enabled: bool = False
     ai_production_promotion_enabled: bool = False
     ai_gateway_model_code: str = "qwen-primary"
     ai_gateway_model_status: str = "TESTING"
