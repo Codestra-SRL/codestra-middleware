@@ -1734,6 +1734,39 @@ class MarketplaceTenantInstallation(Base):
     __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key", name="uq_marketplace_install_tenant_key"),)
 
 
+class DeveloperApplication(Base):
+    __tablename__ = "developer_application"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    client_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    scopes: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE")
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DeveloperWebhookSubscription(Base):
+    __tablename__ = "developer_webhook_subscription"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(96), nullable=False)
+    endpoint_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    secret_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="ACTIVE")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DeveloperSandbox(Base):
+    __tablename__ = "developer_sandbox"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment: Mapped[str] = mapped_column(String(24), nullable=False, default="sandbox")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="PROVISIONING")
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class PolicyDecision(Base):
     __tablename__ = "policy_decision"
     id: Mapped[UUID] = mapped_column(
