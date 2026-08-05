@@ -28,8 +28,14 @@ def upgrade() -> None:
       id uuid PRIMARY KEY, provider varchar(96) NOT NULL UNIQUE, state varchar(24) NOT NULL DEFAULT 'CLOSED', consecutive_failures integer NOT NULL DEFAULT 0,
       opened_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
     )""")
-    for table in ("workflow_execution_control", "workflow_dead_letter_control"):
-        op.execute(f"CREATE INDEX ix_{table}_scope ON {table}(tenant_id,workspace_id,state)")
+    op.execute(
+        "CREATE INDEX ix_workflow_execution_control_scope "
+        "ON workflow_execution_control(tenant_id,workspace_id,state)"
+    )
+    op.execute(
+        "CREATE INDEX ix_workflow_dead_letter_control_scope "
+        "ON workflow_dead_letter_control(tenant_id,workspace_id,review_status)"
+    )
 
 
 def downgrade() -> None:
