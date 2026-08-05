@@ -1,0 +1,1 @@
+{"name":"CDA-AI-10A Eligibility Check","active":false,"nodes":[{"name":"Middleware Eligibility API","type":"n8n-nodes-base.httpRequest","parameters":{"method":"POST","url":"={{$env.CODESTRA_MIDDLEWARE_URL}}/api/v1/vicidial-assignments/eligibility/check"},"typeVersion":4,"position":[0,0]}],"connections":{},"tags":["codestra","vicidial","no-direct-api","staging-disabled"]}

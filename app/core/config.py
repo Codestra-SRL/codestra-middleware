@@ -224,6 +224,15 @@ class Settings(BaseSettings):
     odoo_import_production_enabled: bool = False
     odoo_lead_create_enabled: bool = False
     automatic_lead_approval_enabled: bool = False
+    vicidial_assignment_platform_enabled: bool = False
+    vicidial_assignment_staging_enabled: bool = False
+    vicidial_assignment_production_enabled: bool = False
+    vicidial_lead_create_enabled: bool = False
+    vicidial_live_dialing_enabled: bool = False
+    vicidial_campaign_activation_enabled: bool = False
+    automatic_vicidial_assignment_enabled: bool = False
+    vicidial_assignment_max_batch_size: int = 5
+    vicidial_assignment_max_attempts: int = 2
 
     def validate_safety(self) -> None:
         broad_event_switches = (

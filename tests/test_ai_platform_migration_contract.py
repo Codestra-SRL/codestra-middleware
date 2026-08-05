@@ -42,3 +42,11 @@ def test_human_approval_import_migration_is_linear_and_complete():
     assert "down_revision = \"0034_qwen_staging_registry\"" in migration
     for table in ("lead_review", "lead_review_event", "lead_approval_policy", "odoo_import_batch", "odoo_import_item", "odoo_import_attempt", "odoo_import_reconciliation"):
         assert f"CREATE TABLE {table}" in migration
+
+
+def test_vicidial_assignment_migration_is_linear_and_complete():
+    migration = (ROOT / "migrations/versions/0036_vicidial_assignment_foundation.py").read_text()
+    assert "revision = \"0036_vicidial_assignment_foundation\"" in migration
+    assert "down_revision = \"0035_human_approval_odoo_import\"" in migration
+    for table in ("vicidial_assignment_policy", "vicidial_assignment_batch", "vicidial_assignment_item", "vicidial_assignment_attempt", "vicidial_assignment_reconciliation"):
+        assert f"CREATE TABLE {table}" in migration

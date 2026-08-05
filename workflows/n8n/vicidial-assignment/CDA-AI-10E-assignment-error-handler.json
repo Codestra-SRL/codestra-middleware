@@ -1,0 +1,1 @@
+{"name":"CDA-AI-10E Assignment Error Handler","active":false,"nodes":[{"name":"Bounded Error Classification","type":"n8n-nodes-base.code","parameters":{"jsCode":"return items.map(item => ({json:{error_class:'VALIDATION_FAILED',retryable:false,redacted:true}}));"},"typeVersion":2,"position":[0,0]}],"connections":{},"tags":["codestra","vicidial","bounded-retry","staging-disabled"]}
