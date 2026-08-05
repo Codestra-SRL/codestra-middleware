@@ -3167,3 +3167,51 @@ class MemoryRetrievalRequest(Base):
     authorization_decision: Mapped[str] = mapped_column(String(24), nullable=False, default="DENIED")
     trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AITool(Base):
+    __tablename__ = "ai_tool"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    tool_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    adapter: Mapped[str] = mapped_column(String(96), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(24), nullable=False, default="READ_ONLY")
+    required_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIToolRequest(Base):
+    __tablename__ = "ai_tool_request"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    task_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    tool_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="REQUESTED", index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIToolExecution(Base):
+    __tablename__ = "ai_tool_execution"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    request_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="QUEUED")
+    external_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIToolReconciliation(Base):
+    __tablename__ = "ai_tool_reconciliation"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    request_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False, default="UNKNOWN")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
