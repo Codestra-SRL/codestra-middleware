@@ -214,6 +214,17 @@ class Settings(BaseSettings):
     ai_gateway_requests_per_minute: int = 20
     ai_gateway_max_input_bytes: int = 262144
     ai_gateway_max_output_tokens: int = 1500
+    customer_portal_enabled: bool = False
+    customer_portal_staging_enabled: bool = False
+    customer_portal_registration_enabled: bool = False
+    customer_portal_invitations_enabled: bool = False
+    customer_portal_ai_insights_enabled: bool = False
+    customer_portal_recordings_enabled: bool = False
+    customer_portal_transcripts_enabled: bool = False
+    customer_portal_document_uploads_enabled: bool = False
+    customer_portal_finance_enabled: bool = False
+    customer_portal_api_enabled: bool = False
+    customer_portal_production_enabled: bool = False
     ai_gateway_model_code: str = "qwen-primary"
     ai_gateway_model_status: str = "TESTING"
     lead_discovery_mock_enabled: bool = False

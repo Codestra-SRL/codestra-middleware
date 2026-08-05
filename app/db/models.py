@@ -1564,6 +1564,39 @@ class ExpansionObservation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class CustomerAccount(Base):
+    __tablename__ = "customer_account"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    odoo_partner_id: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="INVITED")
+    subscription_plan: Mapped[str | None] = mapped_column(String(64))
+    allowed_modules: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    primary_contact: Mapped[str | None] = mapped_column(String(255))
+    billing_contact: Mapped[str | None] = mapped_column(String(255))
+    support_contact: Mapped[str | None] = mapped_column(String(255))
+    retention_policy: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CustomerUser(Base):
+    __tablename__ = "customer_user"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="CUSTOMER_READ_ONLY")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="INVITED")
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_customer_user_tenant_email"),)
+
+
 class PolicyDecision(Base):
     __tablename__ = "policy_decision"
     id: Mapped[UUID] = mapped_column(
