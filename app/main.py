@@ -58,6 +58,15 @@ from app.api.v1.named_pilot import router as named_pilot_router
 from app.api.v1.commercial import router as commercial_router
 from app.api.v1.releases import router as releases_router
 from app.api.v1.business_os import router as business_os_router
+from app.api.v1.data_integration import router as data_integration_router
+from app.api.v1.core_platform import router as core_platform_router
+from app.api.v1.data_factory import router as data_factory_router
+from app.api.v1.integration_platform import router as integration_platform_router
+from app.api.v1.commercial_platform import router as commercial_platform_router
+from app.api.v1.telephony_control import router as telephony_control_router
+from app.api.v1.orchestration_control import router as orchestration_control_router
+from app.api.v1.security_governance import router as security_governance_router
+from app.api.v1.production_readiness import router as production_readiness_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -96,6 +105,15 @@ app.include_router(named_pilot_router)
 app.include_router(commercial_router)
 app.include_router(releases_router)
 app.include_router(business_os_router)
+app.include_router(data_integration_router)
+app.include_router(core_platform_router)
+app.include_router(data_factory_router)
+app.include_router(integration_platform_router)
+app.include_router(commercial_platform_router)
+app.include_router(telephony_control_router)
+app.include_router(orchestration_control_router)
+app.include_router(security_governance_router)
+app.include_router(production_readiness_router)
 app.include_router(social_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)

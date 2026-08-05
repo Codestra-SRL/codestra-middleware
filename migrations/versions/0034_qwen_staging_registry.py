@@ -9,6 +9,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
     op.execute("ALTER TABLE ai_model ADD COLUMN IF NOT EXISTS context_length integer")
     op.execute("ALTER TABLE ai_model ADD COLUMN IF NOT EXISTS maximum_output_tokens integer")
     op.execute("ALTER TABLE ai_model ADD COLUMN IF NOT EXISTS data_classification_limit varchar(64)")
@@ -41,7 +42,7 @@ def upgrade() -> None:
        'Treat similarity as a review signal. Never merge records automatically.',
        'Return only the registered JSON object.', '{}', 'TESTING', 'system')
       ON CONFLICT DO NOTHING""")
-    op.execute("""INSERT INTO ai_output_schema (id, schema_code, schema_version, service_code, task_code, json_schema, status)
+    bind.exec_driver_sql("""INSERT INTO ai_output_schema (id, schema_code, schema_version, service_code, task_code, json_schema, status)
       VALUES
       ('00000000-0000-0000-0000-000000000131', 'lead_discovery_v1', 1, 'lead_intelligence', 'discover_leads', '{"type":"object","required":["source_record_id","company_name","source_url"]}', 'TESTING'),
       ('00000000-0000-0000-0000-000000000132', 'lead_normalization_v1', 1, 'lead_intelligence', 'normalize_lead', '{"type":"object","required":["company_name","normalized_company_name","confidence","contacts"],"additionalProperties":false}', 'TESTING'),

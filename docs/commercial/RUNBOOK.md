@@ -1,3 +1,4 @@
-# Runbook
+# Commercial runbook
 
-On billing mismatch stop reconciliation, preserve evidence, and escalate. On entitlement bypass suspend affected provisioning and audit the decision.
+On reconciliation failure, pause the affected workflow, preserve source evidence, and
+request review. Never repair billing or entitlement state by direct database edits.

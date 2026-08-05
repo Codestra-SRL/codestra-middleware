@@ -1,3 +1,4 @@
-# Security
+# Commercial security
 
-Tenant/workspace isolation, entitlement checks, idempotency, billing controls, human credits/suspension, export authorization, and redacted audit are mandatory.
+Entitlements, subscriptions, provisioning, billing references, suspension, and exports
+are tenant-safe, idempotent, approval-gated, and auditable.

@@ -1,3 +1,4 @@
-# Integration runbook
+# Runbook
 
-Pause failing connectors, inspect dead letters, reconcile external state, and re-enable only after health and signature checks pass.
+On connector failure, pause writes, open an incident, preserve request evidence, and
+reconcile before retrying or changing mappings.

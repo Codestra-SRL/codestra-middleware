@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 FRESHNESS_STATES = frozenset({"CURRENT", "DELAYED", "STALE", "UNAVAILABLE", "UNKNOWN"})
 SERVICE_STATES = frozenset({"HEALTHY", "DEGRADED", "PARTIAL_OUTAGE", "MAJOR_OUTAGE", "MAINTENANCE", "UNKNOWN", "DISABLED"})
+EMERGENCY_CONTROL_STATES = frozenset({"PAUSE_NEW_WORK", "PAUSE_ALL_WORK", "REVOKE_TOOLS", "READ_ONLY", "SHUTDOWN"})
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,21 @@ class ExecutiveAction:
     idempotency_key: str
 
 
+@dataclass(frozen=True)
+class EmergencyControl:
+    tenant_id: str
+    workspace_id: str
+    actor_id: str
+    state: str
+    scope: str
+    reason: str
+    privileged: bool
+    mfa_verified: bool
+    approved: bool
+    idempotency_key: str
+    automatic_reenable: bool = False
+
+
 def authorize_action(action: ExecutiveAction) -> tuple[bool, str]:
     if not all((action.tenant_id, action.workspace_id, action.actor_id, action.action, action.idempotency_key)):
         return False, "MISSING_CONTEXT"
@@ -26,6 +42,20 @@ def authorize_action(action: ExecutiveAction) -> tuple[bool, str]:
         return False, "MFA_REQUIRED"
     if not action.approved:
         return False, "APPROVAL_REQUIRED"
+    return True, "VALID"
+
+
+def authorize_emergency_control(control: EmergencyControl) -> tuple[bool, str]:
+    if not all((control.tenant_id, control.workspace_id, control.actor_id, control.scope, control.reason, control.idempotency_key)):
+        return False, "MISSING_CONTEXT"
+    if control.state not in EMERGENCY_CONTROL_STATES:
+        return False, "INVALID_CONTROL_STATE"
+    if not control.privileged or not control.mfa_verified:
+        return False, "PRIVILEGED_MFA_REQUIRED"
+    if not control.approved:
+        return False, "APPROVAL_REQUIRED"
+    if control.automatic_reenable:
+        return False, "AUTOMATIC_REENABLE_PROHIBITED"
     return True, "VALID"
 
 

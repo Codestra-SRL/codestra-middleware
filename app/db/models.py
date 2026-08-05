@@ -3072,9 +3072,38 @@ class AIEmployeeTask(Base):
     tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     employee_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    goal_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    team_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    workflow_code: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    workflow_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
     approval_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIWorkforceGoal(Base):
+    __tablename__ = "ai_workforce_goal"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    goal_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    target_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIWorkforceTeam(Base):
+    __tablename__ = "ai_workforce_team"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    team_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    department_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    human_owner_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -3585,4 +3614,339 @@ class BusinessCommand(Base):
     action: Mapped[str] = mapped_column(String(48), nullable=False)
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="REQUESTED", index=True)
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EnterpriseDataRecord(Base):
+    __tablename__ = "enterprise_data_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    classification: Mapped[str] = mapped_column(String(24), nullable=False, default="INTERNAL")
+    source_system: Mapped[str] = mapped_column(String(96), nullable=False)
+    source_version: Mapped[str] = mapped_column(String(64), nullable=False, default="v1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataLineageRecord(Base):
+    __tablename__ = "data_lineage_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    transformation: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IntegrationConnector(Base):
+    __tablename__ = "integration_connector"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    connector_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT", index=True)
+    sandbox_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EnterpriseIntegrationEvent(Base):
+    __tablename__ = "enterprise_integration_event"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    connector_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="RECEIVED", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataFactorySource(Base):
+    __tablename__ = "data_factory_source"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_code: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    authority_level: Mapped[str] = mapped_column(String(24), nullable=False, default="CONTRIBUTING")
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT", index=True)
+    classification: Mapped[str] = mapped_column(String(24), nullable=False, default="INTERNAL")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataFactoryIngestionRun(Base):
+    __tablename__ = "data_factory_ingestion_run"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_code: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    records_received: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    records_published: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="RECEIVED", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataFactoryQualityResult(Base):
+    __tablename__ = "data_factory_quality_result"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    ingestion_run_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    dimension: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False, default="REVIEW_REQUIRED")
+    evidence_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class MasterEntityRecord(Base):
+    __tablename__ = "master_entity_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    authority_state: Mapped[str] = mapped_column(String(24), nullable=False, default="REVIEW_REQUIRED")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    provenance_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IntegrationConnectorRegistry(Base):
+    __tablename__ = "integration_connector_registry"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    connector_code: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    provider: Mapped[str] = mapped_column(String(96), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
+    capabilities_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    sandbox_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IntegrationGatewayRequest(Base):
+    __tablename__ = "integration_gateway_request"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    connector_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    capability: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="REQUESTED", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CommercialProvisioningRequest(Base):
+    __tablename__ = "commercial_provisioning_request"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    subscription_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="PROVISIONING", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CommercialBillingReference(Base):
+    __tablename__ = "commercial_billing_reference"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    billing_period: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TelephonyCampaignControl(Base):
+    __tablename__ = "telephony_campaign_control"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    campaign_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    dialing_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="INTERNAL_TEST")
+    max_lines: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    activation_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    production_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TelephonySuppressionCheck(Base):
+    __tablename__ = "telephony_suppression_check"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    phone_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    scope: Mapped[str] = mapped_column(String(24), nullable=False, default="TENANT")
+    reason: Mapped[str] = mapped_column(String(48), nullable=False)
+    suppressed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TelephonyUsageRecord(Base):
+    __tablename__ = "telephony_usage_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    usage_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    billing_period: Mapped[str] = mapped_column(String(32), nullable=False, default="UNASSIGNED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TelephonySecurityFinding(Base):
+    __tablename__ = "telephony_security_finding"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    component: Mapped[str] = mapped_column(String(96), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="OPEN")
+    evidence_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TelephonyReleaseControl(Base):
+    __tablename__ = "telephony_release_control"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    release_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    release_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    backup_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    rollback_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    security_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    routing_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    monitoring_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    production_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class WorkflowDefinitionControl(Base):
+    __tablename__ = "workflow_definition_control"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    workflow_code: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    workflow_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    owner: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="DRAFT", index=True)
+    required_capabilities: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class WorkflowExecutionControl(Base):
+    __tablename__ = "workflow_execution_control"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    workflow_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workflow_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    command_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="OUTBOX_PENDING", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class WorkflowDeadLetterControl(Base):
+    __tablename__ = "workflow_dead_letter_control"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    execution_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    failure_class: Mapped[str] = mapped_column(String(48), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    review_status: Mapped[str] = mapped_column(String(24), nullable=False, default="OPEN", index=True)
+    replay_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class WorkflowWorkerPresence(Base):
+    __tablename__ = "workflow_worker_presence"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    worker_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    worker_group: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="STARTING", index=True)
+    active_execution_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    version: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
+    last_heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class WorkflowCircuitBreakerControl(Base):
+    __tablename__ = "workflow_circuit_breaker_control"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    provider: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="CLOSED", index=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CoreServiceRegistry(Base):
+    __tablename__ = "core_service_registry"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    service_code: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    service_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    owner: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False, default="STAGING")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="UNKNOWN", index=True)
+    version: Mapped[str] = mapped_column(String(64), nullable=False, default="v1")
+    health_endpoint: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="system")
+    updated_by: Mapped[str] = mapped_column(String(128), nullable=False, default="system")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CoreServiceDependency(Base):
+    __tablename__ = "core_service_dependency"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    service_code: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    dependency_code: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CoreFeatureFlag(Base):
+    __tablename__ = "core_feature_flag"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    flag_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, default="GLOBAL", index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, default="GLOBAL", index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CoreCommandRecord(Base):
+    __tablename__ = "core_command_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    command_type: Mapped[str] = mapped_column(String(96), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="RECEIVED", index=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CoreEventRecord(Base):
+    __tablename__ = "core_event_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False, default="1.0")
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="RECEIVED", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

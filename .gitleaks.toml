@@ -1,0 +1,20 @@
+[allowlist]
+description = "Reviewed deterministic hashes and synthetic identifiers; runtime secrets are external references only."
+paths = [
+  '''app/api/v1/call_intelligence.py''',
+  '''security/reviews/qwen-verifier-bbd22cf/README.md''',
+  '''security/reviews/qwen-verifier-bbd22cf/provenance-attestation-request.json''',
+  '''security/reviews/qwen-verifier-bbd22cf/subject.json''',
+  '''tests/test_internal_ai_api.py''',
+  '''tests/test_ai_job_control.py''',
+  '''tests/test_telephony_command_client.py''',
+  '''tests/test_dynamic_allocation_and_recovery.py''',
+  '''tests/test_provider_adapters.py''',
+  '''tests/test_notifications.py''',
+  '''deploy/n8n/lead-automation/callback-auth-manifest-v2.json''',
+  '''deploy/n8n/lead-automation/schemas/provenance-manifest-v1.json''',
+  '''deploy/n8n/lead-automation/schema-provenance-v1.json''',
+  '''deploy/n8n/lead-automation/workflow-manifest-v1.json''',
+  '''deploy/lead-automation-staging/synthetic-fixtures.json''',
+  '''deploy/n8n/lead-automation/lead-automation-generic-v1.json''',
+]

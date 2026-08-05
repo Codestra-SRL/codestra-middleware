@@ -1,3 +1,4 @@
 # Suspension
 
-Authorized human suspension preserves data/audit, pauses new work, cancels required pending actions, and requires explicit reactivation.
+Suspension is scoped, approved, audited, and reversible. New work pauses while approved
+read-only access and data preservation remain policy-controlled.
