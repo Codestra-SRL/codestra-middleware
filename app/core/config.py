@@ -225,6 +225,10 @@ class Settings(BaseSettings):
     customer_portal_finance_enabled: bool = False
     customer_portal_api_enabled: bool = False
     customer_portal_production_enabled: bool = False
+    bi_platform_enabled: bool = False
+    bi_forecasting_enabled: bool = False
+    bi_scheduled_reports_enabled: bool = False
+    bi_exports_enabled: bool = False
     ai_gateway_model_code: str = "qwen-primary"
     ai_gateway_model_status: str = "TESTING"
     lead_discovery_mock_enabled: bool = False

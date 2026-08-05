@@ -1597,6 +1597,38 @@ class CustomerUser(Base):
     __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_customer_user_tenant_email"),)
 
 
+class KPIDefinition(Base):
+    __tablename__ = "kpi_definition"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    code: Mapped[str] = mapped_column(String(96), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    formula: Mapped[str] = mapped_column(String(512), nullable=False)
+    source_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    owner: Mapped[str] = mapped_column(String(96), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT")
+    guardrails: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("code", "version", name="uq_kpi_definition_version"),)
+
+
+class KPIObservation(Base):
+    __tablename__ = "kpi_observation"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    kpi_code: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    value: Mapped[float] = mapped_column(Integer, nullable=False)
+    numerator: Mapped[float | None] = mapped_column(Integer)
+    denominator: Mapped[float | None] = mapped_column(Integer)
+    source_freshness: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quality_status: Mapped[str] = mapped_column(String(24), nullable=False, default="UNVERIFIED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class PolicyDecision(Base):
     __tablename__ = "policy_decision"
     id: Mapped[UUID] = mapped_column(
