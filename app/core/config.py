@@ -233,6 +233,12 @@ class Settings(BaseSettings):
     automatic_vicidial_assignment_enabled: bool = False
     vicidial_assignment_max_batch_size: int = 5
     vicidial_assignment_max_attempts: int = 2
+    vicidial_canary_enabled: bool = False
+    vicidial_live_canary_authorized: bool = False
+    vicidial_live_canary_max_calls: int = 0
+    vicidial_live_canary_max_leads: int = 0
+    vicidial_live_canary_phone_file: str = ""
+    vicidial_maintenance_window_required: bool = True
 
     def validate_safety(self) -> None:
         broad_event_switches = (
