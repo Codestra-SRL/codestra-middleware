@@ -27,6 +27,7 @@ from app.api.v1.integrations import router as integrations_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.ai import router as ai_router
 from app.api.v1.provider_commands import router as provider_commands_router
+from app.api.v1.supervisor import router as supervisor_router
 from app.integrations.postiz.routes import router as postiz_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -56,6 +57,7 @@ app.include_router(campaign_search_router)
 app.include_router(registry_router)
 app.include_router(commands_router)
 app.include_router(recordings_router)
+app.include_router(supervisor_router)
 app.mount("/metrics", make_asgi_app())
 
 SIGNED_WEBHOOK_PATHS = frozenset(

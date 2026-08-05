@@ -56,3 +56,18 @@ CROSS_SYSTEM_CALLBACK_FAILURES = Counter("codestra_cross_system_callback_failure
 CROSS_SYSTEM_DEAD_LETTER = Counter("codestra_cross_system_dead_letter_total", "Cross-system dead letters", ["provider"])
 CROSS_SYSTEM_RECONCILIATION_MISMATCH = Counter("codestra_cross_system_reconciliation_mismatch_total", "Cross-system reconciliation mismatches", ["provider"])
 CROSS_SYSTEM_STALE_EXECUTION = Gauge("codestra_cross_system_stale_execution_total", "Stale cross-system executions")
+
+# Supervisor metrics intentionally avoid agent, customer, call and phone labels.
+SUPERVISOR_REQUESTS = Counter("codestra_supervisor_requests_total", "Supervisor requests", ["operation", "status"])
+SUPERVISOR_REQUEST_DURATION = Histogram("codestra_supervisor_request_duration_seconds", "Supervisor request duration", ["operation"])
+SUPERVISOR_ACTIVE_SESSIONS = Gauge("codestra_supervisor_active_sessions", "Active supervisor sessions")
+SUPERVISOR_REALTIME_CONNECTIONS = Gauge("codestra_supervisor_realtime_connections", "Supervisor realtime connections")
+SUPERVISOR_REALTIME_EVENTS = Counter("codestra_supervisor_realtime_events_total", "Supervisor realtime events", ["event_type"])
+SUPERVISOR_REALTIME_DISCONNECTS = Counter("codestra_supervisor_realtime_disconnects_total", "Supervisor realtime disconnects", ["reason"])
+SUPERVISOR_PERMISSION_DENIALS = Counter("codestra_supervisor_permission_denials_total", "Supervisor permission denials", ["operation"])
+SUPERVISOR_COMMANDS = Counter("codestra_supervisor_commands_total", "Supervisor commands", ["command_type", "status"])
+SUPERVISOR_COMMAND_FAILURES = Counter("codestra_supervisor_command_failures_total", "Supervisor command failures", ["command_type", "failure_class"])
+SUPERVISOR_AGENT_STATE_LAG = Gauge("codestra_supervisor_agent_state_lag_seconds", "Agent state event lag")
+SUPERVISOR_CALL_EVENT_LAG = Gauge("codestra_supervisor_call_event_lag_seconds", "Call event lag")
+SUPERVISOR_COACHING_RECORDS = Counter("codestra_supervisor_coaching_records_total", "Coaching records", ["status"])
+SUPERVISOR_COMPLIANCE_REVIEWS = Counter("codestra_supervisor_compliance_reviews_total", "Compliance reviews", ["status"])
