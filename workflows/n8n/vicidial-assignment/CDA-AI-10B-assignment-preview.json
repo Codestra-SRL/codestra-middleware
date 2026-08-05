@@ -1,0 +1,1 @@
+{"name":"CDA-AI-10B Assignment Preview","active":false,"nodes":[{"name":"Preview Only","type":"n8n-nodes-base.code","parameters":{"jsCode":"return items.map(item => ({json:{...item.json,write_performed:false}}));"},"typeVersion":2,"position":[0,0]}],"connections":{},"tags":["codestra","vicidial","preview-only","staging-disabled"]}

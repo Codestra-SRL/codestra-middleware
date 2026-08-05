@@ -1,0 +1,1 @@
+{"name":"CDA-AI-10D Assignment Result Callback","active":false,"nodes":[{"name":"Signed Middleware Result","type":"n8n-nodes-base.httpRequest","parameters":{"method":"POST","url":"={{$env.CODESTRA_MIDDLEWARE_URL}}/api/v1/workflow-results"},"typeVersion":4,"position":[0,0]}],"connections":{},"tags":["codestra","vicidial","signed-callback","staging-disabled"]}

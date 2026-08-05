@@ -1167,6 +1167,102 @@ class OdooImportReconciliation(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class VicidialAssignmentPolicy(Base):
+    __tablename__ = "vicidial_assignment_policy"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    policy_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    configuration: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="TESTING")
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("tenant_id", "workspace_id", "policy_code", "version", name="uq_vicidial_assignment_policy"),)
+
+
+class VicidialAssignmentBatch(Base):
+    __tablename__ = "vicidial_assignment_batch"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    batch_code: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    policy_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    target_campaign_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_list_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="REQUESTED", index=True)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    lead_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    success_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duplicate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unknown_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key", name="uq_vicidial_assignment_batch_idempotency"),)
+
+
+class VicidialAssignmentItem(Base):
+    __tablename__ = "vicidial_assignment_item"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    batch_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    lead_record_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    odoo_lead_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ASSIGNMENT_QUEUED", index=True)
+    vicidial_lead_id: Mapped[str | None] = mapped_column(String(128))
+    vicidial_list_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    vicidial_campaign_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    external_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    command_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_class: Mapped[str | None] = mapped_column(String(64))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    safe_error_message: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class VicidialAssignmentAttempt(Base):
+    __tablename__ = "vicidial_assignment_attempt"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    assignment_item_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_safe: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    response_safe: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    error_class: Mapped[str | None] = mapped_column(String(64))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    safe_error_message: Mapped[str | None] = mapped_column(String(512))
+    __table_args__ = (UniqueConstraint("assignment_item_id", "attempt_number", name="uq_vicidial_assignment_attempt"),)
+
+
+class VicidialAssignmentReconciliation(Base):
+    __tablename__ = "vicidial_assignment_reconciliation"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    assignment_item_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING", index=True)
+    expected_external_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    observed_vicidial_lead_id: Mapped[str | None] = mapped_column(String(128))
+    result_safe: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class PolicyDecision(Base):
     __tablename__ = "policy_decision"
     id: Mapped[UUID] = mapped_column(

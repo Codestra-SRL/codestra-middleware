@@ -1,0 +1,1 @@
+{"name":"CDA-AI-10C VICIdial Lead Create","active":false,"nodes":[{"name":"Middleware Adapter Command","type":"n8n-nodes-base.httpRequest","parameters":{"method":"POST","url":"={{$env.CODESTRA_MIDDLEWARE_URL}}/internal/v1/vicidial/commands"},"typeVersion":4,"position":[0,0]}],"connections":{},"tags":["codestra","vicidial","allowlisted-adapter","staging-disabled"]}
