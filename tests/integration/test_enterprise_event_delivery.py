@@ -1,7 +1,7 @@
 import asyncio
 import os
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -57,7 +57,13 @@ async def _scenario(database_url: str):
             assert len(first_claim) + len(second_claim) == 1
             claim = (first_claim or second_claim)[0]
             owner = "worker-1" if first_claim else "worker-2"
-            assert await fail_delivery(first if first_claim else second, claim["id"], owner, "TEMPORARY", 2) == "RETRY"
+            assert await fail_delivery(
+                first if first_claim else second,
+                UUID(str(claim["id"])),
+                owner,
+                "TEMPORARY",
+                2,
+            ) == "RETRY"
 
         await engine.dispose()
         engine = create_async_engine(database_url)
@@ -66,7 +72,13 @@ async def _scenario(database_url: str):
             await restarted.execute(text("UPDATE enterprise_event_delivery SET next_attempt_at=now()"))
             await restarted.commit()
             claim = (await claim_deliveries(restarted, worker_id="worker-after-restart"))[0]
-            assert await fail_delivery(restarted, claim["id"], "worker-after-restart", "TEMPORARY", 2) == "DEAD_LETTER"
+            assert await fail_delivery(
+                restarted,
+                UUID(str(claim["id"])),
+                "worker-after-restart",
+                "TEMPORARY",
+                2,
+            ) == "DEAD_LETTER"
             assert (await claim_deliveries(restarted, worker_id="worker-3")) == []
     finally:
         await engine.dispose()
