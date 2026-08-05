@@ -817,6 +817,70 @@ class AuditEvent(Base):
     )
 
 
+class AIJob(Base):
+    """Canonical AI job record; provider execution is always asynchronous."""
+
+    __tablename__ = "ai_job"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    service_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    requested_by: Mapped[str | None] = mapped_column(String(128))
+    prompt_version_id: Mapped[str | None] = mapped_column(String(128))
+    model_policy_id: Mapped[str | None] = mapped_column(String(128))
+    input_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    context_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    output_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_message: Mapped[str | None] = mapped_column(String(512))
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    requires_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_ai_job_tenant_idempotency"),
+        CheckConstraint("priority BETWEEN 0 AND 9", name="ck_ai_job_priority"),
+        CheckConstraint("attempt_count >= 0", name="ck_ai_job_attempt_count"),
+    )
+
+
+class AIJobEvent(Base):
+    __tablename__ = "ai_job_event"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    ai_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AIJobAttempt(Base):
+    __tablename__ = "ai_job_attempt"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    ai_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_id: Mapped[str | None] = mapped_column(String(128))
+    workflow_execution_id: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    error_class: Mapped[str | None] = mapped_column(String(64))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_message: Mapped[str | None] = mapped_column(String(512))
+
+
 class PolicyDecision(Base):
     __tablename__ = "policy_decision"
     id: Mapped[UUID] = mapped_column(

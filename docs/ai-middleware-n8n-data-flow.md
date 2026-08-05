@@ -157,6 +157,16 @@ application.
 
 ## Implementation mapping in this repository
 
+* `POST /api/v1/ai/jobs` — persists a tenant-scoped AI job and appends
+  `ai.job.requested` to the transactional outbox; duplicate idempotency keys
+  replay the original job.
+* `GET /api/v1/ai/jobs/{job_id}` — tenant-scoped job query.
+* `POST /api/v1/ai/jobs/{job_id}/cancel` — cancel before a terminal result.
+* `POST /api/v1/ai/jobs/{job_id}/result` — HMAC-authenticated workflow-result
+  ingestion with timestamp, nonce replay protection, and duplicate-result
+  suppression.
+* `migrations/versions/0032_ai_platform_foundation.py` — durable AI jobs,
+  event history, and attempt history.
 * `app/core/ai_services.py` — versioned AI request/result models, minimization,
   deterministic policy and redaction.
 * `app/core/lead_automation.py` — durable-style state machine, tenant scope,

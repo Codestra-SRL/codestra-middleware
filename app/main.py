@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from app.api.v1.automation import router as automation_router
+from app.api.v1.ai import router as ai_router
 from app.api.v1.campaign_search import router as campaign_search_router
 from app.api.v1.commands import router as commands_router
 from app.api.v1.control import router as control_router
@@ -33,6 +34,7 @@ app = FastAPI(title="Codestra Middleware", version="0.2.0")
 app.include_router(events_router)
 app.include_router(control_router)
 app.include_router(automation_router)
+app.include_router(ai_router)
 app.include_router(reports_router)
 app.include_router(operations_router)
 app.include_router(lead_reconciliation_router)
@@ -82,6 +84,7 @@ SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
 N8N_TRANSITION_PATH = re.compile(
     r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
 )
+AI_RESULT_PATH = re.compile(r"^/api/v1/ai/jobs/[0-9a-fA-F-]{36}/result$")
 RECORDING_EXPORTER_PATH = re.compile(
     r"^/api/v1/recordings(?:/reservations|/REC-[0-9a-f]{32}/(?:complete|failure))$"
 )
@@ -109,6 +112,7 @@ async def control_request_guard(request: Request, call_next):
         and not (
             request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
         )
+        and not (request.method == "POST" and AI_RESULT_PATH.fullmatch(request.url.path))
         and request.url.path not in SELF_AUTHENTICATED_PATHS
     ):
         try:
