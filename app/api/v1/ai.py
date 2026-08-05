@@ -32,6 +32,7 @@ from app.db.session import get_session
 from app.metrics import AI_JOB_STATUS, AI_JOBS, AI_RESULT_REPLAYS, AI_WORKFLOW_RESULTS, LEAD_SEARCHES
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai-jobs"])
+workflow_router = APIRouter(prefix="/api/v1", tags=["workflow-results"])
 lead_intelligence_router = APIRouter(prefix="/api/v1/lead-intelligence", tags=["lead-intelligence"])
 ALLOWED_ENVIRONMENTS = {"test", "staging", "integration", "preproduction"}
 SENSITIVE_KEYS = {
@@ -74,6 +75,32 @@ class AIJobResult(BaseModel):
     error_message: str | None = Field(default=None, max_length=512)
     workflow_execution_id: str = Field(min_length=1, max_length=128)
     model_id: str | None = Field(default=None, max_length=128)
+
+
+class WorkflowResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message_id: str = Field(min_length=1, max_length=128)
+    event_id: str = Field(min_length=1, max_length=128)
+    job_id: UUID
+    tenant_id: str = Field(min_length=1, max_length=128)
+    workspace_id: str | None = Field(default=None, max_length=128)
+    correlation_id: str = Field(min_length=1, max_length=128)
+    workflow_id: str = Field(min_length=1, max_length=128)
+    workflow_execution_id: str = Field(min_length=1, max_length=128)
+    result_type: str = Field(min_length=1, max_length=96)
+    result_schema: str = Field(min_length=1, max_length=96)
+    result_schema_version: int = Field(ge=1)
+    status: Literal["completed", "failed", "unknown"]
+    payload: dict[str, Any] | None = None
+    error_code: str | None = Field(default=None, max_length=64)
+    error_message: str | None = Field(default=None, max_length=512)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+KNOWN_AI_WORKFLOWS = frozenset(
+    {"CDA-AI-00", "CDA-AI-01", "CDA-AI-02", "CDA-AI-03", "CDA-AI-04", "CDA-AI-05", "CDA-AI-07", "CDA-AI-08"}
+)
 
 
 def _contains_sensitive(value: Any) -> bool:
@@ -523,6 +550,66 @@ async def result_job(
     job.completed_at = datetime.now(UTC)
     db.add(AuditEvent(action="ai.job.result_received", subject=str(job.id), correlation_id=job.correlation_id, decision=job.status.lower(), redacted_payload={"workflow_execution_id": body.workflow_execution_id, "model_id": body.model_id}))
     AI_WORKFLOW_RESULTS.labels(body.status).inc()
+    AI_JOB_STATUS.labels(job.status).inc()
+    await db.commit()
+    return _serialize(job)
+
+
+@workflow_router.post("/workflow-results", status_code=202)
+async def workflow_result_callback(
+    request: Request,
+    tenant_header: str = Header(alias="X-Tenant-ID"),
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Accept the canonical n8n result envelope through the signed inbox."""
+    raw = await request.body()
+    timestamp = request.headers.get("X-Codestra-Timestamp", "")
+    nonce = request.headers.get("X-Codestra-Nonce", "")
+    signature = request.headers.get("X-Codestra-Signature", "")
+    service = request.headers.get("X-Codestra-Service", "")
+    try:
+        signed_at = int(timestamp)
+    except ValueError as exc:
+        raise HTTPException(401, "invalid callback timestamp") from exc
+    if service != "n8n-ai-result-writer" or not nonce or abs(time() - signed_at) > 300 or not settings.lead_automation_hmac_secret:
+        raise HTTPException(401, "callback authentication failed")
+    expected = hmac.new(settings.lead_automation_hmac_secret.encode(), f"{timestamp}.".encode() + raw, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        raise HTTPException(401, "callback authentication failed")
+    if await db.scalar(select(PublisherNonce).where(PublisherNonce.key_id == service, PublisherNonce.nonce == nonce)):
+        raise HTTPException(409, "callback replay rejected")
+    db.add(PublisherNonce(key_id=service, nonce=nonce, signed_at=signed_at, expires_at=datetime.now(UTC) + timedelta(seconds=300)))
+    try:
+        result = WorkflowResult.model_validate(json.loads(raw))
+        validate_result_schema(result.result_schema, result.payload)
+    except (json.JSONDecodeError, ValueError) as exc:
+        await db.rollback()
+        raise HTTPException(422, "invalid workflow result schema") from exc
+    if result.tenant_id != tenant_header or result.workflow_id not in KNOWN_AI_WORKFLOWS:
+        await db.rollback()
+        raise HTTPException(403, "workflow result is not authorized")
+    job = await db.scalar(select(AIJob).where(AIJob.id == result.job_id, AIJob.tenant_id == tenant_header).with_for_update())
+    if not job:
+        await db.rollback()
+        raise HTTPException(404, "AI job not found")
+    if job.correlation_id != result.correlation_id:
+        await db.rollback()
+        raise HTTPException(409, "workflow correlation mismatch")
+    if job.status == "COMPLETED":
+        AI_RESULT_REPLAYS.inc()
+        await db.rollback()
+        return _serialize(job, duplicate=True)
+    if job.status in {"CANCELLED", "REJECTED"}:
+        await db.rollback()
+        raise HTTPException(409, "AI job cannot accept a result")
+    job.output_payload = result.payload
+    job.error_code = result.error_code
+    job.error_message = result.error_message
+    job.status = "COMPLETED" if result.status == "completed" else "UNKNOWN" if result.status == "unknown" else "FAILED"
+    job.completed_at = result.completed_at or datetime.now(UTC)
+    db.add(AIJobEvent(ai_job_id=job.id, event_type="ai.result.available", payload={"message_id": result.message_id, "event_id": result.event_id, "workflow_id": result.workflow_id, "workflow_execution_id": result.workflow_execution_id, "result_schema": result.result_schema, "status": result.status, "correlation_id": result.correlation_id}))
+    db.add(AuditEvent(action="workflow.result.accepted", subject=str(job.id), correlation_id=job.correlation_id, decision=job.status.lower(), redacted_payload={"workflow_id": result.workflow_id, "result_schema": result.result_schema}))
+    AI_WORKFLOW_RESULTS.labels(result.status).inc()
     AI_JOB_STATUS.labels(job.status).inc()
     await db.commit()
     return _serialize(job)

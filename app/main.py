@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from app.api.v1.automation import router as automation_router
-from app.api.v1.ai import lead_intelligence_router, router as ai_router
+from app.api.v1.ai import lead_intelligence_router, router as ai_router, workflow_router
 from app.api.v1.campaign_search import router as campaign_search_router
 from app.api.v1.commands import router as commands_router
 from app.api.v1.control import router as control_router
@@ -36,6 +36,7 @@ app.include_router(control_router)
 app.include_router(automation_router)
 app.include_router(ai_router)
 app.include_router(lead_intelligence_router)
+app.include_router(workflow_router)
 app.include_router(reports_router)
 app.include_router(operations_router)
 app.include_router(lead_reconciliation_router)
@@ -79,6 +80,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v1/lead-automation/results",
         "/api/v1/registry/resolve",
         "/api/v1/social/provider-events",
+        "/api/v1/workflow-results",
     }
 )
 SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
