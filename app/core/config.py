@@ -482,14 +482,8 @@ class Settings(BaseSettings):
     trading_market_data_certification_enabled: bool = False
     trading_compliance_platform_enabled: bool = False
     trading_surveillance_enabled: bool = False
-    trading_real_market_data_enabled: bool = False
     trading_live_broker_enabled: bool = False
     trading_live_exchange_enabled: bool = False
-    trading_real_money_enabled: bool = False
-    trading_deposits_enabled: bool = False
-    trading_withdrawals_enabled: bool = False
-    trading_crypto_custody_enabled: bool = False
-    trading_copy_trading_enabled: bool = False
     trading_ai_execution_enabled: bool = False
     trading_pilot_governance_enabled: bool = False
     trading_pilot_synthetic_only_enabled: bool = True
@@ -556,7 +550,6 @@ class Settings(BaseSettings):
     ai_evaluation_platform_enabled: bool = False
     ai_regression_platform_enabled: bool = False
     ai_employee_scorecards_enabled: bool = False
-    ai_human_review_enabled: bool = False
     ai_coaching_plans_enabled: bool = False
     ai_learning_candidates_enabled: bool = False
     ai_staging_promotion_enabled: bool = False
@@ -649,7 +642,6 @@ class Settings(BaseSettings):
     integration_platform_enabled: bool = False
     integration_sandbox_enabled: bool = False
     real_connector_connections_enabled: bool = False
-    automatic_external_writes_enabled: bool = False
     business_os_enabled: bool = False
     universal_search_enabled: bool = False
     universal_timeline_enabled: bool = False
@@ -663,7 +655,6 @@ class Settings(BaseSettings):
     universal_analytics_enabled: bool = False
     business_os_global_autonomy_enabled: bool = False
     trading_real_customer_funds_enabled: bool = False
-    ai_production_promotion_enabled: bool = False
     ai_gateway_model_code: str = "qwen-primary"
     ai_gateway_model_status: str = "TESTING"
     lead_discovery_mock_enabled: bool = False
@@ -691,8 +682,6 @@ class Settings(BaseSettings):
     vicidial_maintenance_window_required: bool = True
     call_intelligence_enabled: bool = True
     call_recording_processing_enabled: bool = False
-    call_transcription_enabled: bool = False
-    call_analysis_enabled: bool = False
     call_qa_enabled: bool = False
     call_compliance_alerts_enabled: bool = False
     call_odoo_update_enabled: bool = False
@@ -722,7 +711,6 @@ class Settings(BaseSettings):
     restore_drill_enabled: bool = True
     failure_injection_staging_enabled: bool = True
     failure_injection_production_enabled: bool = False
-    automatic_production_failover_enabled: bool = False
     automatic_production_activation_enabled: bool = False
     scraper_real_http_fetch_enabled: bool = False
     scraper_browser_enabled: bool = False
