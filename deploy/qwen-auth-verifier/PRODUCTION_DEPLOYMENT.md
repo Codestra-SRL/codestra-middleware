@@ -5,7 +5,7 @@ does not deploy the Qwen worker, enable a job API, or authorize business writes.
 
 ## Immutable inputs
 
-- Image: `ghcr.io/codestra-srl/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef`
+- Image: `ghcr.io/codestra-srl/qwen-auth-verifier@sha256:cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390`
 - Private source: `10.40.0.4/32`
 - Private route: `POST /internal/api/v1/ai/auth/verify`
 - Client certificate serial: OpenSSL hexadecimal `3001`, whose X.509 integer
