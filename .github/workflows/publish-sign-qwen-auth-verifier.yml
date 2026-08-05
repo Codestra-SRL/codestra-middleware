@@ -6,14 +6,14 @@ on:
 permissions: {}
 
 concurrency:
-  group: publish-sign-qwen-auth-verifier-a0423439705ee7f
+  group: publish-sign-qwen-auth-verifier-cc7e2457fdd69fdd
   cancel-in-progress: false
 
 env:
   IMAGE_REPOSITORY: ghcr.io/codestra-srl/qwen-auth-verifier
-  IMAGE_DIGEST: sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef
-  OCI_ARCHIVE_PATH: /opt/codestra-jit-input/qwen-auth-verifier-a0423439705ee7f.oci.tar
-  OCI_INDEX_MEDIA_TYPE: application/vnd.oci.image.index.v1+json
+  IMAGE_DIGEST: sha256:cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390
+  OCI_ARCHIVE_PATH: /opt/codestra-jit-input/qwen-auth-verifier-cc7e2457fdd69fdd.oci.tar
+  OCI_MANIFEST_MEDIA_TYPE: application/vnd.oci.image.manifest.v1+json
   ORAS_VERSION: 1.3.2
   ORAS_ARCHIVE_URL: https://github.com/oras-project/oras/releases/download/v1.3.2/oras_1.3.2_linux_amd64.tar.gz
   ORAS_CHECKSUMS_URL: https://github.com/oras-project/oras/releases/download/v1.3.2/oras_1.3.2_checksums.txt
@@ -22,14 +22,15 @@ env:
   ORAS_ARCHIVE_SHA256: 9229ccc6d17bb282039ad4a69abb16dcb887a5bce567c075d731d9b3c7ad8eaf
   ORAS_SIGNING_KEY_FINGERPRINT: 2DA461D13B0C27845EDFA77FE462A3894CBAAA47 # gitleaks:allow
   ORAS_GIT_COMMIT: fe425992fdfdf300a1cfb380bc4271b3e1a3d3db
-  CANDIDATE_COMMIT: bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75
-  GOVERNANCE_HEAD: 7c918e328f6336761f0c65540a65fae8b84e9117
-  VEX_SHA256: ba6ec01d89e3140a8538d9e5669be8b05f1e31ac3c475cf65a8d6907302dc1ff
-  SBOM_SHA256: 380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec
-  VEX_PATH: security/reviews/qwen-verifier-bbd22cf/openvex-draft.json
-  SECURITY_OWNER_RECORD_PATH: security/reviews/qwen-verifier-bbd22cf/security-owner-record.json
-  LOCAL_SBOM_PATH: /var/lib/codestra/qwen-security-review/qwen-ai-01-bbd22cf/scanner/sbom.cdx.json
-  PUBLISH_TAG: approved-a0423439705ee7f
+  CANDIDATE_COMMIT: 68dd9585e766f27a97a51329cf08f1f355445026
+  GOVERNANCE_HEAD: 461399573993e3a878412d788f3dd8404385cdcb
+  VEX_SHA256: 2437e123ca8f6b6a27425ead83cba8526b4dd35fab1f2a755fe84be2e3e87e0a
+  SBOM_SHA256: 1c97030914f94412bfba5d6a0178d96d26f2cc04339de3679008bd9d76868138
+  SECURITY_OWNER_RECORD_SHA256: 56cb87aa6d48dd935f1ce11c9a6ebe8d013b8254a4faf9889069deaecfce2352
+  VEX_PATH: security/vex/qwen-auth-verifier-der/openvex.json
+  SECURITY_OWNER_RECORD_PATH: security/vex/qwen-auth-verifier-der/security-owner-record.json
+  LOCAL_SBOM_PATH: /var/lib/codestra/qwen-security-review/qwen-verifier-der-68dd958/scanner/sbom.cdx.json
+  PUBLISH_TAG: approved-cc7e2457fdd69fdd
   EXPECTED_ISSUER: https://token.actions.githubusercontent.com
   EXPECTED_IDENTITY: https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/publish-sign-qwen-auth-verifier.yml@refs/heads/main
 
@@ -71,11 +72,12 @@ jobs:
           test "${GITHUB_REPOSITORY}" = "Codestra-SRL/codestra-middleware"
           test "${GITHUB_REF}" = "refs/heads/main"
           test "${IMAGE_REPOSITORY}" = "ghcr.io/codestra-srl/qwen-auth-verifier"
-          test "${IMAGE_DIGEST}" = "sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef"
-          test "${CANDIDATE_COMMIT}" = "bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75"
-          test "${GOVERNANCE_HEAD}" = "7c918e328f6336761f0c65540a65fae8b84e9117"
-          test "${VEX_SHA256}" = "ba6ec01d89e3140a8538d9e5669be8b05f1e31ac3c475cf65a8d6907302dc1ff"
-          test "${SBOM_SHA256}" = "380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
+          test "${IMAGE_DIGEST}" = "sha256:cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390"
+          test "${CANDIDATE_COMMIT}" = "68dd9585e766f27a97a51329cf08f1f355445026"
+          test "${GOVERNANCE_HEAD}" = "461399573993e3a878412d788f3dd8404385cdcb"
+          test "${VEX_SHA256}" = "2437e123ca8f6b6a27425ead83cba8526b4dd35fab1f2a755fe84be2e3e87e0a"
+          test "${SBOM_SHA256}" = "1c97030914f94412bfba5d6a0178d96d26f2cc04339de3679008bd9d76868138"
+          test "${SECURITY_OWNER_RECORD_SHA256}" = "56cb87aa6d48dd935f1ce11c9a6ebe8d013b8254a4faf9889069deaecfce2352"
           test "${GITHUB_ACTOR}" != "kazan555"
 
       - name: Fetch and validate exact approved governance evidence
@@ -92,26 +94,30 @@ jobs:
           fetch_exact "${VEX_PATH}" final-openvex.json
           fetch_exact "${SECURITY_OWNER_RECORD_PATH}" security-owner-record.json
           test "$(sha256sum final-openvex.json | cut -d' ' -f1)" = "${VEX_SHA256}"
+          test "$(sha256sum security-owner-record.json | cut -d' ' -f1)" = \
+            "${SECURITY_OWNER_RECORD_SHA256}"
           test "$(sha256sum "${LOCAL_SBOM_PATH}" | cut -d' ' -f1)" = "${SBOM_SHA256}"
           jq -e \
             --arg digest "${IMAGE_DIGEST}" \
             --arg vex "${VEX_SHA256}" '
               .decision == "APPROVED" and
               .signed == false and
-              .github_username == "kazan555" and
-              .github_user_id == 77101516 and
+              .security_owner.github_login == "kazan555" and
+              .security_owner.github_user_id == 77101516 and
               .image_digest == $digest and
               .final_vex_sha256 == $vex and
-              .findings_reviewed == 10
+              ((.findings.fixed | length) == 9) and
+              ((.findings.not_affected | length) == 1) and
+              ((.findings.affected | length) == 0) and
+              ((.findings.under_investigation | length) == 0)
             ' security-owner-record.json >/dev/null
           jq -e \
-            --arg digest "${IMAGE_DIGEST}" '
+            --arg digest "${IMAGE_DIGEST#sha256:}" '
               .["@context"] == "https://openvex.dev/ns/v0.2.0" and
               (.statements | length) == 10 and
-              all(.statements[];
-                .status == "not_affected" and
-                (.impact_statement | type == "string" and length > 40) and
-                all(.products[]; .["@id"] | contains($digest)))
+              ([.statements[] | select(.status == "fixed")] | length) == 9 and
+              ([.statements[] | select(.status == "not_affected")] | length) == 1 and
+              all(.statements[]; all(.products[]; .["@id"] | contains($digest)))
             ' final-openvex.json >/dev/null
           cp "${LOCAL_SBOM_PATH}" final-sbom.cdx.json
 
@@ -187,14 +193,14 @@ jobs:
           layout_index="$(tar -xOf "${OCI_ARCHIVE_PATH}" index.json)"
           test "$(jq -r .schemaVersion <<<"${layout_index}")" = 2
           archive_digest="$(jq -er \
-            '.manifests[] | select(.mediaType == "application/vnd.oci.image.index.v1+json") | .digest' \
+            '.manifests[] | select(.mediaType == "application/vnd.oci.image.manifest.v1+json") | .digest' \
             <<<"${layout_index}")"
           test "${archive_digest}" = "${IMAGE_DIGEST}"
           archive_blob="blobs/sha256/${archive_digest#sha256:}"
           test "$(tar -xOf "${OCI_ARCHIVE_PATH}" "${archive_blob}" | \
             sha256sum | cut -d' ' -f1)" = "${IMAGE_DIGEST#sha256:}"
           test "$(tar -xOf "${OCI_ARCHIVE_PATH}" "${archive_blob}" | \
-            jq -r .mediaType)" = "${OCI_INDEX_MEDIA_TYPE}"
+            jq -r .mediaType)" = "${OCI_MANIFEST_MEDIA_TYPE}"
           source_manifest_digest="$("${ORAS_BIN}" manifest fetch --oci-layout \
             "${OCI_ARCHIVE_PATH}@${IMAGE_DIGEST}" | sha256sum | cut -d' ' -f1)"
           test "sha256:${source_manifest_digest}" = "${IMAGE_DIGEST}"
