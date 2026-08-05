@@ -1,0 +1,22 @@
+[
+  {"source_record_id":"TEST-LEAD-001","company_name":"Example Roofing Test LLC","website":"https://example.invalid/1","phone":"+1-305-555-0100","email":"one@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-002","company_name":"Example HVAC Test LLC","website":"https://example.invalid/2","phone":"+1-305-555-0101","email":"two@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-003","company_name":"Example Solar Test LLC","website":"https://example.invalid/3","phone":"+1-305-555-0100","email":"three@example.invalid","ownership_status":"POSSIBLE_OWNER"},
+  {"source_record_id":"TEST-LEAD-004","company_name":"Example Plumbing Test LLC","website":"https://example.invalid/4","phone":"+1-305-555-0103","email":"","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-005","company_name":"Example Legal Test LLC","website":"not-a-url","phone":"invalid","email":"bad","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-006","company_name":"Example Logistics Test LLC","website":"https://example.invalid/6","phone":"+1-305-555-0106","email":"six@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-007","company_name":"Example Medical Test LLC","website":"https://example.invalid/7","phone":"+1-305-555-0107","email":"seven@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-008","company_name":"Example Farm Test LLC","website":"https://example.invalid/8","phone":"+1-305-555-0108","email":"eight@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-009","company_name":"Example Web Test LLC","website":"https://example.invalid/9","phone":"+1-305-555-0109","email":"nine@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-010","company_name":"Example Finance Test LLC","website":"https://example.invalid/10","phone":"+1-305-555-0110","email":"ten@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-011","company_name":"Example Retail Test LLC","website":"https://example.invalid/11","phone":"+1-305-555-0111","email":"eleven@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-012","company_name":"Example Design Test LLC","website":"https://example.invalid/12","phone":"+1-305-555-0112","email":"twelve@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-013","company_name":"Example Security Test LLC","website":"https://example.invalid/13","phone":"+1-305-555-0113","email":"thirteen@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-014","company_name":"Example Education Test LLC","website":"https://example.invalid/14","phone":"+1-305-555-0114","email":"fourteen@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-015","company_name":"Example Travel Test LLC","website":"https://example.invalid/15","phone":"+1-305-555-0115","email":"fifteen@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-016","company_name":"Example Auto Test LLC","website":"https://example.invalid/16","phone":"+1-305-555-0116","email":"sixteen@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-017","company_name":"Example Construction Test LLC","website":"https://example.invalid/17","phone":"+1-305-555-0117","email":"seventeen@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-018","company_name":"Example Media Test LLC","website":"https://example.invalid/18","phone":"+1-305-555-0118","email":"eighteen@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-019","company_name":"Example Consulting Test LLC","website":"https://example.invalid/19","phone":"+1-305-555-0119","email":"nineteen@example.invalid","ownership_status":"UNKNOWN"},
+  {"source_record_id":"TEST-LEAD-020","company_name":"Example Agriculture Test LLC","website":"https://example.invalid/20","phone":"+1-305-555-0120","email":"twenty@example.invalid","ownership_status":"UNKNOWN"}
+]

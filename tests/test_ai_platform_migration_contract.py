@@ -26,3 +26,11 @@ def test_ai_foundation_migrations_are_linear_and_define_required_tables():
         "ai_reconciliation",
     ):
         assert f"CREATE TABLE {table}" in registries
+
+
+def test_qwen_registry_migration_is_after_lead_intelligence_foundation():
+    registry = (ROOT / "migrations/versions/0034_qwen_staging_registry.py").read_text()
+    assert "revision = \"0034_qwen_staging_registry\"" in registry
+    assert "down_revision = \"0033_ai_registries_lead_intelligence\"" in registry
+    for code in ("qwen-primary", "qwen-lead-intelligence-staging", "lead-normalization-v1", "lead-score-v1", "lead-duplicate-review-v1"):
+        assert code in registry

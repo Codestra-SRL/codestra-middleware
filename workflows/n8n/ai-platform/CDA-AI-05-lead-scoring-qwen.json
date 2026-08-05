@@ -1,0 +1,8 @@
+{
+  "name": "CDA-AI-05 Lead Scoring Qwen",
+  "active": false,
+  "nodes": [{"name": "Score Through Schema-Bound Gateway", "type": "n8n-nodes-base.httpRequest", "parameters": {"method": "POST", "url": "={{$env.CODESTRA_AI_GATEWAY_URL}}/v1/chat/completions", "authentication": "predefinedCredentialType", "nodeCredentialType": "httpHeaderAuth", "options": {"timeout": 120000}}, "typeVersion": 4, "position": [0, 0]}],
+  "connections": {},
+  "credentials": {"httpHeaderAuth": {"name": "Codestra AI Gateway (staging reference)"}},
+  "tags": ["codestra", "ai-platform", "qwen", "review-required", "staging-disabled"]
+}

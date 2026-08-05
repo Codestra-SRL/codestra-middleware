@@ -206,6 +206,17 @@ class Settings(BaseSettings):
     ai_workflow_activation_enabled: bool = False
     call_transcription_enabled: bool = False
     call_analysis_enabled: bool = False
+    ai_gateway_base_url: str = ""
+    ai_gateway_api_key_file: str = ""
+    ai_gateway_health_path: str = "/health"
+    ai_gateway_timeout_seconds: int = 120
+    ai_gateway_max_concurrency: int = 2
+    ai_gateway_requests_per_minute: int = 20
+    ai_gateway_max_input_bytes: int = 262144
+    ai_gateway_max_output_tokens: int = 1500
+    ai_gateway_model_code: str = "qwen-primary"
+    ai_gateway_model_status: str = "TESTING"
+    lead_discovery_mock_enabled: bool = False
 
     def validate_safety(self) -> None:
         broad_event_switches = (

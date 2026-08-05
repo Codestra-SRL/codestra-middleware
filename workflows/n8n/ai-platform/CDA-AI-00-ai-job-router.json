@@ -1,0 +1,11 @@
+{
+  "name": "CDA-AI-00 AI Job Router",
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "nodes": [
+    {"name": "Middleware AI Job Event", "type": "n8n-nodes-base.webhook", "parameters": {"path": "codestra-ai-job-router", "httpMethod": "POST"}, "typeVersion": 2, "position": [0, 0]},
+    {"name": "Validate Approved Route", "type": "n8n-nodes-base.code", "parameters": {"jsCode": "// Server-controlled routing map; production activation remains disabled.\nreturn items;"}, "typeVersion": 2, "position": [240, 0]}
+  ],
+  "connections": {},
+  "tags": ["codestra", "ai-platform", "staging-disabled"]
+}

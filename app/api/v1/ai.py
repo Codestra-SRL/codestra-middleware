@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.ai_schema_registry import validate_result_schema
+from app.adapters.ai_gateway import AIGatewayClient
 from app.db.models import (
     AIApproval,
     AIJob,
@@ -202,6 +203,26 @@ async def get_job(job_id: UUID, tenant_header: str = Header(alias="X-Tenant-ID")
     if not job:
         raise HTTPException(404, "AI job not found")
     return _serialize(job)
+
+
+@router.get("/gateway/health")
+async def ai_gateway_health() -> dict[str, Any]:
+    client = AIGatewayClient(
+        settings.ai_gateway_base_url,
+        settings.ai_gateway_api_key_file,
+        timeout_seconds=settings.ai_gateway_timeout_seconds,
+        model_code=settings.ai_gateway_model_code,
+        health_path=settings.ai_gateway_health_path,
+    )
+    try:
+        result = await client.health()
+    finally:
+        await client.aclose()
+    return {
+        "component": settings.ai_gateway_model_code,
+        "model_status": settings.ai_gateway_model_status,
+        **result,
+    }
 
 
 @router.get("/jobs")

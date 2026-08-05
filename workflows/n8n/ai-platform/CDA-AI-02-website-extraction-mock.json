@@ -1,0 +1,7 @@
+{
+  "name": "CDA-AI-02 Website Extraction Mock",
+  "active": false,
+  "nodes": [{"name": "Deterministic Fixture Extraction", "type": "n8n-nodes-base.code", "parameters": {"jsCode": "return items.map(item => ({json:{...item.json,page_title:'Synthetic fixture page',meta_description:'Synthetic test content only',public_phones:[item.json.phone].filter(Boolean),public_emails:[item.json.email].filter(Boolean),public_addresses:[item.json.address],public_social_links:[],public_contacts:[],source_evidence:['fixture'],extraction_warnings:[]}}));"}, "typeVersion": 2, "position": [0, 0]}],
+  "connections": {},
+  "tags": ["codestra", "ai-platform", "synthetic", "no-live-http", "staging-disabled"]
+}

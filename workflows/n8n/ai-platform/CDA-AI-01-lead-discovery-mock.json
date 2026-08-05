@@ -1,0 +1,7 @@
+{
+  "name": "CDA-AI-01 Lead Discovery Mock",
+  "active": false,
+  "nodes": [{"name": "Synthetic Fixture Records", "type": "n8n-nodes-base.code", "parameters": {"jsCode": "return [{json:{source_record_id:'TEST-LEAD-001',source_type:'fixture',source_url:'https://example.invalid/fixture/001',collected_at:new Date().toISOString(),company_name:'Example Roofing Test LLC',website:'https://example.invalid',phone:'+1-305-555-0100',email:'testing@example.invalid',address:{city:'Miami',country:'US'},social_profiles:{},contacts:[],raw_text:'synthetic fixture'}}];"}, "typeVersion": 2, "position": [0, 0]}],
+  "connections": {},
+  "tags": ["codestra", "ai-platform", "synthetic", "staging-disabled"]
+}
