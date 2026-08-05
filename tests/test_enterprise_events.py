@@ -65,5 +65,5 @@ def test_oidc_exemption_is_exact_not_a_broad_api_prefix():
 def test_every_event_endpoint_uses_validated_identity_context():
     text = open("app/api/v1/enterprise_events.py").read()
     assert "_identity(authorization)" in text
-    assert text.count("_context(authorization") == 5
+    assert text.count("_context(authorization") == 7
     assert 'Header("", alias="X-Tenant' not in text

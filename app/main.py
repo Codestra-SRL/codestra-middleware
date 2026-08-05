@@ -78,12 +78,25 @@ SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
 OIDC_AUTHENTICATED_PATHS = frozenset(
     {
         "/api/v1/auth/session",
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/mfa",
         "/api/v1/roles",
         "/api/v1/permissions",
+        "/api/v1/users",
+        "/api/v1/service-accounts",
+        "/api/v1/identity-providers",
         "/api/v1/events",
     }
 )
 OIDC_EVENT_PATH = re.compile(r"^/api/v1/events/[0-9a-fA-F-]{36}(?:/replay)?$")
+OIDC_EVENT_OPERATIONS_PATH = re.compile(
+    r"^/api/v1/events/(?:subscriptions|deliveries/[0-9a-fA-F-]{36}/retry)$"
+)
+OIDC_IDENTITY_ADMIN_PATH = re.compile(
+    r"^/api/v1/users(?:/[0-9a-fA-F-]{36}/sessions/revoke)?$"
+)
 N8N_TRANSITION_PATH = re.compile(
     r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
 )
@@ -109,6 +122,8 @@ async def control_request_guard(request: Request, call_next):
         and request.url.path not in SELF_AUTHENTICATED_PATHS
         and request.url.path not in OIDC_AUTHENTICATED_PATHS
         and not OIDC_EVENT_PATH.fullmatch(request.url.path)
+        and not OIDC_EVENT_OPERATIONS_PATH.fullmatch(request.url.path)
+        and not OIDC_IDENTITY_ADMIN_PATH.fullmatch(request.url.path)
     ):
         try:
             verify_bearer(

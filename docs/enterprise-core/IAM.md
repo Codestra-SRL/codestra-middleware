@@ -1,5 +1,18 @@
 # Enterprise IAM architecture
 
+## Lifecycle completion
+
+The middleware exposes login, MFA continuation, refresh rotation, logout,
+tenant-scoped user creation, session revocation, disabled-by-default service
+accounts, disabled-by-default SAML/OIDC provider registration, and durable
+access reviews. Keycloak remains the credential authority. Secret files must be
+absolute regular non-symlink files with no group or world permissions.
+
+Tenant, workspace, department, roles, and permissions come only from validated
+OIDC claims. New identities and providers remain disabled pending independent
+scope review. Acceptance uses a disposable realm and synthetic identity without
+printing tokens or OTP material.
+
 Codestra uses the configured OIDC identity provider as the authentication
 authority and middleware as the authorization enforcement point. Middleware
 does not store passwords, OTP seeds, recovery codes, hardware-key material, or

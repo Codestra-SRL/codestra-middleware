@@ -1,5 +1,17 @@
 # Enterprise database architecture baseline
 
+## Recovery acceptance
+
+Release acceptance requires one Alembic head, forward/one-revision
+rollback/forward migration, an encrypted logical backup with a verified digest,
+an isolated restore, and an exact-transaction PITR rehearsal. Plaintext is
+removed after validation. Off-site protection is reported as passing only when
+a configured remote target and its independent checksum are verified.
+
+The schema audit reports legacy tables that predate current audit columns.
+Retrofitting them requires a reviewed data migration; nullable placeholder
+columns are not used to manufacture compliance.
+
 PostgreSQL is the authoritative transactional store. Redis is a bounded cache
 and notification accelerator; Qdrant stores embeddings only behind
 middleware-enforced tenant and workspace filters. Applications receive no
