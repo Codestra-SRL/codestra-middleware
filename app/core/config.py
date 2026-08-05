@@ -399,6 +399,10 @@ class Settings(BaseSettings):
     mock_connectors_enabled: bool = False
     real_provider_connections_enabled: bool = False
     automatic_external_writes_enabled: bool = False
+    enterprise_foundation_enabled: bool = False
+    middleware_platform_enabled: bool = False
+    core_mutations_enabled: bool = False
+    core_event_ingestion_enabled: bool = False
     unrestricted_webhooks_enabled: bool = False
     data_platform_enabled: bool = False
     warehouse_staging_enabled: bool = False
