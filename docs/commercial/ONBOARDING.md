@@ -1,3 +1,4 @@
 # Onboarding
 
-Onboarding tracks customer/Codestra owners, scope, integrations, data, training, acceptance, activation gate, and rollback.
+Onboarding is a versioned project with owners, scope, security, integrations, data,
+training, acceptance criteria, activation gate, and rollback plan.

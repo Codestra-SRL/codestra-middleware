@@ -1,3 +1,4 @@
 # Offboarding
 
-Offboarding pauses employees/workflows, revokes tools/connectors, reconciles usage, prepares exports, reviews holds/retention, and keeps deletion approval-controlled.
+Offboarding pauses AI and workflows, revokes tools, reconciles usage, supports exports,
+checks retention/legal holds, and never silently deletes data.

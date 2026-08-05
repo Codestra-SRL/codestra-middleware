@@ -3633,6 +3633,102 @@ class EnterpriseIntegrationEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class DataFactorySource(Base):
+    __tablename__ = "data_factory_source"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_code: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    authority_level: Mapped[str] = mapped_column(String(24), nullable=False, default="CONTRIBUTING")
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT", index=True)
+    classification: Mapped[str] = mapped_column(String(24), nullable=False, default="INTERNAL")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataFactoryIngestionRun(Base):
+    __tablename__ = "data_factory_ingestion_run"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_code: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    records_received: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    records_published: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="RECEIVED", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataFactoryQualityResult(Base):
+    __tablename__ = "data_factory_quality_result"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    ingestion_run_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    dimension: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False, default="REVIEW_REQUIRED")
+    evidence_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class MasterEntityRecord(Base):
+    __tablename__ = "master_entity_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    authority_state: Mapped[str] = mapped_column(String(24), nullable=False, default="REVIEW_REQUIRED")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    provenance_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IntegrationConnectorRegistry(Base):
+    __tablename__ = "integration_connector_registry"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    connector_code: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    provider: Mapped[str] = mapped_column(String(96), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
+    capabilities_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    sandbox_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IntegrationGatewayRequest(Base):
+    __tablename__ = "integration_gateway_request"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    connector_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    capability: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="REQUESTED", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CommercialProvisioningRequest(Base):
+    __tablename__ = "commercial_provisioning_request"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    subscription_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="PROVISIONING", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CommercialBillingReference(Base):
+    __tablename__ = "commercial_billing_reference"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    billing_period: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class CoreServiceRegistry(Base):
     __tablename__ = "core_service_registry"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

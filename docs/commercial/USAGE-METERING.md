@@ -1,3 +1,4 @@
 # Usage metering
 
-Usage is tenant/workspace/subscription/employee scoped, source-backed, billing-period assigned, idempotent, reconciled, and audited.
+Usage is tenant/workspace/subscription scoped, idempotent, source-backed, assigned to
+billing periods, and reconciled before invoice-draft references.

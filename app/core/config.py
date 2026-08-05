@@ -399,6 +399,16 @@ class Settings(BaseSettings):
     mock_connectors_enabled: bool = False
     real_provider_connections_enabled: bool = False
     automatic_external_writes_enabled: bool = False
+    ai_data_factory_enabled: bool = True
+    ai_data_factory_staging_enabled: bool = True
+    master_data_management_enabled: bool = True
+    customer_360_enabled: bool = True
+    business_graph_enabled: bool = True
+    enterprise_integration_platform_enabled: bool = True
+    integration_staging_enabled: bool = True
+    webhook_gateway_enabled: bool = True
+    connector_sdk_enabled: bool = True
+    tenant_provisioning_staging_enabled: bool = True
     enterprise_foundation_enabled: bool = False
     middleware_platform_enabled: bool = False
     core_mutations_enabled: bool = False
@@ -607,7 +617,6 @@ class Settings(BaseSettings):
     real_connector_connections_enabled: bool = False
     automatic_external_writes_enabled: bool = False
     business_os_enabled: bool = False
-    business_graph_enabled: bool = False
     universal_search_enabled: bool = False
     universal_timeline_enabled: bool = False
     universal_inbox_enabled: bool = False

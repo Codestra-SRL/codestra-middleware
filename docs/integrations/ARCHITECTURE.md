@@ -1,3 +1,4 @@
-# Integration hub
+# Integration platform
 
-Connectors use credential references, schema validation, signed webhooks, retries, circuit breakers, dead letters, replay, idempotency, health checks, and reconciliation through middleware.
+All connectors route through the middleware gateway. Adapters are versioned, sandboxed,
+permission-controlled, observable, retry-safe, idempotent, and replaceable.

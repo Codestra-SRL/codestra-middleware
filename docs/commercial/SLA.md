@@ -1,3 +1,4 @@
 # SLA
 
-SLA instances record service, tier, hours, timezone, target, warning, pauses, exclusions, source, and effective version. Unmeasured SLAs are not published.
+SLA targets, calendars, pauses, exclusions, warnings, breaches, and measurement sources
+are versioned. Credits require human and finance review.

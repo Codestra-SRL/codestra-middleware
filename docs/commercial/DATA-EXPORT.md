@@ -1,3 +1,4 @@
 # Data export
 
-Exports are tenant-scoped, authorized, audited, retention/legal-hold aware, and never imply deletion.
+Exports require tenant/workspace authorization, classification checks, audit evidence,
+and an explicit request. Production deletion remains disabled.

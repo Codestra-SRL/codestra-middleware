@@ -1,3 +1,4 @@
 # Billing
 
-Odoo remains authoritative for quotes, invoices, credits, payments, and balances. Middleware owns usage, periods, invoice-draft references, idempotency, and reconciliation.
+Odoo remains authoritative for invoice and payment references. Middleware aggregates
+usage and requests invoice drafts; payments, refunds, credits, and renewals are disabled.
