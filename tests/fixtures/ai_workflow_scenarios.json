@@ -1,0 +1,11 @@
+{
+  "synthetic_only": true,
+  "workflows": [
+    {"id":"lead-qualification","external_delivery":false,"human_gate":true},
+    {"id":"customer-support","external_delivery":false,"human_gate":true},
+    {"id":"appointment-scheduling","production_calendar":false,"human_gate":true},
+    {"id":"invoice-preparation","production_invoice":false,"human_gate":true},
+    {"id":"compliance-review","ai_decision":false,"human_gate":true},
+    {"id":"scraper-to-crm-draft","production_import":false,"human_gate":true}
+  ]
+}

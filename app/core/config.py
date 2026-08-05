@@ -195,6 +195,21 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    ai_workflow_engine_enabled: bool = True
+    ai_workflow_staging_enabled: bool = True
+    ai_workflow_scheduling_enabled: bool = True
+    ai_workflow_event_triggers_enabled: bool = True
+    ai_workflow_human_tasks_enabled: bool = True
+    ai_workflow_retries_enabled: bool = True
+    ai_workflow_compensation_enabled: bool = True
+    ai_workflow_replanning_enabled: bool = True
+    ai_workflow_production_autonomy_enabled: bool = False
+    ai_workflow_autonomous_external_delivery_enabled: bool = False
+    ai_workflow_autonomous_financial_actions_enabled: bool = False
+    ai_workflow_autonomous_telephony_enabled: bool = False
+    ai_workflow_autonomous_trading_enabled: bool = False
+    ai_workflow_destructive_actions_enabled: bool = False
+    ai_workflow_unbounded_recursion_enabled: bool = False
 
     def validate_safety(self) -> None:
         broad_event_switches = (
@@ -223,6 +238,13 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.postiz_publish_enabled,
+            self.ai_workflow_production_autonomy_enabled,
+            self.ai_workflow_autonomous_external_delivery_enabled,
+            self.ai_workflow_autonomous_financial_actions_enabled,
+            self.ai_workflow_autonomous_telephony_enabled,
+            self.ai_workflow_autonomous_trading_enabled,
+            self.ai_workflow_destructive_actions_enabled,
+            self.ai_workflow_unbounded_recursion_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
