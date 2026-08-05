@@ -1263,6 +1263,70 @@ class VicidialAssignmentReconciliation(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class VicidialCampaignActivationApproval(Base):
+    __tablename__ = "vicidial_campaign_activation_approval"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    campaign_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    list_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="REQUESTED", index=True)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    authorization_reference: Mapped[str | None] = mapped_column(String(255))
+    maintenance_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    maintenance_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(String(1024), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    shut_down_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class VicidialDialingWindowPolicy(Base):
+    __tablename__ = "vicidial_dialing_window_policy"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    policy_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    start_local: Mapped[str] = mapped_column(String(8), nullable=False)
+    end_local: Mapped[str] = mapped_column(String(8), nullable=False)
+    max_agents: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    max_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="TESTING")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class VicidialCanaryRun(Base):
+    __tablename__ = "vicidial_canary_run"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    approval_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    assignment_item_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    allowlisted_phone_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="AUTHORIZED", index=True)
+    agent_reference: Mapped[str | None] = mapped_column(String(128))
+    carrier_check: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    dialing_window_check: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    call_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class VicidialCanaryEvent(Base):
+    __tablename__ = "vicidial_canary_event"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    canary_run_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_safe: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class PolicyDecision(Base):
     __tablename__ = "policy_decision"
     id: Mapped[UUID] = mapped_column(

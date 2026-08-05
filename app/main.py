@@ -27,6 +27,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.social import router as social_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.v1.vicidial_assignments import router as vicidial_assignments_router
+from app.api.v1.vicidial_canary import router as vicidial_canary_router
 from app.api.v1.webphone import router as webphone_router
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -51,6 +52,7 @@ app.include_router(n8n_transport_router)
 app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(vicidial_assignments_router)
+app.include_router(vicidial_canary_router)
 app.include_router(social_router)
 app.include_router(campaign_search_router)
 app.include_router(registry_router)
