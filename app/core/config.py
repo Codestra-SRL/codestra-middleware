@@ -255,6 +255,13 @@ class Settings(BaseSettings):
     marketplace_automatic_upgrade_enabled: bool = False
     marketplace_production_install_enabled: bool = False
     marketplace_destructive_uninstall_enabled: bool = False
+    developer_platform_enabled: bool = False
+    developer_public_api_enabled: bool = False
+    developer_oauth_enabled: bool = False
+    developer_api_keys_enabled: bool = False
+    developer_webhooks_enabled: bool = False
+    developer_sandbox_enabled: bool = False
+    developer_real_billing_enabled: bool = False
     ai_gateway_model_code: str = "qwen-primary"
     ai_gateway_model_status: str = "TESTING"
     lead_discovery_mock_enabled: bool = False
