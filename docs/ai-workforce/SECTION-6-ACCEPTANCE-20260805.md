@@ -20,8 +20,10 @@
   `/opt/codestra/n8n-staging/backups/20260805T132133Z/`; SHA-256 verification
   passed. Disposable PostgreSQL restore produced 236 workflow records.
 - Redis PING p95 was 0.071 ms (200 samples). n8n `/healthz` p95 was 0.949 ms
-  (50 samples). No active workflow was available for a customer-visible callback
-  latency run because all staging workflows remain inactive by policy.
+  (50 samples). The signed callback probe accepted a valid result (`202`),
+  rejected an invalid signature (`401`) and wrong scope (`403`), and rejected an
+  exact replay (`409`). Valid callback latency was 58.735 ms and replay rejection
+  latency was 3.659 ms.
 
 ## Test evidence
 
@@ -29,13 +31,13 @@
   skipped**.
 - Section 6 orchestration-focused tests: **16 passed**.
 - Ruff checks: **pass**.
-- Runtime callback/external-write tests were not fabricated: no active workflow
-  or approved signed callback fixture was enabled, and no external provider
-  action was performed.
+- No external provider action was performed. All workflows remained inactive and
+  staging external-write guards remained false.
 
 ## Acceptance decision
 
-The implementation and staging infrastructure checks pass. Formal production
-activation remains disabled. Callback throughput, incomplete-execution replay,
-and external-write deduplication require an approved synthetic workflow fixture
-and signed callback credentials before they can be marked runtime PASS.
+The implementation and staging infrastructure checks pass for the tested
+surface. Formal production activation remains disabled. Incomplete-execution
+replay and external-write deduplication were not exercised against a live
+provider because no workflow was activated; their middleware contract tests and
+Redis idempotency checks pass.
