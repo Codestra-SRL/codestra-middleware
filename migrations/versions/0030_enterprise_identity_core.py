@@ -4,8 +4,10 @@ Revision ID: 0030_enterprise_identity_core
 Revises: 0029_merge_lead_recording_heads
 """
 
-from alembic import op
+from typing import Any
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0030_enterprise_identity_core"
@@ -14,7 +16,7 @@ branch_labels = None
 depends_on = None
 
 
-def _governed_columns() -> list[sa.Column]:
+def _governed_columns() -> list[Any]:
     return [
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
