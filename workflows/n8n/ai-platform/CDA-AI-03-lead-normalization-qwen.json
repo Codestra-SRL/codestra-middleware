@@ -1,0 +1,11 @@
+{
+  "name": "CDA-AI-03 Lead Normalization Qwen",
+  "active": false,
+  "nodes": [
+    {"name": "Build Schema-Bound Qwen Request", "type": "n8n-nodes-base.code", "parameters": {"jsCode": "return items.map(item => ({json:{service_code:'lead_intelligence',task_code:'normalize_lead',prompt_version:'lead-normalization-v1',schema_code:'lead_normalization_v1',model_policy:'qwen-lead-intelligence-staging',input:item.json}}));"}, "typeVersion": 2, "position": [0, 0]},
+    {"name": "Private AI Gateway Credential Reference", "type": "n8n-nodes-base.httpRequest", "parameters": {"method": "POST", "url": "={{$env.CODESTRA_AI_GATEWAY_URL}}/v1/chat/completions", "authentication": "predefinedCredentialType", "nodeCredentialType": "httpHeaderAuth", "options": {"timeout": 120000}}, "typeVersion": 4, "position": [260, 0]}
+  ],
+  "connections": {},
+  "credentials": {"httpHeaderAuth": {"name": "Codestra AI Gateway (staging reference)"}},
+  "tags": ["codestra", "ai-platform", "qwen", "schema-bound", "staging-disabled"]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "CDA-AI-04 Contact Verification Mock",
+  "active": false,
+  "nodes": [{"name": "Synthetic Verification", "type": "n8n-nodes-base.code", "parameters": {"jsCode": "return items.map(item => ({json:{...item.json,verification_status:'UNVERIFIED',phone_verification:{status:'UNVERIFIED',type:'UNKNOWN',confidence:0,provider_reference:'mock'},email_verification:{status:'UNVERIFIED',deliverability:'UNKNOWN',is_role_address:false,confidence:0,provider_reference:'mock'}}}));"}, "typeVersion": 2, "position": [0, 0]}],
+  "connections": {},
+  "tags": ["codestra", "ai-platform", "synthetic", "no-external-verifier", "staging-disabled"]
+}

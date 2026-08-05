@@ -1,0 +1,8 @@
+{
+  "name": "CDA-AI-07 Workflow Result Callback",
+  "active": false,
+  "nodes": [{"name": "Signed Middleware Result Reference", "type": "n8n-nodes-base.httpRequest", "parameters": {"method": "POST", "url": "={{$env.CODESTRA_MIDDLEWARE_URL}}/api/v1/workflow-results", "authentication": "predefinedCredentialType", "nodeCredentialType": "httpHeaderAuth"}, "typeVersion": 4, "position": [0, 0]}],
+  "connections": {},
+  "credentials": {"httpHeaderAuth": {"name": "Codestra Middleware Signed API (staging reference)"}},
+  "tags": ["codestra", "ai-platform", "signed-callback", "staging-disabled"]
+}

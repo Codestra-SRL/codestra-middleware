@@ -80,3 +80,29 @@ LEADS_DISCOVERED = Counter("codestra_leads_discovered_total", "Lead records disc
 LEADS_DUPLICATES = Counter("codestra_leads_duplicates_total", "Duplicate leads detected")
 LEADS_APPROVED = Counter("codestra_leads_approved_total", "Lead reviews approved")
 LEAD_IMPORT_REQUESTS = Counter("codestra_lead_import_requests_total", "Lead import requests")
+AI_GATEWAY_REQUESTS = Counter(
+    "codestra_ai_gateway_requests_total", "AI Gateway requests", ["model_code"]
+)
+AI_GATEWAY_FAILURES = Counter(
+    "codestra_ai_gateway_failures_total", "AI Gateway failures"
+)
+AI_GATEWAY_DURATION = Histogram(
+    "codestra_ai_gateway_request_duration_seconds",
+    "AI Gateway request duration",
+    ["model_code"],
+)
+AI_GATEWAY_TIMEOUTS = Counter(
+    "codestra_ai_gateway_timeouts_total", "AI Gateway timeouts"
+)
+AI_GATEWAY_SCHEMA_FAILURES = Counter(
+    "codestra_ai_gateway_schema_failures_total", "AI Gateway schema failures"
+)
+AI_MODEL_HEALTH = Gauge(
+    "codestra_ai_model_health", "AI model health state", ["model_code"]
+)
+AI_MODEL_INPUT_TOKENS = Counter(
+    "codestra_ai_model_input_tokens_total", "AI model input tokens", ["model_code"]
+)
+AI_MODEL_OUTPUT_TOKENS = Counter(
+    "codestra_ai_model_output_tokens_total", "AI model output tokens", ["model_code"]
+)

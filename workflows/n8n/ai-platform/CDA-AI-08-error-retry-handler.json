@@ -1,0 +1,7 @@
+{
+  "name": "CDA-AI-08 Error and Retry Handler",
+  "active": false,
+  "nodes": [{"name": "Classify Without Secret Logging", "type": "n8n-nodes-base.code", "parameters": {"jsCode": "return items.map(item => ({json:{error_class:'OUTPUT_VALIDATION_FAILED',retryable:false,redacted:true}}));"}, "typeVersion": 2, "position": [0, 0]}],
+  "connections": {},
+  "tags": ["codestra", "ai-platform", "bounded-retry", "staging-disabled"]
+}

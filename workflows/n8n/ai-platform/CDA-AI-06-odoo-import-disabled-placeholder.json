@@ -1,0 +1,7 @@
+{
+  "name": "CDA-AI-06 Odoo Import (Disabled Placeholder)",
+  "active": false,
+  "nodes": [{"name": "Import Blocked By Feature Flags", "type": "n8n-nodes-base.code", "parameters": {"jsCode": "throw new Error('Odoo AI writes are disabled in this mission');"}, "typeVersion": 2, "position": [0, 0]}],
+  "connections": {},
+  "tags": ["codestra", "ai-platform", "safety-placeholder", "disabled"]
+}
