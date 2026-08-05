@@ -24,12 +24,17 @@ from app.db.models import (
     AIJobEvent,
     AuditEvent,
     LeadIntelligenceRecord,
+    LeadReview as LeadReviewRecord,
+    LeadReviewEvent,
+    OdooImportBatch,
+    OdooImportItem,
     LeadSearch,
     OutboxEvent,
     PublisherNonce,
 )
 from app.db.session import get_session
 from app.metrics import AI_JOB_STATUS, AI_JOBS, AI_RESULT_REPLAYS, AI_WORKFLOW_RESULTS, LEAD_SEARCHES
+from app.core.lead_import import ApprovalPolicy, approval_errors, external_key, transition
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai-jobs"])
 workflow_router = APIRouter(prefix="/api/v1", tags=["workflow-results"])
@@ -371,6 +376,19 @@ class LeadReview(BaseModel):
     comment: str | None = Field(default=None, max_length=512)
 
 
+class ReviewDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str | None = Field(default=None, max_length=1024)
+
+
+class ImportBatchCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tenant_id: str = Field(min_length=1, max_length=128)
+    workspace_id: str | None = Field(default=None, max_length=128)
+    lead_record_ids: list[UUID] = Field(min_length=1, max_length=10)
+    environment: Literal["staging"] = "staging"
+
+
 @router.post("/lead-intelligence/searches", status_code=202)
 async def create_lead_search(body: LeadSearchCreate, tenant_header: str = Header(alias="X-Tenant-ID"), idempotency_key: str = Header(alias="Idempotency-Key"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     if tenant_header != body.tenant_id:
@@ -478,6 +496,142 @@ async def import_lead_selection(tenant_header: str = Header(alias="X-Tenant-ID")
     if not (settings.lead_import_enabled and settings.odoo_ai_writes_enabled and settings.odoo_lead_apply_enabled):
         raise HTTPException(409, "lead import is disabled")
     return {"status": "not_implemented", "tenant_id": tenant_header}
+
+
+def _review_role(role: str) -> None:
+    if role not in {"LEAD_REVIEWER", "LEAD_REVIEW_MANAGER"}:
+        raise HTTPException(403, "lead review role required")
+
+
+def _import_role(role: str) -> None:
+    if role not in {"LEAD_IMPORT_OPERATOR", "LEAD_IMPORT_APPROVER"}:
+        raise HTTPException(403, "lead import role required")
+
+
+@lead_intelligence_router.get("/reviews")
+async def list_reviews(tenant_header: str = Header(alias="X-Tenant-ID"), status: str | None = None, limit: int = 50, db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    if not 1 <= limit <= 100:
+        raise HTTPException(422, "limit must be between 1 and 100")
+    query = select(LeadReviewRecord).where(LeadReviewRecord.tenant_id == tenant_header).order_by(LeadReviewRecord.review_priority, LeadReviewRecord.created_at).limit(limit)
+    if status:
+        query = query.where(LeadReviewRecord.status == status)
+    rows = (await db.scalars(query)).all()
+    return {"items": [{"review_id": str(row.id), "lead_record_id": str(row.lead_record_id), "status": row.status, "priority": row.review_priority, "assigned_reviewer_id": row.assigned_reviewer_id} for row in rows], "count": len(rows)}
+
+
+@lead_intelligence_router.get("/reviews/{review_id}")
+async def get_review(review_id: UUID, tenant_header: str = Header(alias="X-Tenant-ID"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    row = await db.scalar(select(LeadReviewRecord).where(LeadReviewRecord.id == review_id, LeadReviewRecord.tenant_id == tenant_header))
+    if not row:
+        raise HTTPException(404, "lead review not found")
+    lead = await db.scalar(select(LeadIntelligenceRecord).where(LeadIntelligenceRecord.id == row.lead_record_id, LeadIntelligenceRecord.tenant_id == tenant_header))
+    return {"review_id": str(row.id), "lead_record_id": str(row.lead_record_id), "status": row.status, "decision": row.decision, "notes": row.review_notes, "lead": {"company_name": lead.company_name, "website": lead.website, "lead_score": lead.lead_score, "duplicate_status": lead.duplicate_status, "ownership_status": lead.ownership_status, "source_history": lead.source_history} if lead else None}
+
+
+async def _change_review(review_id: UUID, tenant_header: str, role: str, target: str, body: ReviewDecision, db: AsyncSession) -> dict[str, Any]:
+    _review_role(role)
+    row = await db.scalar(select(LeadReviewRecord).where(LeadReviewRecord.id == review_id, LeadReviewRecord.tenant_id == tenant_header).with_for_update())
+    if not row:
+        raise HTTPException(404, "lead review not found")
+    if target == "APPROVED_FOR_IMPORT":
+        lead = await db.scalar(select(LeadIntelligenceRecord).where(LeadIntelligenceRecord.id == row.lead_record_id, LeadIntelligenceRecord.tenant_id == tenant_header))
+        if not lead:
+            raise HTTPException(404, "lead record not found")
+        errors = approval_errors({"company_name": lead.company_name, "source_history": lead.source_history, "phone": lead.phone, "normalized_phone": lead.normalized_phone, "email": lead.email, "normalized_email": lead.normalized_email, "lead_score": lead.lead_score, "ownership_status": lead.ownership_status, "ownership_confidence": lead.ownership_confidence, "duplicate_status": lead.duplicate_status}, ApprovalPolicy())
+        if errors:
+            raise HTTPException(422, {"approval_blocked": errors})
+    try:
+        row.status = transition(row.status, target)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    row.decision = "APPROVED" if target == "APPROVED_FOR_IMPORT" else "REJECTED" if target == "REJECTED" else target
+    row.decision_by = role
+    row.decision_reason = body.reason
+    row.decision_at = datetime.now(UTC)
+    db.add(LeadReviewEvent(lead_review_id=row.id, event_type=f"LEAD_REVIEW_{target}", actor_id=role, actor_type="service_role", payload_safe={"reason": body.reason} if body.reason else {}, correlation_id=str(row.id)))
+    db.add(AuditEvent(action=f"lead.review.{target.lower()}", subject=str(row.lead_record_id), correlation_id=str(row.id), decision="accepted", redacted_payload={"review_id": str(row.id)}))
+    await db.commit()
+    return {"review_id": str(row.id), "lead_record_id": str(row.lead_record_id), "status": row.status}
+
+
+@lead_intelligence_router.post("/reviews/{review_id}/start")
+async def start_review(review_id: UUID, tenant_header: str = Header(alias="X-Tenant-ID"), role: str = Header(alias="X-Codestra-Role"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _change_review(review_id, tenant_header, role, "UNDER_REVIEW", ReviewDecision(), db)
+
+
+@lead_intelligence_router.post("/reviews/{review_id}/approve")
+async def approve_review(review_id: UUID, body: ReviewDecision, tenant_header: str = Header(alias="X-Tenant-ID"), role: str = Header(alias="X-Codestra-Role"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _change_review(review_id, tenant_header, role, "APPROVED_FOR_IMPORT", body, db)
+
+
+@lead_intelligence_router.post("/reviews/{review_id}/reject")
+async def reject_review(review_id: UUID, body: ReviewDecision, tenant_header: str = Header(alias="X-Tenant-ID"), role: str = Header(alias="X-Codestra-Role"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _change_review(review_id, tenant_header, role, "REJECTED", body, db)
+
+
+@lead_intelligence_router.post("/reviews/{review_id}/mark-duplicate")
+async def mark_review_duplicate(review_id: UUID, body: ReviewDecision, tenant_header: str = Header(alias="X-Tenant-ID"), role: str = Header(alias="X-Codestra-Role"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _change_review(review_id, tenant_header, role, "POSSIBLE_DUPLICATE", body, db)
+
+
+@lead_intelligence_router.post("/reviews/batch-approve")
+async def batch_approve_reviews(body: LeadReview, tenant_header: str = Header(alias="X-Tenant-ID"), role: str = Header(alias="X-Codestra-Role"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    _review_role(role)
+    results = []
+    for review_id in body.lead_ids:
+        results.append(await _change_review(review_id, tenant_header, role, "APPROVED_FOR_IMPORT", ReviewDecision(reason=body.comment), db))
+    return {"items": results, "count": len(results)}
+
+
+@lead_intelligence_router.post("/import-batches", status_code=202)
+async def create_import_batch(body: ImportBatchCreate, tenant_header: str = Header(alias="X-Tenant-ID"), idempotency_key: str = Header(alias="Idempotency-Key"), role: str = Header(alias="X-Codestra-Role"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    _import_role(role)
+    if tenant_header != body.tenant_id or not settings.odoo_import_platform_enabled or not settings.odoo_import_staging_enabled:
+        raise HTTPException(409, "staging Odoo import is disabled or tenant scope mismatched")
+    if len(body.lead_record_ids) > 10:
+        raise HTTPException(422, "staging batch limit is 10")
+    existing = await db.scalar(select(OdooImportBatch).where(OdooImportBatch.tenant_id == tenant_header, OdooImportBatch.idempotency_key == idempotency_key))
+    if existing:
+        return {"batch_id": str(existing.id), "batch_code": existing.batch_code, "status": existing.status, "duplicate": True}
+    reviews = (await db.scalars(select(LeadReviewRecord).where(LeadReviewRecord.tenant_id == tenant_header, LeadReviewRecord.lead_record_id.in_(body.lead_record_ids)))).all()
+    if len(reviews) != len(set(body.lead_record_ids)) or any(review.status != "APPROVED_FOR_IMPORT" for review in reviews):
+        raise HTTPException(422, "only approved leads may enter an import batch")
+    batch = OdooImportBatch(tenant_id=tenant_header, workspace_id=body.workspace_id, batch_code=f"STAGE-{uuid4().hex[:16]}", status="REQUESTED", requested_by=role, idempotency_key=idempotency_key, correlation_id=str(uuid4()), lead_count=len(reviews))
+    db.add(batch)
+    await db.flush()
+    for review in reviews:
+        db.add(OdooImportItem(batch_id=batch.id, lead_record_id=review.lead_record_id, odoo_external_key=external_key(tenant_header, str(review.lead_record_id))))
+    db.add(AuditEvent(action="import.batch.created", subject=str(batch.id), correlation_id=batch.correlation_id, decision="accepted", redacted_payload={"lead_count": len(reviews)}))
+    await db.commit()
+    return {"batch_id": str(batch.id), "batch_code": batch.batch_code, "status": batch.status, "lead_count": batch.lead_count, "duplicate": False}
+
+
+@lead_intelligence_router.post("/import-batches/{batch_id}/approve")
+async def approve_import_batch(batch_id: UUID, tenant_header: str = Header(alias="X-Tenant-ID"), role: str = Header(alias="X-Codestra-Role"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    if role != "LEAD_IMPORT_APPROVER":
+        raise HTTPException(403, "import approver role required")
+    batch = await db.scalar(select(OdooImportBatch).where(OdooImportBatch.id == batch_id, OdooImportBatch.tenant_id == tenant_header).with_for_update())
+    if not batch or batch.status != "REQUESTED":
+        raise HTTPException(409, "batch is not awaiting approval")
+    batch.status = "APPROVED"
+    batch.approved_by = role
+    batch.approved_at = datetime.now(UTC)
+    db.add(AuditEvent(action="import.batch.approved", subject=str(batch.id), correlation_id=batch.correlation_id, decision="accepted", redacted_payload={}))
+    await db.commit()
+    return {"batch_id": str(batch.id), "status": batch.status}
+
+
+@lead_intelligence_router.post("/import-batches/{batch_id}/execute")
+async def execute_import_batch(batch_id: UUID, tenant_header: str = Header(alias="X-Tenant-ID"), role: str = Header(alias="X-Codestra-Role"), db: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    _import_role(role)
+    if not settings.odoo_lead_create_enabled or not settings.odoo_import_staging_enabled or not settings.odoo_import_platform_enabled:
+        raise HTTPException(409, "Odoo lead creation is disabled")
+    batch = await db.scalar(select(OdooImportBatch).where(OdooImportBatch.id == batch_id, OdooImportBatch.tenant_id == tenant_header).with_for_update())
+    if not batch or batch.status != "APPROVED":
+        raise HTTPException(409, "batch is not approved")
+    batch.status = "QUEUED"
+    await db.commit()
+    return {"batch_id": str(batch.id), "status": batch.status, "execution": "queued"}
 
 
 @router.post("/jobs/{job_id}/result", status_code=202)

@@ -217,6 +217,13 @@ class Settings(BaseSettings):
     ai_gateway_model_code: str = "qwen-primary"
     ai_gateway_model_status: str = "TESTING"
     lead_discovery_mock_enabled: bool = False
+    lead_review_enabled: bool = True
+    lead_approval_enabled: bool = True
+    odoo_import_platform_enabled: bool = False
+    odoo_import_staging_enabled: bool = False
+    odoo_import_production_enabled: bool = False
+    odoo_lead_create_enabled: bool = False
+    automatic_lead_approval_enabled: bool = False
 
     def validate_safety(self) -> None:
         broad_event_switches = (

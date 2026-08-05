@@ -75,6 +75,18 @@ AI_OUTBOX_PENDING = Gauge("codestra_ai_outbox_pending", "AI outbox events pendin
 AI_RECONCILIATION_PENDING = Gauge(
     "codestra_ai_reconciliation_pending", "AI reconciliation records pending"
 )
+LEAD_REVIEWS = Counter("codestra_lead_reviews_total", "Lead reviews", ["status"])
+LEAD_REVIEW_DURATION = Histogram("codestra_lead_review_duration_seconds", "Lead review duration")
+LEAD_APPROVALS = Counter("codestra_lead_approvals_total", "Lead approvals", ["decision"])
+ODOO_IMPORT_BATCHES = Counter("codestra_odoo_import_batches_total", "Odoo import batches", ["status"])
+ODOO_IMPORT_ITEMS = Counter("codestra_odoo_import_items_total", "Odoo import items", ["status"])
+ODOO_IMPORT_SUCCESS = Counter("codestra_odoo_import_success_total", "Odoo import successes")
+ODOO_IMPORT_FAILURES = Counter("codestra_odoo_import_failures_total", "Odoo import failures")
+ODOO_IMPORT_UNKNOWN = Counter("codestra_odoo_import_unknown_total", "Odoo import unknown outcomes")
+ODOO_IMPORT_RETRIES = Counter("codestra_odoo_import_retries_total", "Odoo import retries")
+ODOO_IMPORT_RECONCILIATION = Counter("codestra_odoo_import_reconciliation_total", "Odoo import reconciliation outcomes", ["status"])
+ODOO_IMPORT_DUPLICATES = Counter("codestra_odoo_import_duplicate_blocks_total", "Odoo import duplicate blocks")
+ODOO_IMPORT_DURATION = Histogram("codestra_odoo_import_duration_seconds", "Odoo import duration")
 LEAD_SEARCHES = Counter("codestra_lead_searches_total", "Lead searches created")
 LEADS_DISCOVERED = Counter("codestra_leads_discovered_total", "Lead records discovered")
 LEADS_DUPLICATES = Counter("codestra_leads_duplicates_total", "Duplicate leads detected")
