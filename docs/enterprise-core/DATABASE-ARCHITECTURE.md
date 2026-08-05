@@ -1,5 +1,39 @@
 # Enterprise database architecture baseline
 
+## Recovery acceptance
+
+Release acceptance requires one Alembic head, forward/one-revision
+rollback/forward migration, an encrypted logical backup with a verified digest,
+an isolated restore, and an exact-transaction PITR rehearsal. Plaintext is
+removed after validation. Off-site protection is reported as passing only when
+a configured remote target and its independent checksum are verified.
+
+The schema audit reports legacy tables that predate current audit columns.
+Retrofitting them requires a reviewed data migration; nullable placeholder
+columns are not used to manufacture compliance.
+
+## Migration waves
+
+1. Identity, tenant, and workspace.
+2. Command, event, workflow, and audit.
+3. Odoo integration and business records.
+4. Communications and telephony.
+5. AI, memory, knowledge, and tools.
+6. Commercial usage and billing.
+7. Reporting, security, and legacy miscellaneous tables.
+
+Each wave is independently reversible and must pass existing-data backfill,
+forward/rollback/forward, tenant isolation, query-plan, and exact-head CI gates
+before the next wave starts. `iam_tenant` is the root-scope exception: it does
+not receive a self-referential tenant or workspace identifier.
+
+Wave 2 governs the authoritative enterprise event control plane:
+`enterprise_event`, `enterprise_event_replay`, `enterprise_event_subscription`,
+and `enterprise_event_delivery`. The event log remains append-only while its
+governance metadata is backfilled transactionally. Domain-owned command and
+audit tables remain in their owning migration waves; for example, notification
+and telephony commands are Wave 4 rather than duplicated in the control plane.
+
 PostgreSQL is the authoritative transactional store. Redis is a bounded cache
 and notification accelerator; Qdrant stores embeddings only behind
 middleware-enforced tenant and workspace filters. Applications receive no

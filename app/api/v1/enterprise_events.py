@@ -14,6 +14,7 @@ from app.api.v1.identity import _identity
 from app.core.enterprise_events import EnterpriseEventError, EventEnvelope, idempotency_hash
 from app.core.iam import IAMAuthorizationError
 from app.db.session import get_session
+from app.workers.enterprise_events import materialize_deliveries, retry_dead_letter
 
 router = APIRouter(prefix="/api/v1/events", tags=["enterprise-events"])
 
@@ -82,6 +83,7 @@ async def publish_event(
             },
         )
         await db.commit()
+        await materialize_deliveries(db, internal_id)
     except EnterpriseEventError as exc:
         raise HTTPException(422, str(exc)) from exc
     except IntegrityError as exc:
@@ -155,3 +157,62 @@ async def replay_event(
         raise HTTPException(404, "event not found")
     await db.commit()
     return {"replay_id": str(replay_id), "status": "PENDING"}
+
+
+class SubscriptionRequest(BaseModel):
+    subscriber_key: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{2,95}$")
+    event_type_pattern: str = Field(pattern=r"^[a-z][a-z0-9._*-]{2,127}$")
+    endpoint_key: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{2,95}$")
+    max_attempts: int = Field(default=5, ge=1, le=10)
+
+
+@router.post("/subscriptions", status_code=201)
+async def create_subscription(
+    body: SubscriptionRequest,
+    authorization: str = Header("", alias="Authorization"),
+    db: AsyncSession = Depends(get_session),
+):
+    identity = _context(authorization, "event.subscription.manage")
+    subscription_id = uuid4()
+    try:
+        await db.execute(
+            text("""
+                INSERT INTO enterprise_event_subscription (
+                    id, tenant_id, workspace_id, subscriber_key,
+                    event_type_pattern, endpoint_key, enabled, max_attempts, created_by
+                ) VALUES (
+                    :id, :tenant_id, :workspace_id, :subscriber_key,
+                    :event_type_pattern, :endpoint_key, false, :max_attempts, :created_by
+                )
+            """),
+            {
+                "id": subscription_id,
+                "tenant_id": UUID(identity.tenant_id),
+                "workspace_id": UUID(identity.workspace_id),
+                "created_by": identity.subject,
+                **body.model_dump(),
+            },
+        )
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(409, "subscription already exists") from exc
+    return {"id": str(subscription_id), "status": "DISABLED_PENDING_REVIEW"}
+
+
+@router.post("/deliveries/{delivery_id}/retry", status_code=202)
+async def retry_delivery(
+    delivery_id: UUID,
+    authorization: str = Header("", alias="Authorization"),
+    db: AsyncSession = Depends(get_session),
+):
+    identity = _context(authorization, "event.retry")
+    changed = await retry_dead_letter(
+        db,
+        delivery_id,
+        tenant_id=UUID(identity.tenant_id),
+        workspace_id=UUID(identity.workspace_id),
+    )
+    if not changed:
+        raise HTTPException(409, "delivery is not retry eligible")
+    return {"id": str(delivery_id), "status": "RETRY"}

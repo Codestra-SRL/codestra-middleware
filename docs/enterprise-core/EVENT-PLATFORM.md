@@ -1,5 +1,17 @@
 # Enterprise event platform baseline
 
+## Operational delivery
+
+PostgreSQL is authoritative for subscriptions, deliveries, retries, replays,
+and dead letters. Publication idempotently materializes deliveries. Workers use
+`FOR UPDATE SKIP LOCKED`, bounded leases, exponential backoff, and a hard retry
+ceiling; expired leases survive process and application restart. Replay requeues
+the durable delivery without creating a second external-action record.
+
+Subscriptions are tenant/workspace scoped, created disabled pending review,
+and use allowlisted endpoint keys rather than arbitrary URLs. Dead-letter retry
+is restricted to the caller's validated scope.
+
 The existing PostgreSQL inbox/outbox is the delivery foundation. Events are
 immutable, schema-versioned, tenant/workspace scoped, idempotent, correlated,
 and auditable. Redis or NATS may notify workers but cannot be the source of
