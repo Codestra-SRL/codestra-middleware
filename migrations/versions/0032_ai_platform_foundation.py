@@ -69,6 +69,13 @@ def upgrade() -> None:
       error_message varchar(512),
       UNIQUE (ai_job_id, attempt_number)
     )""")
+    # Later revisions use descriptive IDs longer than Alembic's default
+    # VARCHAR(32) version column. Widen it before Alembic records revision
+    # 0032, while the table is guaranteed to exist in a fresh database.
+    op.execute(
+        "ALTER TABLE IF EXISTS alembic_version "
+        "ALTER COLUMN version_num TYPE VARCHAR(255)"
+    )
 
 
 def downgrade() -> None:

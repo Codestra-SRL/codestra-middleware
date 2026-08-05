@@ -25,26 +25,19 @@ def run_migrations_offline():
 
 
 def do_run_migrations(connection: Connection):
-    # Alembic's default version table is VARCHAR(32), while this repository
-    # uses descriptive revision identifiers longer than 32 characters.  Widen
-    # the existing table before Alembic records the current revision.  This is
-    # an idempotent, non-destructive compatibility step and is intentionally
-    # limited to PostgreSQL (the staging/production database engine).
-    if connection.dialect.name == "postgresql":
-        connection.execute(
-            text(
-                "CREATE TABLE IF NOT EXISTS alembic_version ("
-                "version_num VARCHAR(255) NOT NULL PRIMARY KEY)"
-            )
-        )
-        connection.execute(
-            text(
-                "ALTER TABLE IF EXISTS alembic_version "
-                "ALTER COLUMN version_num TYPE VARCHAR(255)"
-            )
-        )
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
+        # Alembic's default version table is VARCHAR(32), while this
+        # repository uses descriptive revision identifiers longer than 32
+        # characters. Widen existing installations before recording a new
+        # revision. The operation is idempotent and non-destructive.
+        if connection.dialect.name == "postgresql":
+            connection.execute(
+                text(
+                    "ALTER TABLE IF EXISTS alembic_version "
+                    "ALTER COLUMN version_num TYPE VARCHAR(255)"
+                )
+            )
         context.run_migrations()
 
 
