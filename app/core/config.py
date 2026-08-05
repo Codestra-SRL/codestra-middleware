@@ -192,6 +192,20 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    # AI control-plane switches are fail-closed and intentionally disabled by default.
+    ai_platform_enabled: bool = False
+    ai_inference_enabled: bool = False
+    ai_external_provider_enabled: bool = False
+    lead_intelligence_enabled: bool = False
+    lead_discovery_enabled: bool = False
+    lead_import_enabled: bool = False
+    odoo_ai_writes_enabled: bool = False
+    vicidial_ai_writes_enabled: bool = False
+    postiz_ai_writes_enabled: bool = False
+    mautic_ai_writes_enabled: bool = False
+    ai_workflow_activation_enabled: bool = False
+    call_transcription_enabled: bool = False
+    call_analysis_enabled: bool = False
 
     def validate_safety(self) -> None:
         broad_event_switches = (

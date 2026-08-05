@@ -37,6 +37,7 @@ def upgrade() -> None:
       created_at timestamptz NOT NULL DEFAULT now(),
       started_at timestamptz,
       completed_at timestamptz,
+      cancelled_at timestamptz,
       UNIQUE (tenant_id, idempotency_key),
       CHECK (priority BETWEEN 0 AND 9),
       CHECK (attempt_count >= 0)
@@ -57,6 +58,7 @@ def upgrade() -> None:
       ai_job_id uuid NOT NULL REFERENCES ai_job(id) ON DELETE RESTRICT,
       attempt_number integer NOT NULL,
       model_id varchar(128),
+      workflow_id varchar(128),
       workflow_execution_id varchar(128),
       status varchar(32) NOT NULL,
       started_at timestamptz NOT NULL,

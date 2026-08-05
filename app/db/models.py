@@ -846,6 +846,7 @@ class AIJob(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_ai_job_tenant_idempotency"),
         CheckConstraint("priority BETWEEN 0 AND 9", name="ck_ai_job_priority"),
@@ -871,6 +872,7 @@ class AIJobAttempt(Base):
     ai_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
     model_id: Mapped[str | None] = mapped_column(String(128))
+    workflow_id: Mapped[str | None] = mapped_column(String(128))
     workflow_execution_id: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -879,6 +881,164 @@ class AIJobAttempt(Base):
     error_class: Mapped[str | None] = mapped_column(String(64))
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(String(512))
+    __table_args__ = (
+        UniqueConstraint("ai_job_id", "attempt_number", name="uq_ai_job_attempt"),
+    )
+
+
+class AIPrompt(Base):
+    __tablename__ = "ai_prompt"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    service_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(512))
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIPromptVersion(Base):
+    __tablename__ = "ai_prompt_version"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    prompt_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    developer_prompt: Mapped[str | None] = mapped_column(Text)
+    output_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT")
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("prompt_id", "version", name="uq_ai_prompt_version"),)
+
+
+class AIModel(Base):
+    __tablename__ = "ai_model"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    model_code: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    capabilities: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="DISABLED")
+    health_status: Mapped[str | None] = mapped_column(String(24))
+    fallback_model_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIModelPolicy(Base):
+    __tablename__ = "ai_model_policy"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    policy_code: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(String(512))
+    primary_model_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    fallback_model_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    maximum_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    maximum_input_size: Mapped[int] = mapped_column(Integer, nullable=False, default=65536)
+    maximum_output_size: Mapped[int] = mapped_column(Integer, nullable=False, default=65536)
+    allowed_data_classifications: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIApproval(Base):
+    __tablename__ = "ai_approval"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    ai_job_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), index=True)
+    action_type: Mapped[str] = mapped_column(String(96), nullable=False)
+    action_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    requested_by: Mapped[str | None] = mapped_column(String(128))
+    reviewed_by: Mapped[str | None] = mapped_column(String(128))
+    review_comment: Mapped[str | None] = mapped_column(String(1024))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AIOutputSchema(Base):
+    __tablename__ = "ai_output_schema"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    schema_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    service_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    json_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="DRAFT")
+    approved_by: Mapped[str | None] = mapped_column(String(128))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("schema_code", "schema_version", name="uq_ai_output_schema"),)
+
+
+class LeadSearch(Base):
+    __tablename__ = "lead_search"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    ai_job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, unique=True)
+    industry: Mapped[str | None] = mapped_column(String(128))
+    keywords: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    location_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    requirements_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    maximum_results: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    minimum_confidence: Mapped[float] = mapped_column(nullable=False, default=0.75)
+    target_odoo_team: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="QUEUED")
+    created_by: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LeadIntelligenceRecord(Base):
+    __tablename__ = "lead_intelligence_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    search_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    company_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_company_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    website: Mapped[str | None] = mapped_column(String(2048))
+    normalized_domain: Mapped[str | None] = mapped_column(String(255), index=True)
+    phone: Mapped[str | None] = mapped_column(String(64))
+    normalized_phone: Mapped[str | None] = mapped_column(String(64), index=True)
+    email: Mapped[str | None] = mapped_column(String(320), index=True)
+    normalized_email: Mapped[str | None] = mapped_column(String(320), index=True)
+    address_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    social_profiles: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    contacts: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    ownership_status: Mapped[str] = mapped_column(String(32), nullable=False, default="UNKNOWN")
+    ownership_confidence: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    ownership_source: Mapped[str | None] = mapped_column(String(2048))
+    verification_status: Mapped[str] = mapped_column(String(32), nullable=False, default="UNVERIFIED")
+    lead_score: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    duplicate_status: Mapped[str] = mapped_column(String(32), nullable=False, default="UNREVIEWED")
+    duplicate_of_record_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    source_history: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    odoo_lead_id: Mapped[int | None] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="DISCOVERED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIReconciliation(Base):
+    __tablename__ = "ai_reconciliation"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="DRY_RUN")
+    observed_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    discrepancy_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PolicyDecision(Base):

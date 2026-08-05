@@ -38,3 +38,45 @@ SOCIAL_CALLBACKS = Counter(
     "Social provider callbacks by privacy-safe outcome",
     ["outcome"],
 )
+
+AI_JOBS = Counter(
+    "codestra_ai_jobs_total",
+    "AI jobs accepted by service and task",
+    ["service_code", "task_code"],
+)
+AI_JOB_STATUS = Counter(
+    "codestra_ai_job_status_total",
+    "AI job state outcomes",
+    ["status"],
+)
+AI_JOB_DURATION = Histogram(
+    "codestra_ai_job_duration_seconds",
+    "AI job processing duration",
+    ["service_code"],
+)
+AI_SCHEMA_FAILURES = Counter(
+    "codestra_ai_schema_validation_failures_total",
+    "AI workflow result schema failures",
+)
+AI_APPROVALS_PENDING = Gauge(
+    "codestra_ai_approvals_pending",
+    "AI approvals currently pending",
+)
+AI_WORKFLOW_RESULTS = Counter(
+    "codestra_ai_workflow_results_total",
+    "AI workflow results accepted",
+    ["status"],
+)
+AI_RESULT_REPLAYS = Counter(
+    "codestra_ai_workflow_result_replays_total",
+    "Duplicate AI workflow results acknowledged",
+)
+AI_OUTBOX_PENDING = Gauge("codestra_ai_outbox_pending", "AI outbox events pending")
+AI_RECONCILIATION_PENDING = Gauge(
+    "codestra_ai_reconciliation_pending", "AI reconciliation records pending"
+)
+LEAD_SEARCHES = Counter("codestra_lead_searches_total", "Lead searches created")
+LEADS_DISCOVERED = Counter("codestra_leads_discovered_total", "Lead records discovered")
+LEADS_DUPLICATES = Counter("codestra_leads_duplicates_total", "Duplicate leads detected")
+LEADS_APPROVED = Counter("codestra_leads_approved_total", "Lead reviews approved")
+LEAD_IMPORT_REQUESTS = Counter("codestra_lead_import_requests_total", "Lead import requests")
