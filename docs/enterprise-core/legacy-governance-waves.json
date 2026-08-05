@@ -1,0 +1,124 @@
+{
+  "database_table_count_excluding_alembic": 91,
+  "fully_compliant": 11,
+  "migration_candidates": 79,
+  "root_scope_exceptions": 1,
+  "waves": {
+    "WAVE_1_IDENTITY_TENANT_WORKSPACE": {
+      "authority": "IDENTITY_OWNER",
+      "tables": [
+        "credential_grant",
+        "iam_access_review",
+        "iam_access_review_item",
+        "iam_api_key",
+        "iam_principal",
+        "iam_role_binding",
+        "iam_session",
+        "iam_tenant",
+        "iam_workspace"
+      ]
+    },
+    "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT": {
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "tables": [
+        "broad_event_delivery",
+        "enterprise_event",
+        "enterprise_event_delivery",
+        "enterprise_event_replay",
+        "enterprise_event_subscription",
+        "event_inbox",
+        "idempotency_record",
+        "integration_credential_reference",
+        "integration_delivery",
+        "integration_endpoint",
+        "integration_endpoint_audit",
+        "integration_endpoint_version",
+        "integration_event",
+        "integration_registry_generation",
+        "integration_route_binding",
+        "integration_schema_version",
+        "integration_service",
+        "n8n_acknowledgement",
+        "n8n_execution_registration",
+        "n8n_execution_transition",
+        "n8n_target_attestation",
+        "orchestration_request",
+        "outbox_event",
+        "policy_decision",
+        "publisher_acknowledgement",
+        "publisher_nonce",
+        "reconciliation_checkpoint",
+        "webhook_delivery"
+      ]
+    },
+    "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS": {
+      "authority": "ODOO_BUSINESS_OWNER",
+      "tables": [
+        "campaign_activation_audit",
+        "campaign_extension_allocation",
+        "campaign_feature_gate",
+        "campaign_object_identity",
+        "campaign_registry",
+        "campaign_search_alias",
+        "lead_automation_audit",
+        "lead_automation_bindings",
+        "lead_automation_delivery_attempts",
+        "lead_automation_event_payloads",
+        "lead_automation_events",
+        "lead_automation_odoo_acknowledgements",
+        "lead_automation_outbox",
+        "lead_automation_policies",
+        "lead_automation_policy_versions",
+        "lead_automation_quarantine",
+        "lead_automation_reconciliation_runs",
+        "lead_automation_results",
+        "lead_sync_request",
+        "odoo_result_delivery",
+        "sync_job"
+      ]
+    },
+    "WAVE_4_COMMUNICATIONS_AND_TELEPHONY": {
+      "authority": "COMMUNICATIONS_OWNER",
+      "tables": [
+        "notification_attempt",
+        "notification_command",
+        "notification_replay_approval",
+        "recording_delivery_attempts",
+        "recording_objects",
+        "recording_outbox",
+        "recording_playback_audit",
+        "recording_retention_decisions",
+        "recording_retention_policies",
+        "recording_state_audit",
+        "recording_upload_reservations",
+        "recordings",
+        "telephony_call_lifecycle",
+        "telephony_call_lifecycle_event",
+        "telephony_command_journal",
+        "telephony_extension_pool",
+        "telephony_extension_reservation",
+        "telephony_operation_journal",
+        "telephony_operation_transition",
+        "telephony_provisioning_saga",
+        "telephony_reconciliation_run",
+        "telephony_terminal_result",
+        "transfer_policy_decision",
+        "vicidial_campaign_registry",
+        "vicidial_identity_map",
+        "vicidial_reconciliation_issue",
+        "vicidial_sync_action",
+        "vicidial_sync_run"
+      ]
+    },
+    "WAVE_7_REPORTING_SECURITY_AND_LEGACY_MISCELLANEOUS": {
+      "authority": "SECURITY_DATA_OWNER",
+      "tables": [
+        "audit_event",
+        "invalid_event_quarantine",
+        "quarantine_correction",
+        "security_rejection",
+        "system_health_snapshot"
+      ]
+    }
+  }
+}

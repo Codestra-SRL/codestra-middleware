@@ -1,0 +1,5010 @@
+{
+  "schema_version": "1.0",
+  "tables": [
+    {
+      "table": "audit_event",
+      "wave": "WAVE_7_REPORTING_SECURITY_AND_LEGACY_MISCELLANEOUS",
+      "authority": "SECURITY_DATA_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "broad_event_delivery",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "campaign_activation_audit",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "campaign_extension_allocation",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 8,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "campaign_feature_gate",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 64,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "campaign_object_identity",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "campaign_registry",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 8,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "campaign_search_alias",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 32,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "credential_grant",
+      "wave": "WAVE_1_IDENTITY_TENANT_WORKSPACE",
+      "authority": "IDENTITY_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "enterprise_event",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 1,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "enterprise_event_delivery",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 3,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "enterprise_event_replay",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "enterprise_event_subscription",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 1,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "event_inbox",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "iam_access_review",
+      "wave": "WAVE_1_IDENTITY_TENANT_WORKSPACE",
+      "authority": "IDENTITY_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "iam_access_review_item",
+      "wave": "WAVE_1_IDENTITY_TENANT_WORKSPACE",
+      "authority": "IDENTITY_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "iam_api_key",
+      "wave": "WAVE_1_IDENTITY_TENANT_WORKSPACE",
+      "authority": "IDENTITY_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "iam_principal",
+      "wave": "WAVE_1_IDENTITY_TENANT_WORKSPACE",
+      "authority": "IDENTITY_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "iam_role_binding",
+      "wave": "WAVE_1_IDENTITY_TENANT_WORKSPACE",
+      "authority": "IDENTITY_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "iam_session",
+      "wave": "WAVE_1_IDENTITY_TENANT_WORKSPACE",
+      "authority": "IDENTITY_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "iam_tenant",
+      "wave": "WAVE_1_IDENTITY_TENANT_WORKSPACE",
+      "authority": "IDENTITY_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "NOT_APPLICABLE",
+          "reason": "root-scope table; self-referential scope is prohibited"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "NOT_APPLICABLE",
+          "reason": "root-scope table; self-referential scope is prohibited"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "iam_workspace",
+      "wave": "WAVE_1_IDENTITY_TENANT_WORKSPACE",
+      "authority": "IDENTITY_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": true,
+      "review_ready": true,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "idempotency_record",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "integration_credential_reference",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "integration_delivery",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "integration_endpoint",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "integration_endpoint_audit",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        }
+      ]
+    },
+    {
+      "table": "integration_endpoint_version",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "integration_event",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "integration_registry_generation",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "integration_route_binding",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "integration_schema_version",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "integration_service",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "invalid_event_quarantine",
+      "wave": "WAVE_7_REPORTING_SECURITY_AND_LEGACY_MISCELLANEOUS",
+      "authority": "SECURITY_DATA_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_audit",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_bindings",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_delivery_attempts",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_event_payloads",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_events",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_odoo_acknowledgements",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_outbox",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_policies",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_policy_versions",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_quarantine",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_reconciliation_runs",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_automation_results",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "lead_sync_request",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "n8n_acknowledgement",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "n8n_execution_registration",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "n8n_execution_transition",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "n8n_target_attestation",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "notification_attempt",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "notification_command",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "notification_replay_approval",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "odoo_result_delivery",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "orchestration_request",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "outbox_event",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "policy_decision",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "publisher_acknowledgement",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "publisher_nonce",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "quarantine_correction",
+      "wave": "WAVE_7_REPORTING_SECURITY_AND_LEGACY_MISCELLANEOUS",
+      "authority": "SECURITY_DATA_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "reconciliation_checkpoint",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "recording_delivery_attempts",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "recording_objects",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "recording_outbox",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "recording_playback_audit",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "recording_retention_decisions",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "recording_retention_policies",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 4,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "recording_state_audit",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "recording_upload_reservations",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "recordings",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "security_rejection",
+      "wave": "WAVE_7_REPORTING_SECURITY_AND_LEGACY_MISCELLANEOUS",
+      "authority": "SECURITY_DATA_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "sync_job",
+      "wave": "WAVE_3_ODOO_INTEGRATION_AND_BUSINESS_RECORDS",
+      "authority": "ODOO_BUSINESS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "system_health_snapshot",
+      "wave": "WAVE_7_REPORTING_SECURITY_AND_LEGACY_MISCELLANEOUS",
+      "authority": "SECURITY_DATA_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_call_lifecycle",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_call_lifecycle_event",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_command_journal",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_extension_pool",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 36,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_extension_reservation",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_operation_journal",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_operation_transition",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "NOT_APPLICABLE",
+          "reason": "append-only history; deletion must remain prohibited"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_provisioning_saga",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_reconciliation_run",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "telephony_terminal_result",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "transfer_policy_decision",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "vicidial_campaign_registry",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "vicidial_identity_map",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "vicidial_reconciliation_issue",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "vicidial_sync_action",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "already present; validate type, nullability, constraint, and index"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "vicidial_sync_run",
+      "wave": "WAVE_4_COMMUNICATIONS_AND_TELEPHONY",
+      "authority": "COMMUNICATIONS_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    },
+    {
+      "table": "webhook_delivery",
+      "wave": "WAVE_2_COMMAND_EVENT_WORKFLOW_AUDIT",
+      "authority": "INTEGRATION_PLATFORM_OWNER",
+      "estimated_rows": 0,
+      "fully_compliant": false,
+      "review_ready": false,
+      "columns": [
+        {
+          "column": "tenant_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "workspace_id",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "created_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "updated_at",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "created_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "updated_by",
+          "classification": "REQUIRES_DOMAIN_OWNER",
+          "reason": "authoritative scope/actor source must be approved"
+        },
+        {
+          "column": "deleted_at",
+          "classification": "REQUIRED_NOW",
+          "reason": "reviewed schema addition required"
+        },
+        {
+          "column": "version",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        },
+        {
+          "column": "audit_id",
+          "classification": "REQUIRES_BACKFILL",
+          "reason": "deterministic source and rollback proof required before NOT NULL"
+        }
+      ]
+    }
+  ]
+}
