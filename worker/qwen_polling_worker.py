@@ -21,8 +21,8 @@ from typing import Any
 
 MIDDLEWARE_IP = "10.40.0.1"
 MIDDLEWARE_NAME = "middleware.internal.codestra.agency"
-SERVICE_ID = "qwen-ai-01"
-KEY_ID = "qwen-ai-01-hmac-20260804-01"
+SERVICE_ID = "qwen-polling-worker"
+KEY_ID = "qwen-polling-worker-hmac-v1"
 BASE = Path("/run/codestra-qwen-worker")
 WORKER_ID = "qwen-ai-01-worker"
 ALLOWED_TYPES = frozenset({
@@ -59,7 +59,10 @@ def signed_headers(method: str, path: str, body: bytes, secret_file: Path) -> di
     timestamp = str(int(time.time()))
     nonce = secrets.token_urlsafe(24)
     digest = hashlib.sha256(body).hexdigest()
-    canonical = f"{method.upper()}\n{path}\n{SERVICE_ID}\n{timestamp}\n{nonce}\n{digest}".encode("ascii")
+    request_id = f"qwen-request-{uuid.uuid4()}"
+    correlation_id = f"qwen-worker-{uuid.uuid4()}"
+    canonical = "\n".join((method.upper(), path, timestamp, nonce, digest,
+                            request_id, correlation_id, WORKER_ID)).encode("ascii")
     secret = protected(secret_file).read_bytes().strip()
     if len(secret) != 64:
         raise WorkerError("HMAC enrollment is invalid")
@@ -68,8 +71,19 @@ def signed_headers(method: str, path: str, body: bytes, secret_file: Path) -> di
         "X-HMAC-Key-ID": KEY_ID, "X-Timestamp": timestamp, "X-Nonce": nonce,
         "X-Body-SHA256": digest,
         "X-Signature": hmac.new(secret, canonical, hashlib.sha256).hexdigest(),
-        "X-Correlation-ID": f"qwen-worker-{uuid.uuid4()}",
+        "X-Correlation-ID": correlation_id, "X-Request-ID": request_id,
+        "X-Worker-ID": WORKER_ID, "X-Signature-Version": "v2",
     }
+
+
+def litellm_policy_status(supplied_key: str | None, expected_key: str,
+                          model: str, allowed_models: frozenset[str]) -> int:
+    """Fail-closed policy contract used by the loopback gateway configuration."""
+    if not supplied_key or not hmac.compare_digest(supplied_key, expected_key):
+        return 401
+    if model not in allowed_models:
+        return 403
+    return 200
 
 
 class PinnedConnection(http.client.HTTPSConnection):

@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from fastapi.testclient import TestClient
 
-from app.qwen_auth_verifier import AUTH_PATH, VerifierConfig, create_app
+from app.qwen_auth_verifier import AUTH_PATH, IdentityConfig, VerifierConfig, create_app
 
 SERVICE_ID = "qwen-ai-01"
 KEY_ID = "qwen-ai-01-hmac-20260804-01"
@@ -36,6 +36,7 @@ def issue_certificate(
     client_auth: bool = True,
     digital_signature: bool = True,
     trusted: bool = True,
+    service_id: str = SERVICE_ID,
 ) -> tuple[Path, str]:
     directory.mkdir(parents=True, exist_ok=True)
     now = datetime.now(UTC)
@@ -64,7 +65,7 @@ def issue_certificate(
                 [
                     x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Codestra"),
                     x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "AI Agents"),
-                    x509.NameAttribute(NameOID.COMMON_NAME, SERVICE_ID),
+                    x509.NameAttribute(NameOID.COMMON_NAME, service_id),
                 ]
             )
         )
@@ -257,3 +258,47 @@ def test_unsupported_methods_routes_and_no_downstream_surface(verifier):
     assert client.post("/internal/api/v1/ai/commands", content=b"{}", headers=signed_headers(certificate)).status_code == 404
     paths = {route.path for route in client.app.routes}
     assert paths == {"/openapi.json", "/healthz", "/readyz", AUTH_PATH}
+
+
+def test_multi_identity_v2_and_v1_backward_compatibility(verifier, tmp_path):
+    legacy_client, config, legacy_certificate = verifier
+    worker_secret = tmp_path / "worker-hmac"
+    worker_secret.write_bytes(b"9a" * 32)
+    worker_secret.chmod(0o600)
+    worker_serial = 12345
+    worker_uri = "spiffe://codestra.internal/service/qwen-polling-worker"
+    worker_ca, worker_certificate = issue_certificate(
+        tmp_path / "worker-cert", serial=worker_serial, uri=worker_uri,
+        service_id="qwen-polling-worker",
+    )
+    configured = VerifierConfig(
+        **{**config.__dict__, "client_ca_file": worker_ca, "additional_identities": (IdentityConfig(
+            "qwen-polling-worker", "qwen-polling-worker-hmac-v1", worker_secret,
+            worker_serial, worker_uri, ipaddress.IPv4Address(IP_SAN),
+        ),)}
+    )
+    client = TestClient(create_app(configured), client=("172.18.0.7", 443))
+    assert legacy_client.post(AUTH_PATH, content=b"{}", headers=signed_headers(
+        legacy_certificate, nonce="legacy-still-valid-0001"
+    )).status_code == 200
+
+    body = b"{}"
+    timestamp = str(int(time.time()))
+    digest = hashlib.sha256(body).hexdigest()
+    nonce = "worker-v2-nonce-000001"
+    request_id = "request-worker-0001"
+    correlation = "correlation-worker-0001"
+    worker_id = "qwen-worker-01"
+    canonical = "\n".join(("POST", AUTH_PATH, timestamp, nonce, digest,
+                            request_id, correlation, worker_id)).encode("ascii")
+    headers = {
+        "X-Service-ID": "qwen-polling-worker",
+        "X-HMAC-Key-ID": "qwen-polling-worker-hmac-v1",
+        "X-Timestamp": timestamp, "X-Nonce": nonce, "X-Body-SHA256": digest,
+        "X-Signature": hmac.new(b"9a" * 32, canonical, hashlib.sha256).hexdigest(),
+        "X-Correlation-ID": correlation, "X-Request-ID": request_id,
+        "X-Worker-ID": worker_id, "X-Signature-Version": "v2",
+        "X-Codestra-Client-Certificate-DER": worker_certificate,
+    }
+    assert client.post(AUTH_PATH, content=body, headers=headers).status_code == 200
+    assert client.post(AUTH_PATH, content=body, headers=headers).status_code == 409

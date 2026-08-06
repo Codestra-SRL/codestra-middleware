@@ -5,6 +5,7 @@ import binascii
 import hashlib
 import hmac
 import ipaddress
+import json
 import os
 import re
 import time
@@ -28,6 +29,9 @@ NONCE_HEADER = "X-Nonce"
 BODY_DIGEST_HEADER = "X-Body-SHA256"
 SIGNATURE_HEADER = "X-Signature"
 CORRELATION_HEADER = "X-Correlation-ID"
+REQUEST_ID_HEADER = "X-Request-ID"
+WORKER_ID_HEADER = "X-Worker-ID"
+SIGNATURE_VERSION_HEADER = "X-Signature-Version"
 CLIENT_CERT_DER_HEADER = "X-Codestra-Client-Certificate-DER"
 LEGACY_CLIENT_CERT_HEADER = "X-Codestra-Client-Certificate"
 MAX_CERTIFICATE_DER_BASE64_BYTES = 16_384
@@ -54,6 +58,16 @@ def _ipv4_network(value: str) -> ipaddress.IPv4Network:
 
 
 @dataclass(frozen=True)
+class IdentityConfig:
+    service_id: str
+    hmac_key_id: str
+    hmac_secret_file: Path
+    certificate_serial: int
+    certificate_uri_san: str
+    certificate_ip_san: ipaddress.IPv4Address
+
+
+@dataclass(frozen=True)
 class VerifierConfig:
     service_id: str
     hmac_key_id: str
@@ -65,6 +79,14 @@ class VerifierConfig:
     replay_directory: Path
     trusted_proxy_network: ipaddress.IPv4Network
     allowed_clock_skew_seconds: int = 300
+    additional_identities: tuple[IdentityConfig, ...] = ()
+
+    def identities(self) -> tuple[IdentityConfig, ...]:
+        return (IdentityConfig(
+            self.service_id, self.hmac_key_id, self.hmac_secret_file,
+            self.certificate_serial, self.certificate_uri_san,
+            self.certificate_ip_san,
+        ), *self.additional_identities)
 
     @classmethod
     def from_environment(cls) -> VerifierConfig:
@@ -84,6 +106,25 @@ class VerifierConfig:
         skew = int(os.getenv("QWEN_ALLOWED_CLOCK_SKEW_SECONDS", "300"))
         if skew < 1 or skew > 300:
             raise RuntimeError("Qwen verifier clock skew is outside policy")
+        additional: tuple[IdentityConfig, ...] = ()
+        registry_value = os.getenv("QWEN_IDENTITY_REGISTRY_FILE", "")
+        if registry_value:
+            registry = Path(registry_value)
+            if (not registry.is_absolute() or registry.is_symlink() or not registry.is_file()
+                    or registry.stat().st_mode & 0o077):
+                raise RuntimeError("Qwen identity registry is unavailable")
+            try:
+                document = json.loads(registry.read_text())
+                rows = document["identities"]
+                additional = tuple(IdentityConfig(
+                    service_id=row["service_id"], hmac_key_id=row["hmac_key_id"],
+                    hmac_secret_file=Path(row["hmac_secret_file"]),
+                    certificate_serial=int(row["certificate_serial"]),
+                    certificate_uri_san=row["certificate_uri_san"],
+                    certificate_ip_san=_ipv4_address(row["certificate_ip_san"]),
+                ) for row in rows)
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise RuntimeError("Qwen identity registry is invalid") from exc
         return cls(
             service_id=required["QWEN_SERVICE_ID"],
             hmac_key_id=required["QWEN_HMAC_KEY_ID"],
@@ -95,6 +136,7 @@ class VerifierConfig:
             replay_directory=Path(required["QWEN_REPLAY_DIRECTORY"]),
             trusted_proxy_network=_ipv4_network(required["QWEN_TRUSTED_PROXY_CIDR"]),
             allowed_clock_skew_seconds=skew,
+            additional_identities=additional,
         )
 
 
@@ -118,8 +160,16 @@ def canonical_signing_string(
     )
 
 
-def _load_secret(config: VerifierConfig) -> bytes:
-    path = config.hmac_secret_file
+def canonical_signing_string_v2(
+    method: str, path: str, timestamp: str, nonce: str, body_digest: str,
+    request_id: str, correlation_id: str, worker_id: str,
+) -> bytes:
+    return "\n".join((method, path, timestamp, nonce, body_digest, request_id,
+                       correlation_id, worker_id)).encode("ascii")
+
+
+def _load_secret(identity: IdentityConfig) -> bytes:
+    path = identity.hmac_secret_file
     if not path.is_absolute() or path.is_symlink() or not path.is_file():
         raise HTTPException(503, "authentication verifier unavailable")
     mode = path.stat().st_mode & 0o777
@@ -131,7 +181,8 @@ def _load_secret(config: VerifierConfig) -> bytes:
     return secret
 
 
-def _verified_certificate(encoded_certificate: str, config: VerifierConfig) -> None:
+def _verified_certificate(encoded_certificate: str, config: VerifierConfig,
+                          identity: IdentityConfig) -> None:
     try:
         if not encoded_certificate or len(encoded_certificate) > MAX_CERTIFICATE_DER_BASE64_BYTES:
             raise ValueError("certificate size")
@@ -142,7 +193,7 @@ def _verified_certificate(encoded_certificate: str, config: VerifierConfig) -> N
         if certificate.public_bytes(Encoding.DER) != der:
             raise ValueError("certificate encoding")
         if certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME) != [
-            x509.NameAttribute(NameOID.COMMON_NAME, config.service_id)
+            x509.NameAttribute(NameOID.COMMON_NAME, identity.service_id)
         ]:
             raise ValueError("service identity")
         if (
@@ -154,19 +205,19 @@ def _verified_certificate(encoded_certificate: str, config: VerifierConfig) -> N
         authority = x509.load_pem_x509_certificate(config.client_ca_file.read_bytes())
         certificate.verify_directly_issued_by(authority)
         now = datetime.now(UTC)
-        if certificate.serial_number != config.certificate_serial:
+        if certificate.serial_number != identity.certificate_serial:
             raise ValueError("serial")
         if not (certificate.not_valid_before_utc <= now <= certificate.not_valid_after_utc):
             raise ValueError("validity")
         uris = certificate.extensions.get_extension_for_class(
             x509.SubjectAlternativeName
         ).value.get_values_for_type(x509.UniformResourceIdentifier)
-        if uris != [config.certificate_uri_san]:
+        if uris != [identity.certificate_uri_san]:
             raise ValueError("uri")
         addresses = certificate.extensions.get_extension_for_class(
             x509.SubjectAlternativeName
         ).value.get_values_for_type(x509.IPAddress)
-        if addresses != [config.certificate_ip_san]:
+        if addresses != [identity.certificate_ip_san]:
             raise ValueError("ip")
         usage = certificate.extensions.get_extension_for_class(x509.KeyUsage).value
         if not usage.digital_signature:
@@ -228,7 +279,8 @@ def create_app(config: VerifierConfig | None = None) -> FastAPI:
     @app.get("/readyz", include_in_schema=False)
     async def readiness() -> dict[str, str]:
         try:
-            _load_secret(verifier)
+            for identity in verifier.identities():
+                _load_secret(identity)
             if not os.access(verifier.replay_directory, os.W_OK):
                 raise OSError
         except (HTTPException, OSError):
@@ -245,6 +297,9 @@ def create_app(config: VerifierConfig | None = None) -> FastAPI:
         x_body_sha256: str = Header(alias=BODY_DIGEST_HEADER),
         x_signature: str = Header(alias=SIGNATURE_HEADER),
         x_correlation_id: str = Header(alias=CORRELATION_HEADER),
+        x_request_id: str | None = Header(default=None, alias=REQUEST_ID_HEADER),
+        x_worker_id: str | None = Header(default=None, alias=WORKER_ID_HEADER),
+        x_signature_version: str = Header(default="v1", alias=SIGNATURE_VERSION_HEADER),
         x_client_certificate_der: str = Header(alias=CLIENT_CERT_DER_HEADER),
         legacy_client_certificate: str | None = Header(
             default=None, alias=LEGACY_CLIENT_CERT_HEADER
@@ -258,9 +313,11 @@ def create_app(config: VerifierConfig | None = None) -> FastAPI:
             raise HTTPException(401, "authentication denied")
         if legacy_client_certificate is not None:
             raise HTTPException(401, "authentication denied")
-        _verified_certificate(x_client_certificate_der, verifier)
-        if x_service_id != verifier.service_id or x_hmac_key_id != verifier.hmac_key_id:
+        identity = next((item for item in verifier.identities()
+                         if item.service_id == x_service_id and item.hmac_key_id == x_hmac_key_id), None)
+        if identity is None:
             raise HTTPException(401, "authentication denied")
+        _verified_certificate(x_client_certificate_der, verifier, identity)
         if not DECIMAL_TIMESTAMP.fullmatch(x_timestamp):
             raise HTTPException(401, "authentication denied")
         timestamp = int(x_timestamp)
@@ -277,15 +334,23 @@ def create_app(config: VerifierConfig | None = None) -> FastAPI:
         computed_digest = hashlib.sha256(body).hexdigest()
         if not hmac.compare_digest(computed_digest, x_body_sha256):
             raise HTTPException(401, "authentication denied")
-        canonical = canonical_signing_string(
-            request.method,
-            request.url.path,
-            x_service_id,
-            x_timestamp,
-            x_nonce,
-            x_body_sha256,
-        )
-        expected = hmac.new(_load_secret(verifier), canonical, hashlib.sha256).hexdigest()
+        if x_signature_version == "v1":
+            canonical = canonical_signing_string(
+                request.method, request.url.path, x_service_id, x_timestamp,
+                x_nonce, x_body_sha256,
+            )
+        elif x_signature_version == "v2":
+            if not x_request_id or not x_worker_id or not SAFE_CORRELATION.fullmatch(x_request_id):
+                raise HTTPException(401, "authentication denied")
+            if not SAFE_CORRELATION.fullmatch(x_worker_id):
+                raise HTTPException(401, "authentication denied")
+            canonical = canonical_signing_string_v2(
+                request.method, request.url.path, x_timestamp, x_nonce,
+                x_body_sha256, x_request_id, x_correlation_id, x_worker_id,
+            )
+        else:
+            raise HTTPException(401, "authentication denied")
+        expected = hmac.new(_load_secret(identity), canonical, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, x_signature):
             raise HTTPException(401, "authentication denied")
         _claim_nonce(verifier, x_service_id, x_nonce)
