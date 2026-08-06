@@ -113,10 +113,21 @@ class Middleware:
             connection.close()
 
 
-def loopback_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
+def loopback_json(
+    url: str,
+    payload: dict[str, Any],
+    timeout: int,
+    bearer_file: Path | None = None,
+) -> dict[str, Any]:
     if not (url.startswith("http://127.0.0.1:") or url.startswith("http://[::1]:")):
         raise WorkerError("non-loopback model endpoint rejected")
-    request = urllib.request.Request(url, data=encode(payload), headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if bearer_file is not None:
+        bearer = protected(bearer_file).read_text().strip()
+        if not bearer or "\n" in bearer or "\r" in bearer:
+            raise WorkerError("model credential is invalid")
+        headers["Authorization"] = f"Bearer {bearer}"
+    request = urllib.request.Request(url, data=encode(payload), headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             raw = response.read(1_048_577)
@@ -157,7 +168,7 @@ def execute(job: dict[str, Any]) -> dict[str, Any]:
         raw = loopback_json("http://127.0.0.1:4000/v1/chat/completions", {
             "model": model, "messages": [{"role": "user", "content": prompt}],
             "max_tokens": payload.get("model_policy", {}).get("max_tokens", 1024),
-        }, timeout)
+        }, timeout, BASE / "litellm.key")
         choices = raw.get("choices") or []
         output = {"proposal": choices[0].get("message", {}).get("content", "") if choices else ""}
     completed = time.time()
@@ -206,6 +217,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.validate_only:
         Middleware.create()
+        protected(BASE / "litellm.key")
         print("WORKER_CONFIGURATION=PASS")
         return 0
     api = Middleware.create()
