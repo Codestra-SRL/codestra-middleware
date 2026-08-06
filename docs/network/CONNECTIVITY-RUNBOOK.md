@@ -26,3 +26,7 @@
 - Validated and reloaded SSH successfully.
 - Did not narrow the emergency public SSH firewall rule because remote mesh
   authentication is not yet established.
+- Authorized B's dedicated B-to-A public identity from `10.40.0.4` only on
+  2026-08-06 after exact fingerprint verification. The destination-side
+  configuration validates; B must still prove authentication from its local
+  session.
