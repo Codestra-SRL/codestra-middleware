@@ -164,7 +164,8 @@ jobs:
           )
           if ((${#changed_python[@]})); then
             ruff check "${changed_python[@]}" | tee ruff-changed.txt
-            mypy --ignore-missing-imports "${changed_python[@]}" | tee mypy.txt
+            mypy --ignore-missing-imports --explicit-package-bases \
+              "${changed_python[@]}" | tee mypy.txt
           else
             printf 'No Python files changed by target commit.\n' \
               | tee ruff-changed.txt

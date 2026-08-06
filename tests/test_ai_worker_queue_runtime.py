@@ -5,11 +5,13 @@ import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 from uuid import uuid4
 
 import pytest
+from fastapi.routing import APIRoute
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.api.internal import ai_jobs as worker_api
@@ -24,6 +26,7 @@ def test_exact_private_queue_route_and_auth_contract() -> None:
     paths = {
         (route.path, method)
         for route in worker_api.router.routes
+        if isinstance(route, APIRoute)
         for method in (route.methods or set())
     }
     expected = {
@@ -139,10 +142,11 @@ async def test_release_and_recovery_forward_authenticated_tenant(monkeypatch) ->
     monkeypatch.setattr(worker_api, "_finish", fake_finish)
     monkeypatch.setattr(ai_jobs, "recover_expired", fake_recover)
     mutation = worker_api.LeaseMutation(worker_id="qwen-ai-01-worker", fencing_token=1)
-    assert await worker_api.release_job(job_id, mutation, principal, object()) == {
+    fake_db = cast(AsyncSession, object())
+    assert await worker_api.release_job(job_id, mutation, principal, fake_db) == {
         "state": "retry_wait"
     }
-    assert await worker_api.recover(principal, object()) == {
+    assert await worker_api.recover(principal, fake_db) == {
         "retried": 0,
         "dead_lettered": 0,
     }
@@ -274,6 +278,7 @@ async def test_dead_letter_evidence_duplicate_result_and_approved_manual_retry()
                 organization_id=tenant,
                 workspace_id=workspace,
             )
+            assert result_claim is not None
             now = datetime.now(timezone.utc)
             result = AIResult.model_validate(
                 {
