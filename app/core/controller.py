@@ -75,7 +75,7 @@ AGENT_ENDPOINTS = {
     "middleware": "10.40.0.1:9443",
     "qwen": "10.40.0.4:9443",
     "web": "10.40.0.3:9443",
-    "vici": "10.40.0.2:9443",
+    "vici": "10.40.0.2:9444",
 }
 
 FORBIDDEN_ARGUMENT_KEYS = frozenset(

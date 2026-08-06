@@ -4,6 +4,9 @@ This candidate is not enabled or started by repository installation. It is a
 separate private ASGI service and must never be mounted into the public
 Middleware app.
 
+The Server D observer endpoint is `10.40.0.2:9444`. Port `9443` is reserved for
+the existing private authorization gateway and must not be reused or modified.
+
 ## Network and certificates
 
 - Bind exactly `10.40.0.1:9443`; publish no public listener or proxy route.

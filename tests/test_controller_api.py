@@ -196,7 +196,7 @@ def test_agent_inventory_is_exact_private_disabled_and_conflict_safe(client):
         "middleware": ("spiffe://codestra.internal/agent/middleware", "10.40.0.1:9443", "DEVELOPMENT"),
         "qwen": ("spiffe://codestra.internal/agent/qwen", "10.40.0.4:9443", "DEVELOPMENT"),
         "web": ("spiffe://codestra.internal/agent/web", "10.40.0.3:9443", "DEVELOPMENT"),
-        "vici": ("spiffe://codestra.internal/agent/vici", "10.40.0.2:9443", "PRODUCTION_OBSERVER"),
+        "vici": ("spiffe://codestra.internal/agent/vici", "10.40.0.2:9444", "PRODUCTION_OBSERVER"),
     }
     for index, (server, (spiffe, endpoint, profile)) in enumerate(registrations.items(), 1):
         response = client.post("/api/v1/agents/register", json={
