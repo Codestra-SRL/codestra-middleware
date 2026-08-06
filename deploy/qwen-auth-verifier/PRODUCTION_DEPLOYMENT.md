@@ -8,9 +8,10 @@ does not deploy the Qwen worker, enable a job API, or authorize business writes.
 - Image: `ghcr.io/codestra-srl/qwen-auth-verifier@sha256:cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390`
 - Private source: `10.40.0.4/32`
 - Private route: `POST /internal/api/v1/ai/auth/verify`
-- Client certificate serial: OpenSSL hexadecimal `3001`, whose X.509 integer
-  value is decimal `12289`. The verifier configuration accepts an integer and
-  therefore must use `QWEN_CERTIFICATE_SERIAL=12289`; it must not interpret the
+- Client certificate serial: OpenSSL hexadecimal
+  `58E06D577107AD0B753B7098B9131B797548CDFD`, whose X.509 integer value is
+  decimal `507396079750943841071109526780094961193782398461`. The verifier
+  configuration accepts an integer and therefore must use that decimal value; it must not interpret the
   display form as decimal.
 - Caddy-to-verifier network: `10.250.241.0/29`, internal, with Caddy at
   `10.250.241.2` and the verifier at `10.250.241.3`
@@ -23,8 +24,9 @@ Neither Compose file publishes a verifier port.
 
 1. Independently verify the exact image signature and all approved
    attestations.
-2. Require `openssl x509 -noout -serial` to report `serial=3001` and a strict
-   X.509 parser to report integer `12289`; stop if either differs.
+2. Require `openssl x509 -noout -serial` to report
+   `serial=58E06D577107AD0B753B7098B9131B797548CDFD` and a strict X.509 parser to
+   report integer `507396079750943841071109526780094961193782398461`; stop if either differs.
 3. Back up the live Compose and Caddy files, including SHA-256 checksums.
 4. Require the HMAC and client-CA inputs to be regular, non-symlink files owned
    by root with mode exactly `0600`. Record their checksums and ACLs; do not add

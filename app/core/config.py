@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     )
     allowed_client_instances: str = "vicidial-server-b"
     live_writes_enabled: bool = False
+    odoo_write_enabled: bool = False
     allow_non_test_campaigns: bool = False
     odoo_delivery_enabled: bool = False
     n8n_delivery_enabled: bool = False
@@ -69,6 +70,33 @@ class Settings(BaseSettings):
     vicidial_crl_file: str = ""
     callback_dispatch_enabled: bool = False
     messaging_enabled: bool = False
+    external_dial_enabled: bool = False
+    ai_private_api_enabled: bool = False
+    ai_service_id: str = "qwen"
+    ai_worker_service_id: str = "qwen-ai-01"
+    ai_worker_source_cidrs: str = "10.40.0.4/32"
+    ai_worker_trusted_proxy_cidr: str = "10.250.241.2/32"
+    ai_worker_certificate_serial: str = "507396079750943841071109526780094961193782398461"
+    ai_worker_certificate_ip: str = "10.40.0.4"
+    ai_worker_spiffe_id: str = "spiffe://codestra.internal/service/qwen-ai-01"
+    ai_worker_hmac_key_id: str = "qwen-ai-01-hmac-20260804-01"
+    ai_worker_client_ca_file: str = ""
+    ai_hmac_secret_file: str = ""
+    ai_audit_log_file: str = ""
+    ai_signature_ttl_seconds: int = 300
+    ai_rate_limit_per_minute: int = 60
+    ai_command_timeout_seconds: int = 10
+    ai_job_lease_seconds: int = 60
+    ai_job_max_attempts: int = 5
+    ai_job_max_context_bytes: int = 131072
+    ai_job_max_output_bytes: int = 1048576
+    ai_job_project_allowlist: str = ""
+    ai_orchestration_enabled: bool = False
+    ai_worker_claims_enabled: bool = False
+    ai_default_max_queued_per_tenant: int = 100
+    ai_default_max_running_per_tenant: int = 5
+    ai_daily_token_quota: int = 100000
+    ai_global_emergency_limit: int = 0
     send_events: bool = False
     broad_event_delivery_enabled: bool = False
     production_n8n_enabled: bool = False
@@ -205,9 +233,11 @@ class Settings(BaseSettings):
         )
         production_switches = (
             self.live_writes_enabled,
+            self.odoo_write_enabled,
             self.allow_non_test_campaigns,
             self.vicidial_write_enabled,
             self.messaging_enabled,
+            self.external_dial_enabled,
             self.enable_external_delivery,
             self.email_dispatch_enabled,
             self.sms_dispatch_enabled,
