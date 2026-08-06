@@ -13,6 +13,7 @@ import signal
 import socket
 import ssl
 import time
+import threading
 import urllib.request
 import uuid
 from dataclasses import dataclass
@@ -25,9 +26,9 @@ SERVICE_ID = "qwen-polling-worker"
 KEY_ID = "qwen-polling-worker-hmac-v1"
 BASE = Path("/run/codestra-qwen-worker")
 WORKER_ID = "qwen-ai-01-worker"
-ALLOWED_TYPES = frozenset({
-    "ai.chat.v1", "ai.coding.v1", "ai.crm.v1", "ai.voice.v1", "ai.embeddings.v1"
-})
+ALLOWED_TYPES = frozenset(
+    {"ai.chat.v1", "ai.coding.v1", "ai.crm.v1", "ai.voice.v1", "ai.embeddings.v1"}
+)
 MODEL_REGISTRY = {
     "fast-chat": ("litellm", "qwen-runtime-fast"),
     "quality-chat": ("litellm", "qwen-coder-review"),
@@ -55,29 +56,57 @@ def encode(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-def signed_headers(method: str, path: str, body: bytes, secret_file: Path) -> dict[str, str]:
+def signed_headers(
+    method: str,
+    path: str,
+    body: bytes,
+    secret_file: Path,
+    tenant_id: str = "00000000-0000-4000-8000-000000000001",
+    workspace_id: str = "00000000-0000-4000-8000-000000000002",
+) -> dict[str, str]:
     timestamp = str(int(time.time()))
     nonce = secrets.token_urlsafe(24)
     digest = hashlib.sha256(body).hexdigest()
     request_id = f"qwen-request-{uuid.uuid4()}"
     correlation_id = f"qwen-worker-{uuid.uuid4()}"
-    canonical = "\n".join((method.upper(), path, timestamp, nonce, digest,
-                            request_id, correlation_id, WORKER_ID)).encode("ascii")
+    canonical = "\n".join(
+        (
+            method.upper(),
+            path,
+            timestamp,
+            nonce,
+            digest,
+            request_id,
+            correlation_id,
+            WORKER_ID,
+        )
+    ).encode("ascii")
     secret = protected(secret_file).read_bytes().strip()
     if len(secret) != 64:
         raise WorkerError("HMAC enrollment is invalid")
     return {
-        "Content-Type": "application/json", "X-Service-ID": SERVICE_ID,
-        "X-HMAC-Key-ID": KEY_ID, "X-Timestamp": timestamp, "X-Nonce": nonce,
+        "Content-Type": "application/json",
+        "X-Service-ID": SERVICE_ID,
+        "X-HMAC-Key-ID": KEY_ID,
+        "X-Timestamp": timestamp,
+        "X-Nonce": nonce,
         "X-Body-SHA256": digest,
         "X-Signature": hmac.new(secret, canonical, hashlib.sha256).hexdigest(),
-        "X-Correlation-ID": correlation_id, "X-Request-ID": request_id,
-        "X-Worker-ID": WORKER_ID, "X-Signature-Version": "v2",
+        "X-Correlation-ID": correlation_id,
+        "X-Request-ID": request_id,
+        "X-Worker-ID": WORKER_ID,
+        "X-Signature-Version": "v2",
+        "X-Tenant-ID": tenant_id,
+        "X-Workspace-ID": workspace_id,
     }
 
 
-def litellm_policy_status(supplied_key: str | None, expected_key: str,
-                          model: str, allowed_models: frozenset[str]) -> int:
+def litellm_policy_status(
+    supplied_key: str | None,
+    expected_key: str,
+    model: str,
+    allowed_models: frozenset[str],
+) -> int:
     """Fail-closed policy contract used by the loopback gateway configuration."""
     if not supplied_key or not hmac.compare_digest(supplied_key, expected_key):
         return 401
@@ -100,19 +129,46 @@ class PinnedConnection(http.client.HTTPSConnection):
 class Middleware:
     context: ssl.SSLContext
     secret_file: Path
+    tenant_id: str
+    workspace_id: str
 
     @classmethod
     def create(cls) -> Middleware:
-        context = ssl.create_default_context(cafile=str(protected(BASE / "private-ca.crt")))
+        context = ssl.create_default_context(
+            cafile=str(protected(BASE / "private-ca.crt"))
+        )
         context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.load_cert_chain(str(protected(BASE / "client.crt")), str(protected(BASE / "client.key")))
-        return cls(context, protected(BASE / "hmac.key"))
+        context.load_cert_chain(
+            str(protected(BASE / "client.crt")), str(protected(BASE / "client.key"))
+        )
+        tenant_id = protected(BASE / "tenant-id").read_text().strip()
+        workspace_id = protected(BASE / "workspace-id").read_text().strip()
+        try:
+            uuid.UUID(tenant_id)
+            uuid.UUID(workspace_id)
+        except ValueError as exc:
+            raise WorkerError("worker tenant binding is invalid") from exc
+        return cls(context, protected(BASE / "hmac.key"), tenant_id, workspace_id)
 
-    def request(self, method: str, path: str, value: object) -> tuple[int, dict[str, Any]]:
+    def request(
+        self, method: str, path: str, value: object
+    ) -> tuple[int, dict[str, Any]]:
         body = encode(value)
         connection = PinnedConnection(self.context)
         try:
-            connection.request(method, path, body, signed_headers(method, path, body, self.secret_file))
+            connection.request(
+                method,
+                path,
+                body,
+                signed_headers(
+                    method,
+                    path,
+                    body,
+                    self.secret_file,
+                    self.tenant_id,
+                    self.workspace_id,
+                ),
+            )
             response = connection.getresponse()
             payload = response.read(1_048_577)
             if len(payload) > 1_048_576:
@@ -121,7 +177,12 @@ class Middleware:
             if not isinstance(document, dict):
                 raise WorkerError("middleware response schema is invalid")
             return response.status, document
-        except (OSError, ssl.SSLError, http.client.HTTPException, json.JSONDecodeError) as exc:
+        except (
+            OSError,
+            ssl.SSLError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+        ) as exc:
             raise WorkerError("bounded middleware request failed") from exc
         finally:
             connection.close()
@@ -159,7 +220,11 @@ def execute(job: dict[str, Any]) -> dict[str, Any]:
     command_type = job.get("command_type")
     payload = job.get("command_payload")
     profile = job.get("model_profile")
-    if command_type not in ALLOWED_TYPES or not isinstance(payload, dict) or profile not in MODEL_REGISTRY:
+    if (
+        command_type not in ALLOWED_TYPES
+        or not isinstance(payload, dict)
+        or profile not in MODEL_REGISTRY
+    ):
         raise WorkerError("unsupported job contract")
     capability = MODEL_REGISTRY[profile]
     if capability is None:
@@ -169,37 +234,71 @@ def execute(job: dict[str, Any]) -> dict[str, Any]:
     timeout = min(int(limits.get("runtime_seconds", 300)), 600)
     started = time.time()
     if provider == "ollama-embeddings":
-        source = payload.get("input", {}).get("texts") or [payload.get("input", {}).get("text", "")]
-        raw = loopback_json("http://127.0.0.1:11434/api/embed", {"model": model, "input": source}, timeout)
-        output = {"embeddings": raw.get("embeddings", []), "dimension": len((raw.get("embeddings") or [[]])[0])}
+        source = payload.get("input", {}).get("texts") or [
+            payload.get("input", {}).get("text", "")
+        ]
+        raw = loopback_json(
+            "http://127.0.0.1:11434/api/embed",
+            {"model": model, "input": source},
+            timeout,
+        )
+        output = {
+            "embeddings": raw.get("embeddings", []),
+            "dimension": len((raw.get("embeddings") or [[]])[0]),
+        }
     elif provider == "ollama":
         prompt = json.dumps(payload.get("input", {}), sort_keys=True)
-        raw = loopback_json("http://127.0.0.1:11434/api/generate",
-                            {"model": model, "prompt": prompt, "stream": False}, timeout)
+        raw = loopback_json(
+            "http://127.0.0.1:11434/api/generate",
+            {"model": model, "prompt": prompt, "stream": False},
+            timeout,
+        )
         output = {"proposal": raw.get("response", "")}
     else:
         prompt = json.dumps(payload.get("input", {}), sort_keys=True)
-        raw = loopback_json("http://127.0.0.1:4000/v1/chat/completions", {
-            "model": model, "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": payload.get("model_policy", {}).get("max_tokens", 1024),
-        }, timeout, BASE / "litellm.key")
+        raw = loopback_json(
+            "http://127.0.0.1:4000/v1/chat/completions",
+            {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": payload.get("model_policy", {}).get("max_tokens", 1024),
+            },
+            timeout,
+            BASE / "litellm.key",
+        )
         choices = raw.get("choices") or []
-        output = {"proposal": choices[0].get("message", {}).get("content", "") if choices else ""}
+        output = {
+            "proposal": choices[0].get("message", {}).get("content", "")
+            if choices
+            else ""
+        }
     completed = time.time()
     return {
-        "command_id": job["id"], "job_id": job["id"], "status": "SUCCEEDED",
-        "result_schema_version": "1.0", "model_used": model, "provider_used": provider.split("-")[0],
+        "command_id": job["id"],
+        "job_id": job["id"],
+        "status": "SUCCEEDED",
+        "result_schema_version": "1.0",
+        "model_used": model,
+        "provider_used": provider.split("-")[0],
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
         "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(completed)),
-        "latency_ms": int((completed - started) * 1000), "token_usage": {},
-        "resource_usage": {}, "output": output, "structured_artifacts": [],
-        "warnings": [], "policy_decisions": ["outbound-only", "proposal-only"],
-        "error": None, "retryability": "none", "audit_reference": f"audit-{job['id']}",
+        "latency_ms": int((completed - started) * 1000),
+        "token_usage": {},
+        "resource_usage": {},
+        "output": output,
+        "structured_artifacts": [],
+        "warnings": [],
+        "policy_decisions": ["outbound-only", "proposal-only"],
+        "error": None,
+        "retryability": "none",
+        "audit_reference": f"audit-{job['id']}",
     }
 
 
 def run_once(api: Middleware) -> str:
-    status, response = api.request("POST", "/internal/api/v1/ai/worker/jobs/claim", {"worker_id": WORKER_ID})
+    status, response = api.request(
+        "POST", "/internal/api/v1/ai/worker/jobs/claim", {"worker_id": WORKER_ID}
+    )
     if status == 503:
         return "claims-disabled"
     if status != 200:
@@ -211,17 +310,58 @@ def run_once(api: Middleware) -> str:
         raise WorkerError("claim schema invalid")
     job_id, token = str(job["id"]), int(job["fencing_token"])
     mutation = {"worker_id": WORKER_ID, "fencing_token": token}
+    stop_heartbeat = threading.Event()
+    cancellation = threading.Event()
+
+    def maintain_lease() -> None:
+        while not stop_heartbeat.wait(20):
+            status, document = api.request(
+                "POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/heartbeat", mutation
+            )
+            if status != 200:
+                cancellation.set()
+                return
+            status, document = api.request(
+                "POST",
+                f"/internal/api/v1/ai/worker/jobs/{job_id}/cancellation-check",
+                mutation,
+            )
+            if status != 200 or document.get("cancel_requested") is True:
+                cancellation.set()
+                return
+
+    heartbeat = threading.Thread(target=maintain_lease, daemon=True)
+    heartbeat.start()
     try:
         result = execute(job)
-        status, _ = api.request("POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/complete",
-                                {**mutation, "result": result})
+        if cancellation.is_set():
+            api.request(
+                "POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/cancel", mutation
+            )
+            return "cancelled"
+        status, _ = api.request(
+            "POST",
+            f"/internal/api/v1/ai/worker/jobs/{job_id}/complete",
+            {**mutation, "result": result},
+        )
         if status not in (200, 409):
             raise WorkerError("completion rejected")
         return "completed" if status == 200 else "duplicate-completion"
     except WorkerError:
-        api.request("POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/fail",
-                    {**mutation, "error_code": "model_unavailable", "retryable": True})
+        api.request(
+            "POST",
+            f"/internal/api/v1/ai/worker/jobs/{job_id}/fail",
+            {
+                **mutation,
+                "error_code": "model_unavailable",
+                "retryable": True,
+                "safe_error_details": {"component": "loopback-model"},
+            },
+        )
         return "failed-retryable"
+    finally:
+        stop_heartbeat.set()
+        heartbeat.join(timeout=2)
 
 
 def main() -> int:

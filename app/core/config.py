@@ -73,13 +73,14 @@ class Settings(BaseSettings):
     external_dial_enabled: bool = False
     ai_private_api_enabled: bool = False
     ai_service_id: str = "qwen"
-    ai_worker_service_id: str = "qwen-ai-01"
+    ai_worker_service_id: str = "qwen-polling-worker"
     ai_worker_source_cidrs: str = "10.40.0.4/32"
     ai_worker_trusted_proxy_cidr: str = "10.250.241.2/32"
-    ai_worker_certificate_serial: str = "507396079750943841071109526780094961193782398461"
+    ai_worker_certificate_serial: str = "3008"
     ai_worker_certificate_ip: str = "10.40.0.4"
-    ai_worker_spiffe_id: str = "spiffe://codestra.internal/service/qwen-ai-01"
-    ai_worker_hmac_key_id: str = "qwen-ai-01-hmac-20260804-01"
+    ai_worker_spiffe_id: str = "spiffe://codestra.internal/worker/qwen"
+    ai_worker_hmac_key_id: str = "qwen-polling-worker-hmac-v1"
+    ai_worker_id: str = "qwen-ai-01-worker"
     ai_worker_client_ca_file: str = ""
     ai_hmac_secret_file: str = ""
     ai_audit_log_file: str = ""
@@ -98,7 +99,9 @@ class Settings(BaseSettings):
     ai_daily_token_quota: int = 100000
     ai_global_emergency_limit: int = 0
     controller_approval_signing_key_file: str = ""
-    controller_workspace_allowlist: str = "/opt/codestra/middleware,/opt/codestra/worktrees"
+    controller_workspace_allowlist: str = (
+        "/opt/codestra/middleware,/opt/codestra/worktrees"
+    )
     controller_private_enabled: bool = False
     server_a_agent_enabled: bool = False
     server_a_agent_bind: str = "10.40.0.1:9443"
@@ -352,6 +355,7 @@ class Settings(BaseSettings):
             raise ValueError("Postiz API key file is empty")
 
         return value
+
     def load_registry_snapshot_key(self) -> bytes:
         path = Path(self.registry_snapshot_signing_key_file)
         if not path.is_absolute() or not path.is_file():
