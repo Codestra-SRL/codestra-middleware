@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     ai_worker_service_id: str = "qwen-ai-01"
     ai_worker_source_cidrs: str = "10.40.0.4/32"
     ai_worker_trusted_proxy_cidr: str = "10.250.241.2/32"
-    ai_worker_certificate_serial: str = "12289"
+    ai_worker_certificate_serial: str = "507396079750943841071109526780094961193782398461"
     ai_worker_certificate_ip: str = "10.40.0.4"
     ai_worker_spiffe_id: str = "spiffe://codestra.internal/service/qwen-ai-01"
     ai_worker_hmac_key_id: str = "qwen-ai-01-hmac-20260804-01"
@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     ai_job_max_context_bytes: int = 131072
     ai_job_max_output_bytes: int = 1048576
     ai_job_project_allowlist: str = ""
+    ai_orchestration_enabled: bool = False
+    ai_worker_claims_enabled: bool = False
+    ai_default_max_queued_per_tenant: int = 100
+    ai_default_max_running_per_tenant: int = 5
+    ai_daily_token_quota: int = 100000
+    ai_global_emergency_limit: int = 0
     send_events: bool = False
     broad_event_delivery_enabled: bool = False
     production_n8n_enabled: bool = False

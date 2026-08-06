@@ -23,7 +23,7 @@ def test_contract_matches_openapi_and_is_deterministic(monkeypatch, tmp_path):
         "QWEN_HMAC_KEY_ID": "qwen-ai-01-hmac-20260804-01",
         "QWEN_HMAC_SECRET_FILE": str(secret),
         "QWEN_CLIENT_CA_FILE": str(ca),
-        "QWEN_CERTIFICATE_SERIAL": "12289",
+        "QWEN_CERTIFICATE_SERIAL": "507396079750943841071109526780094961193782398461",
         "QWEN_CERTIFICATE_URI_SAN": "spiffe://codestra.internal/service/qwen-ai-01",
         "QWEN_CERTIFICATE_IP_SAN": "10.40.0.4",
         "QWEN_REPLAY_DIRECTORY": str(replay),

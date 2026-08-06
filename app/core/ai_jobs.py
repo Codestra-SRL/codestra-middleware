@@ -120,7 +120,8 @@ async def claim(db: AsyncSession, worker_id: str, lease_seconds: int,
           SELECT id FROM ai_generation_jobs
           WHERE state IN ('queued','retry_wait') AND next_attempt_at <= now()
             AND cancel_requested_at IS NULL
-          ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
+            AND (deadline_at IS NULL OR deadline_at > now())
+          ORDER BY priority,created_at FOR UPDATE SKIP LOCKED LIMIT 1
         )
         UPDATE ai_generation_jobs j SET state='leased', lease_owner=:worker,
           lease_expires_at=now() + make_interval(secs => :lease_seconds),
@@ -142,9 +143,12 @@ async def claim(db: AsyncSession, worker_id: str, lease_seconds: int,
                 job_id=row["id"], details={"attempt": row["attempt_count"],
                                             "fencing_token": row["fencing_token"]})
     await db.commit()
-    return {key: row[key] for key in ("id", "conversation_id", "organization_id",
-            "workspace_id", "task_type", "project_key", "attempt_count", "fencing_token",
-            "lease_expires_at")}
+    allowed = ("id", "conversation_id", "organization_id", "workspace_id",
+               "task_type", "command_type", "schema_version", "project_key",
+               "attempt_count", "fencing_token", "lease_expires_at", "deadline_at",
+               "command_payload", "model_profile", "resource_limits",
+               "data_classification", "approval_policy")
+    return {key: row[key] for key in allowed}
 
 
 async def assert_lease(db: AsyncSession, job_id: UUID, worker_id: str,
@@ -207,12 +211,13 @@ async def append_chunk(db: AsyncSession, job_id: UUID, worker_id: str,
 
 async def finish(db: AsyncSession, job_id: UUID, worker_id: str,
                  fencing_token: int, *, failed: bool, error_code: str | None,
-                 retryable: bool, correlation_id: str) -> str:
+                 retryable: bool, correlation_id: str,
+                 completion_state: str = "completed") -> str:
     row = await assert_lease(db, job_id, worker_id, fencing_token)
     if row["cancel_requested_at"] is not None:
         state = "cancelled"
     elif not failed:
-        state = "completed"
+        state = completion_state
     elif retryable and row["attempt_count"] < row["max_attempts"]:
         state = "retry_wait"
     elif failed:
@@ -223,13 +228,21 @@ async def finish(db: AsyncSession, job_id: UUID, worker_id: str,
     await db.execute(text("""
         UPDATE ai_generation_jobs SET state=:state, lease_owner=NULL, lease_expires_at=NULL,
           next_attempt_at=CASE WHEN :state='retry_wait' THEN now()+make_interval(secs=>:delay) ELSE next_attempt_at END,
-          failure_code=:error, completed_at=CASE WHEN :state IN ('completed','cancelled','dead_letter','failed') THEN now() END,
+          failure_code=:error, completed_at=CASE WHEN :state IN ('completed','approval_required','cancelled','dead_letter','failed') THEN now() END,
           updated_at=now() WHERE id=:job
     """), {"state": state, "delay": delay, "error": error_code, "job": job_id})
     await db.execute(text("""
         UPDATE ai_job_attempts SET state=:state,safe_error_code=:error,finished_at=now()
         WHERE job_id=:job AND fencing_token=:token
     """), {"state": state, "error": error_code, "job": job_id, "token": fencing_token})
+    if state == "dead_letter":
+        await db.execute(text("""INSERT INTO ai_job_dead_letters
+          (job_id,organization_id,workspace_id,safe_error_code,attempt_count,payload_sha256)
+          VALUES(:job,:org,:workspace,:error,:attempts,:hash)
+          ON CONFLICT(job_id) DO NOTHING"""),
+          {"job": job_id, "org": row["organization_id"], "workspace": row["workspace_id"],
+           "error": error_code or "attempts_exhausted", "attempts": row["attempt_count"],
+           "hash": row["request_sha256"]})
     await audit(db, f"job.{state}", correlation_id, worker_id,
                 organization_id=row["organization_id"], workspace_id=row["workspace_id"],
                 job_id=job_id, details={"safe_error_code": error_code or ""})
@@ -242,13 +255,31 @@ async def recover_expired(db: AsyncSession) -> dict[str, int]:
         UPDATE ai_generation_jobs SET state='retry_wait',lease_owner=NULL,lease_expires_at=NULL,
           next_attempt_at=now(),updated_at=now()
         WHERE state='leased' AND lease_expires_at <= now() AND attempt_count < max_attempts
+          AND (deadline_at IS NULL OR deadline_at > now())
     """))
     retried = int(getattr(retried_result, "rowcount", 0))
     dead_result = await db.execute(text("""
         UPDATE ai_generation_jobs SET state='dead_letter',lease_owner=NULL,lease_expires_at=NULL,
           failure_code='lease_expired',completed_at=now(),updated_at=now()
         WHERE state='leased' AND lease_expires_at <= now() AND attempt_count >= max_attempts
+          AND (deadline_at IS NULL OR deadline_at > now())
     """))
     dead = int(getattr(dead_result, "rowcount", 0))
+    if dead:
+        await db.execute(text("""INSERT INTO ai_job_dead_letters
+          (job_id,organization_id,workspace_id,safe_error_code,attempt_count,payload_sha256)
+          SELECT id,organization_id,workspace_id,'lease_expired',attempt_count,request_sha256
+          FROM ai_generation_jobs WHERE state='dead_letter' AND failure_code='lease_expired'
+          ON CONFLICT(job_id) DO NOTHING"""))
     await db.commit()
     return {"retried": retried, "dead_lettered": dead}
+
+
+async def expire_deadlines(db: AsyncSession) -> int:
+    result = await db.execute(text("""
+        UPDATE ai_generation_jobs SET state='expired',lease_owner=NULL,lease_expires_at=NULL,
+          failure_code='deadline_expired',completed_at=now(),updated_at=now()
+        WHERE state IN ('queued','retry_wait','leased') AND deadline_at <= now()
+    """))
+    await db.commit()
+    return int(getattr(result, "rowcount", 0))

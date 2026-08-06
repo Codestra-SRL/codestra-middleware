@@ -35,7 +35,7 @@ SECRET = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 def test_worker_contract_has_one_canonical_auth_and_no_memory_replay_store():
     source = (Path(__file__).resolve().parents[1] / "app/api/internal/ai_jobs.py").read_text()
     caddy = (Path(__file__).resolve().parents[1]
-             / "deploy/qwen-auth-verifier/Caddyfile.production.snippet").read_text()
+             / "deploy/qwen-worker/Caddyfile.private-worker-api.snippet").read_text()
     assert "_nonces: dict" not in source
     assert "ai_service_nonces" in source
     assert 'request.method.upper(), request.url.path, service_id' in source
@@ -54,8 +54,10 @@ def test_ai_router_enforces_authentication_and_outer_guard_fails_closed():
     assert not hasattr(middleware_main, "SELF_AUTHENTICATED_PREFIXES")
     with TestClient(middleware_main.app) as client:
         current = client.post("/api/v1/ai/conversations", json={"title": "x"})
+        commands = client.post("/api/v1/ai/commands", json={})
         future = client.get("/api/v1/ai/_future-auth-regression")
     assert current.status_code in {401, 422}
+    assert commands.status_code in {401, 422}
     assert future.status_code in {401, 503}
 
 

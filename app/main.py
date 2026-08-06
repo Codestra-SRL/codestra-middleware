@@ -24,6 +24,7 @@ from app.api.v1.recordings import router as recordings_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.internal.ai_jobs import router as internal_ai_jobs_router
 from app.api.v1.ai_console import router as ai_console_router
+from app.api.v1.ai_commands import router as ai_commands_router
 from app.api.v1.webphone import router as webphone_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.orders import router as orders_router
@@ -51,6 +52,7 @@ app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(internal_ai_jobs_router)
 app.include_router(ai_console_router)
+app.include_router(ai_commands_router)
 app.include_router(orders_router)
 app.include_router(ai_router)
 app.include_router(provider_commands_router)
@@ -85,6 +87,11 @@ AI_CONSOLE_SELF_AUTHENTICATED_PATHS = (
     ),
     ("GET", re.compile(r"^/api/v1/ai/jobs/[0-9a-fA-F-]{36}/stream$")),
     ("POST", re.compile(r"^/api/v1/ai/jobs/[0-9a-fA-F-]{36}/cancel$")),
+    ("POST", re.compile(r"^/api/v1/ai/commands$")),
+    ("GET", re.compile(r"^/api/v1/ai/commands/[0-9a-fA-F-]{36}$")),
+    ("GET", re.compile(r"^/api/v1/ai/commands/[0-9a-fA-F-]{36}/result$")),
+    ("POST", re.compile(r"^/api/v1/ai/commands/[0-9a-fA-F-]{36}/(?:cancel|approve|reject)$")),
+    ("GET", re.compile(r"^/api/v1/ai/(?:capabilities|usage)$")),
 )
 N8N_TRANSITION_PATH = re.compile(
     r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
