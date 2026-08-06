@@ -141,6 +141,35 @@ def downgrade() -> None:
         "DROP TABLE ai_job_events",
         "DROP TABLE ai_job_results",
         "DROP INDEX ix_ai_job_tenant_state_priority",
+        """INSERT INTO ai_conversations
+        (id,organization_id,workspace_id,created_by,title,status,created_at,updated_at)
+        SELECT md5('ai-orchestration-rollback-conversation:' || id::text)::uuid,
+        organization_id,workspace_id,requested_by,'Orchestration rollback record',
+        'archived',created_at,updated_at
+        FROM ai_generation_jobs WHERE conversation_id IS NULL
+        ON CONFLICT (id) DO NOTHING""",
+        """INSERT INTO ai_messages
+        (id,conversation_id,organization_id,workspace_id,role,content,content_sha256,created_at)
+        SELECT md5('ai-orchestration-rollback-message:' || id::text)::uuid,
+        md5('ai-orchestration-rollback-conversation:' || id::text)::uuid,
+        organization_id,workspace_id,'system','[orchestration rollback record]',
+        'cc224ecac5f0dad29750d44dd520a3e8d659b776ee920db04e52831d9973aa75',created_at
+        FROM ai_generation_jobs WHERE request_message_id IS NULL
+        ON CONFLICT (id) DO NOTHING""",
+        """UPDATE ai_generation_jobs SET
+        conversation_id = COALESCE(conversation_id,
+          md5('ai-orchestration-rollback-conversation:' || id::text)::uuid),
+        request_message_id = COALESCE(request_message_id,
+          md5('ai-orchestration-rollback-message:' || id::text)::uuid)
+        WHERE conversation_id IS NULL OR request_message_id IS NULL""",
+        """UPDATE ai_generation_jobs SET state = CASE
+        WHEN state IN ('queued','available') THEN 'queued'
+        WHEN state IN ('leased','running') THEN 'leased'
+        WHEN state = 'retry_wait' THEN 'retry_wait'
+        WHEN state IN ('completed','approved') THEN 'completed'
+        WHEN state = 'failed' THEN 'failed'
+        WHEN state IN ('cancel_requested','cancelled') THEN 'cancelled'
+        ELSE 'dead_letter' END""",
         "ALTER TABLE ai_generation_jobs DROP CONSTRAINT ck_ai_classification",
         "ALTER TABLE ai_generation_jobs DROP CONSTRAINT ck_ai_priority",
         "ALTER TABLE ai_generation_jobs DROP CONSTRAINT ck_ai_command_type",
