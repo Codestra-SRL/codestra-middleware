@@ -37,6 +37,37 @@ class Approval(StrictModel):
     server_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,62}$")
 
 
+class QueueTask(StrictModel):
+    priority: int = Field(default=5, ge=0, le=9)
+    timeout_seconds: int = Field(default=600, ge=1, le=3600)
+    max_attempts: int = Field(default=3, ge=1, le=10)
+
+
+class WorkerClaim(StrictModel):
+    server_id: str = Field(pattern=r"^(middleware|web)$")
+    worker_id: str = Field(min_length=3, max_length=128)
+    lease_seconds: int = Field(default=60, ge=10, le=300)
+
+
+class WorkerLease(StrictModel):
+    tenant_id: str = Field(min_length=1, max_length=128)
+    worker_id: str = Field(min_length=3, max_length=128)
+    lease_seconds: int = Field(default=60, ge=10, le=300)
+
+
+class WorkerFinish(StrictModel):
+    tenant_id: str = Field(min_length=1, max_length=128)
+    worker_id: str = Field(min_length=3, max_length=128)
+    evidence: dict[str, Any]
+
+
+class WorkerFail(StrictModel):
+    tenant_id: str = Field(min_length=1, max_length=128)
+    worker_id: str = Field(min_length=3, max_length=128)
+    error_code: str = Field(min_length=1, max_length=64)
+    retryable: bool
+
+
 class ExecutionCreate(StrictModel):
     task_id: str
     server_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,62}$")
@@ -150,6 +181,77 @@ async def cancel_task(task_id: str, tenant_id: Tenant):
         return _controller().cancel(task_id, tenant_id).public()
     except ControllerError as exc:
         raise _error(exc) from exc
+
+
+@router.post("/tasks/{task_id}/reject")
+async def reject_task(task_id: str, tenant_id: Tenant,
+                      actor_id: Annotated[str, Header(alias="X-Actor-ID")]):
+    try:
+        return _controller().reject(task_id, tenant_id, _required(actor_id, "actor_id")).public()
+    except ControllerError as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/tasks/{task_id}/queue")
+async def queue_task(task_id: str, body: QueueTask, tenant_id: Tenant):
+    try:
+        return _controller().queue(task_id, tenant_id, **body.model_dump()).public()
+    except ControllerError as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/tasks/{task_id}/suspend")
+async def suspend_task(task_id: str, tenant_id: Tenant):
+    try:
+        return _controller().suspend(task_id, tenant_id).public()
+    except ControllerError as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/tasks/{task_id}/resume")
+async def resume_task(task_id: str, tenant_id: Tenant):
+    try:
+        return _controller().resume(task_id, tenant_id).public()
+    except ControllerError as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/scheduler/claim")
+async def claim_task(body: WorkerClaim):
+    try:
+        task = _controller().claim(**body.model_dump())
+        return {"task": task.public() if task else None}
+    except ControllerError as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/scheduler/tasks/{task_id}/heartbeat")
+async def heartbeat_task(task_id: str, body: WorkerLease):
+    try:
+        return _controller().heartbeat(task_id, **body.model_dump()).public()
+    except ControllerError as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/scheduler/tasks/{task_id}/finish")
+async def finish_task(task_id: str, body: WorkerFinish):
+    try:
+        return _controller().finish(task_id, **body.model_dump()).public()
+    except ControllerError as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/scheduler/tasks/{task_id}/fail")
+async def fail_task(task_id: str, body: WorkerFail):
+    try:
+        return _controller().fail(task_id, **body.model_dump()).public()
+    except ControllerError as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/scheduler/recover")
+async def recover_tasks():
+    return _controller().recover_expired()
 
 
 @router.post("/executions", status_code=202)

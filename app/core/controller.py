@@ -33,12 +33,15 @@ class TaskState(str, Enum):
     PLAN_READY = "PLAN_READY"
     AWAITING_APPROVAL = "AWAITING_APPROVAL"
     APPROVED = "APPROVED"
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
     EXECUTING = "EXECUTING"
     VERIFYING = "VERIFYING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
     DEAD_LETTER = "DEAD_LETTER"
+    SUSPENDED = "SUSPENDED"
 
 
 ALLOWED_TOOLS = frozenset(
@@ -61,8 +64,34 @@ ALLOWED_TOOLS = frozenset(
         "check_service",
         "read_sanitized_logs",
         "restart_development_service",
+        "odoo_read",
+        "odoo_lead_create_proposal",
+        "odoo_lead_update_proposal",
+        "odoo_activity_proposal",
+        "odoo_callback_proposal",
+        "odoo_appointment_proposal",
+        "odoo_crm_search",
+        "odoo_contacts_read",
+        "odoo_note_proposal",
+        "n8n_workflow_read",
+        "n8n_execution_proposal",
+        "n8n_execution_status",
+        "n8n_template_read",
+        "n8n_sanitized_logs",
     }
 )
+
+WEB_TOOLS = frozenset(ALLOWED_TOOLS - {
+    item for item in ALLOWED_TOOLS if item.startswith(("odoo_", "n8n_"))
+})
+ODOO_TOOLS = frozenset(item for item in ALLOWED_TOOLS if item.startswith("odoo_"))
+N8N_TOOLS = frozenset(item for item in ALLOWED_TOOLS if item.startswith("n8n_"))
+AGENT_TOOL_POLICIES = {
+    "middleware": WEB_TOOLS | ODOO_TOOLS | N8N_TOOLS,
+    "web": WEB_TOOLS,
+    "qwen": frozenset(),
+    "vici": frozenset(),
+}
 
 AGENT_PROFILES = frozenset({"DEVELOPMENT", "PRODUCTION_OBSERVER"})
 AGENT_IDENTITIES = {
@@ -209,6 +238,16 @@ class TaskRecord:
     plan: list[dict[str, Any]] = field(default_factory=list)
     plan_hash: str = ""
     approval_token: str = ""
+    priority: int = 5
+    timeout_seconds: int = 600
+    max_attempts: int = 3
+    attempt_count: int = 0
+    available_at: int = 0
+    lease_owner: str = ""
+    lease_expires_at: int = 0
+    heartbeat_at: int = 0
+    suspended_from: TaskState | None = None
+    last_error_code: str = ""
 
     def public(self) -> dict[str, Any]:
         return {
@@ -222,6 +261,11 @@ class TaskRecord:
             "state": self.state,
             "plan": redact(self.plan),
             "plan_hash": self.plan_hash,
+            "priority": self.priority,
+            "attempt_count": self.attempt_count,
+            "max_attempts": self.max_attempts,
+            "available_at": self.available_at,
+            "lease_expires_at": self.lease_expires_at,
         }
 
 
@@ -349,6 +393,9 @@ class RestrictedController:
             ):
                 raise ControllerError("approval does not match current plan")
             tools = sorted({str(step["tool"]) for step in task.plan})
+            policy = AGENT_TOOL_POLICIES.get(server_id)
+            if policy is None or any(tool not in policy for tool in tools):
+                raise ControllerError("server tool scope denied")
             token = self.tokens.issue({
                 "task_id": task.task_id, "tenant_id": tenant_id,
                 "server_id": server_id, "workspace": task.workspace,
@@ -359,6 +406,135 @@ class RestrictedController:
             task.approval_token = token
             self._audit(task, "task.approved", {"approver": "[REDACTED]", "server_id": server_id})
             return task, token
+
+    def reject(self, task_id: str, tenant_id: str, actor: str) -> TaskRecord:
+        with self._lock:
+            task = self._task(task_id, tenant_id)
+            if task.state != TaskState.AWAITING_APPROVAL:
+                raise ControllerError("invalid task state transition")
+            task.state = TaskState.FAILED
+            self._audit(task, "task.rejected", {"actor": "[REDACTED]"})
+            return task
+
+    def queue(self, task_id: str, tenant_id: str, *, priority: int = 5,
+              timeout_seconds: int = 600, max_attempts: int = 3,
+              now: int | None = None) -> TaskRecord:
+        if not 0 <= priority <= 9 or not 1 <= timeout_seconds <= 3600 or not 1 <= max_attempts <= 10:
+            raise ControllerError("scheduler limits invalid")
+        with self._lock:
+            task = self._task(task_id, tenant_id)
+            if task.state != TaskState.APPROVED:
+                raise ControllerError("invalid task state transition")
+            task.priority = priority
+            task.timeout_seconds = timeout_seconds
+            task.max_attempts = max_attempts
+            task.available_at = int(time.time()) if now is None else now
+            task.state = TaskState.QUEUED
+            self._audit(task, "task.queued", {"priority": priority})
+            return task
+
+    def claim(self, *, server_id: str, worker_id: str, lease_seconds: int = 60,
+              now: int | None = None) -> TaskRecord | None:
+        if server_id not in AGENT_TOOL_POLICIES or not 10 <= lease_seconds <= 300:
+            raise ControllerError("worker claim denied")
+        current = int(time.time()) if now is None else now
+        with self._lock:
+            eligible = [task for task in self.tasks.values() if task.state == TaskState.QUEUED
+                        and task.available_at <= current and task.plan
+                        and all(step["tool"] in AGENT_TOOL_POLICIES[server_id] for step in task.plan)]
+            if not eligible:
+                return None
+            task = sorted(eligible, key=lambda item: (-item.priority, item.available_at, item.task_id))[0]
+            task.state = TaskState.RUNNING
+            task.attempt_count += 1
+            task.lease_owner = worker_id
+            task.heartbeat_at = current
+            task.lease_expires_at = current + lease_seconds
+            self._audit(task, "task.claimed", {"worker_id_hash": hashlib.sha256(worker_id.encode()).hexdigest()})
+            return task
+
+    def heartbeat(self, task_id: str, tenant_id: str, worker_id: str,
+                  lease_seconds: int = 60, now: int | None = None) -> TaskRecord:
+        current = int(time.time()) if now is None else now
+        with self._lock:
+            task = self._task(task_id, tenant_id)
+            if task.state != TaskState.RUNNING or task.lease_owner != worker_id or task.lease_expires_at <= current:
+                raise ControllerError("lease denied")
+            task.heartbeat_at = current
+            task.lease_expires_at = current + min(max(lease_seconds, 10), 300)
+            return task
+
+    def finish(self, task_id: str, tenant_id: str, worker_id: str,
+               evidence: dict[str, Any]) -> TaskRecord:
+        with self._lock:
+            task = self._task(task_id, tenant_id)
+            if task.state != TaskState.RUNNING or task.lease_owner != worker_id:
+                raise ControllerError("lease denied")
+            task.state = TaskState.VERIFYING
+            self._audit(task, "task.verifying", {"evidence_hash": canonical_hash(redact(evidence))})
+            task.state = TaskState.COMPLETED
+            task.lease_owner = ""
+            task.lease_expires_at = 0
+            self._audit(task, "task.completed", {"evidence_hash": canonical_hash(redact(evidence))})
+            return task
+
+    def fail(self, task_id: str, tenant_id: str, worker_id: str, error_code: str,
+             *, retryable: bool, now: int | None = None) -> TaskRecord:
+        current = int(time.time()) if now is None else now
+        with self._lock:
+            task = self._task(task_id, tenant_id)
+            if task.state != TaskState.RUNNING or task.lease_owner != worker_id:
+                raise ControllerError("lease denied")
+            task.last_error_code = error_code[:64]
+            task.lease_owner = ""
+            task.lease_expires_at = 0
+            if retryable and task.attempt_count < task.max_attempts:
+                task.state = TaskState.QUEUED
+                task.available_at = current + min(300, 2 ** task.attempt_count)
+                self._audit(task, "task.retry_scheduled", {"error_code": task.last_error_code})
+            else:
+                task.state = TaskState.DEAD_LETTER
+                self._audit(task, "task.dead_lettered", {"error_code": task.last_error_code})
+            return task
+
+    def recover_expired(self, now: int | None = None) -> dict[str, int]:
+        current = int(time.time()) if now is None else now
+        retried = dead = 0
+        with self._lock:
+            for task in self.tasks.values():
+                if task.state != TaskState.RUNNING or task.lease_expires_at > current:
+                    continue
+                task.lease_owner = ""
+                task.lease_expires_at = 0
+                if task.attempt_count < task.max_attempts:
+                    task.state = TaskState.QUEUED
+                    task.available_at = current + min(300, 2 ** task.attempt_count)
+                    retried += 1
+                else:
+                    task.state = TaskState.DEAD_LETTER
+                    dead += 1
+                self._audit(task, "task.lease_recovered", {"state": task.state})
+        return {"retried": retried, "dead_lettered": dead}
+
+    def suspend(self, task_id: str, tenant_id: str) -> TaskRecord:
+        with self._lock:
+            task = self._task(task_id, tenant_id)
+            if task.state not in {TaskState.QUEUED, TaskState.APPROVED}:
+                raise ControllerError("invalid task state transition")
+            task.suspended_from = task.state
+            task.state = TaskState.SUSPENDED
+            self._audit(task, "task.suspended", {})
+            return task
+
+    def resume(self, task_id: str, tenant_id: str) -> TaskRecord:
+        with self._lock:
+            task = self._task(task_id, tenant_id)
+            if task.state != TaskState.SUSPENDED or task.suspended_from is None:
+                raise ControllerError("invalid task state transition")
+            task.state = task.suspended_from
+            task.suspended_from = None
+            self._audit(task, "task.resumed", {})
+            return task
 
     def cancel(self, task_id: str, tenant_id: str) -> TaskRecord:
         with self._lock:
