@@ -53,9 +53,21 @@ def upgrade() -> None:
           record_hash char(64) NOT NULL, correlation_id text NOT NULL,
           created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(task_id,sequence)
         )""",
+        """CREATE TABLE controller_executions (
+          id uuid PRIMARY KEY, task_id uuid NOT NULL REFERENCES controller_tasks(id) ON DELETE RESTRICT,
+          tenant_id text NOT NULL, server_id text NOT NULL, workspace text NOT NULL,
+          tool text NOT NULL, safe_arguments jsonb NOT NULL DEFAULT '{}'::jsonb,
+          request_id text NOT NULL, correlation_id text NOT NULL,
+          state text NOT NULL DEFAULT 'ACCEPTED', evidence_hash char(64),
+          created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+          CONSTRAINT ck_controller_execution_state CHECK(state IN ('ACCEPTED','COMPLETED','FAILED'))
+        )""",
+        """CREATE INDEX ix_controller_executions_tenant
+        ON controller_executions(tenant_id,created_at DESC)""",
         """CREATE TABLE controller_verifications (
           verification_code text PRIMARY KEY, task_id uuid NOT NULL REFERENCES controller_tasks(id) ON DELETE RESTRICT,
-          execution_id uuid NOT NULL, tenant_id text NOT NULL, checks jsonb NOT NULL,
+          execution_id uuid NOT NULL REFERENCES controller_executions(id) ON DELETE RESTRICT,
+          tenant_id text NOT NULL, checks jsonb NOT NULL,
           evidence_hash char(64) NOT NULL, signature text NOT NULL,
           created_at timestamptz NOT NULL DEFAULT now()
         )""",
@@ -67,6 +79,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     for statement in (
         "DROP TABLE controller_verifications",
+        "DROP INDEX ix_controller_executions_tenant",
+        "DROP TABLE controller_executions",
         "DROP TABLE controller_task_audit",
         "DROP TABLE controller_approvals",
         "DROP INDEX ix_controller_tasks_tenant",

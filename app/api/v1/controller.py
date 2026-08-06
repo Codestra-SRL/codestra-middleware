@@ -2,13 +2,19 @@
 
 from functools import lru_cache
 from pathlib import Path
+from inspect import isawaitable
 from typing import Any, Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.controller import ApprovalTokens, ControllerError, RestrictedController
+from app.core.controller_repository import PostgresControllerRepository
+from app.db.session import get_session
 
 router = APIRouter(prefix="/api/v1", tags=["private-controller"])
 
@@ -51,19 +57,25 @@ class WorkerClaim(StrictModel):
 
 class WorkerLease(StrictModel):
     tenant_id: str = Field(min_length=1, max_length=128)
+    server_id: str = Field(pattern=r"^(middleware|web)$")
     worker_id: str = Field(min_length=3, max_length=128)
+    expected_version: int = Field(ge=1)
     lease_seconds: int = Field(default=60, ge=10, le=300)
 
 
 class WorkerFinish(StrictModel):
     tenant_id: str = Field(min_length=1, max_length=128)
+    server_id: str = Field(pattern=r"^(middleware|web)$")
     worker_id: str = Field(min_length=3, max_length=128)
+    expected_version: int = Field(ge=1)
     evidence: dict[str, Any]
 
 
 class WorkerFail(StrictModel):
     tenant_id: str = Field(min_length=1, max_length=128)
+    server_id: str = Field(pattern=r"^(middleware|web)$")
     worker_id: str = Field(min_length=3, max_length=128)
+    expected_version: int = Field(ge=1)
     error_code: str = Field(min_length=1, max_length=64)
     retryable: bool
 
@@ -118,6 +130,33 @@ def _controller() -> RestrictedController:
         raise HTTPException(503, "controller signing authority unavailable") from exc
 
 
+def _repository(session: AsyncSession) -> RestrictedController | PostgresControllerRepository:
+    backend = settings.controller_repository_backend.strip().lower()
+    if backend == "memory":
+        if settings.controller_private_enabled:
+            raise HTTPException(503, "in-memory controller backend denied in private mode")
+        return _controller()
+    if backend != "postgres" or not settings.database_url.strip():
+        raise HTTPException(503, "controller PostgreSQL backend unavailable")
+    return PostgresControllerRepository(session, _controller().tokens)
+
+
+async def _call(repository: Any, operation: str, *args: Any, **kwargs: Any) -> Any:
+    try:
+        result = getattr(repository, operation)(*args, **kwargs)
+        return await result if isawaitable(result) else result
+    except SQLAlchemyError as exc:
+        raise HTTPException(503, "controller PostgreSQL backend unavailable") from exc
+
+
+def _public(repository: Any, value: Any) -> dict[str, Any]:
+    return value.public() if hasattr(value, "public") else repository.public(value)
+
+
+def _task_id(repository: Any, value: str) -> str | UUID:
+    return UUID(value) if isinstance(repository, PostgresControllerRepository) else value
+
+
 def _error(exc: ControllerError) -> HTTPException:
     message = str(exc)
     if "not found" in message:
@@ -132,164 +171,237 @@ def _error(exc: ControllerError) -> HTTPException:
 @router.post("/tasks", status_code=201)
 async def create_task(body: TaskCreate, tenant_id: Tenant, request_id: RequestID,
                       correlation_id: CorrelationID,
-                      idempotency_key: Annotated[str, Header(alias="Idempotency-Key")]):
+                      idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+                      session: AsyncSession = Depends(get_session)):
     try:
-        task, replay = _controller().create_task(
+        repository = _repository(session)
+        task, replay = await _call(repository, "create_task",
             body.model_dump(), tenant_id=_required(tenant_id, "tenant_id"),
             request_id=_required(request_id, "request_id"),
             correlation_id=_required(correlation_id, "correlation_id"),
             idempotency_key=_required(idempotency_key, "idempotency_key"),
         )
-        return {**task.public(), "idempotent_replay": replay}
+        return {**_public(repository, task), "idempotent_replay": replay}
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.get("/tasks/{task_id}")
-async def get_task(task_id: str, tenant_id: Tenant):
+async def get_task(task_id: str, tenant_id: Tenant, session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().get_task(task_id, tenant_id).public()
+        repository = _repository(session)
+        return _public(repository, await _call(repository, "get_task", _task_id(repository, task_id), tenant_id))
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/tasks/{task_id}/plan")
-async def plan_task(task_id: str, body: PlanCreate, tenant_id: Tenant):
+async def plan_task(task_id: str, body: PlanCreate, tenant_id: Tenant,
+                    session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().plan(
-            task_id, tenant_id, [step.model_dump() for step in body.steps]
-        ).public()
+        repository = _repository(session)
+        value = await _call(repository, "plan", _task_id(repository, task_id), tenant_id,
+                            [step.model_dump() for step in body.steps])
+        return _public(repository, value)
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/tasks/{task_id}/approve")
 async def approve_task(task_id: str, body: Approval, tenant_id: Tenant,
-                       actor_id: Annotated[str, Header(alias="X-Actor-ID")]):
+                       actor_id: Annotated[str, Header(alias="X-Actor-ID")],
+                       session: AsyncSession = Depends(get_session)):
     try:
-        task, token = _controller().approve(
-            task_id, tenant_id, body.plan_hash, _required(actor_id, "actor_id"), body.server_id
-        )
-        return {**task.public(), "approval_token": token, "expires_in": _controller().tokens.ttl_seconds}
+        repository = _repository(session)
+        task, token = await _call(repository, "approve", _task_id(repository, task_id), tenant_id,
+            body.plan_hash, _required(actor_id, "actor_id"), body.server_id)
+        return {**_public(repository, task), "approval_token": token,
+                "expires_in": _controller().tokens.ttl_seconds}
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/tasks/{task_id}/cancel")
-async def cancel_task(task_id: str, tenant_id: Tenant):
+async def cancel_task(task_id: str, tenant_id: Tenant, session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().cancel(task_id, tenant_id).public()
+        repository = _repository(session)
+        return _public(repository, await _call(repository, "cancel", _task_id(repository, task_id), tenant_id))
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/tasks/{task_id}/reject")
 async def reject_task(task_id: str, tenant_id: Tenant,
-                      actor_id: Annotated[str, Header(alias="X-Actor-ID")]):
+                      actor_id: Annotated[str, Header(alias="X-Actor-ID")],
+                      session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().reject(task_id, tenant_id, _required(actor_id, "actor_id")).public()
+        repository = _repository(session)
+        return _public(repository, await _call(repository, "reject", _task_id(repository, task_id), tenant_id,
+                       _required(actor_id, "actor_id")))
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/tasks/{task_id}/queue")
-async def queue_task(task_id: str, body: QueueTask, tenant_id: Tenant):
+async def queue_task(task_id: str, body: QueueTask, tenant_id: Tenant,
+                     session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().queue(task_id, tenant_id, **body.model_dump()).public()
+        repository = _repository(session)
+        return _public(repository, await _call(repository, "queue", _task_id(repository, task_id), tenant_id,
+                       **body.model_dump()))
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/tasks/{task_id}/suspend")
-async def suspend_task(task_id: str, tenant_id: Tenant):
+async def suspend_task(task_id: str, tenant_id: Tenant, session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().suspend(task_id, tenant_id).public()
+        repository = _repository(session)
+        return _public(repository, await _call(repository, "suspend", _task_id(repository, task_id), tenant_id))
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/tasks/{task_id}/resume")
-async def resume_task(task_id: str, tenant_id: Tenant):
+async def resume_task(task_id: str, tenant_id: Tenant, session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().resume(task_id, tenant_id).public()
+        repository = _repository(session)
+        return _public(repository, await _call(repository, "resume", _task_id(repository, task_id), tenant_id))
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/scheduler/claim")
-async def claim_task(body: WorkerClaim):
+async def claim_task(body: WorkerClaim, session: AsyncSession = Depends(get_session)):
     try:
-        task = _controller().claim(**body.model_dump())
-        return {"task": task.public() if task else None}
+        repository = _repository(session)
+        task = await _call(repository, "claim", **body.model_dump())
+        return {"task": _public(repository, task) if task else None}
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/scheduler/tasks/{task_id}/heartbeat")
-async def heartbeat_task(task_id: str, body: WorkerLease):
+async def heartbeat_task(task_id: str, body: WorkerLease, session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().heartbeat(task_id, **body.model_dump()).public()
+        repository = _repository(session)
+        data = body.model_dump()
+        worker = f"{data.pop('server_id')}:{data.pop('worker_id')}"
+        value: Any
+        if isinstance(repository, PostgresControllerRepository):
+            value = await repository.heartbeat(UUID(task_id), data.pop("tenant_id"), worker,
+                data.pop("expected_version"), data.pop("lease_seconds"))
+        else:
+            value = repository.heartbeat(task_id, data.pop("tenant_id"), worker.split(":", 1)[1],
+                                         data.pop("lease_seconds"))
+        return _public(repository, value)
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/scheduler/tasks/{task_id}/finish")
-async def finish_task(task_id: str, body: WorkerFinish):
+async def finish_task(task_id: str, body: WorkerFinish, session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().finish(task_id, **body.model_dump()).public()
+        repository = _repository(session)
+        data = body.model_dump()
+        worker = f"{data.pop('server_id')}:{data.pop('worker_id')}"
+        value: Any
+        if isinstance(repository, PostgresControllerRepository):
+            value = await repository.finish(UUID(task_id), data.pop("tenant_id"), worker,
+                data.pop("expected_version"), data.pop("evidence"))
+        else:
+            value = repository.finish(task_id, data.pop("tenant_id"), worker.split(":", 1)[1],
+                                      data.pop("evidence"))
+        return _public(repository, value)
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/scheduler/tasks/{task_id}/fail")
-async def fail_task(task_id: str, body: WorkerFail):
+async def fail_task(task_id: str, body: WorkerFail, session: AsyncSession = Depends(get_session)):
     try:
-        return _controller().fail(task_id, **body.model_dump()).public()
+        repository = _repository(session)
+        data = body.model_dump()
+        worker = f"{data.pop('server_id')}:{data.pop('worker_id')}"
+        value: Any
+        if isinstance(repository, PostgresControllerRepository):
+            value = await repository.fail(UUID(task_id), data.pop("tenant_id"), worker,
+                data.pop("expected_version"), data.pop("error_code"), data.pop("retryable"))
+        else:
+            value = repository.fail(task_id, data.pop("tenant_id"), worker.split(":", 1)[1],
+                data.pop("error_code"), retryable=data.pop("retryable"))
+        return _public(repository, value)
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/scheduler/recover")
-async def recover_tasks():
-    return _controller().recover_expired()
+async def recover_tasks(session: AsyncSession = Depends(get_session)):
+    return await _call(_repository(session), "recover_expired")
 
 
 @router.post("/executions", status_code=202)
 @router.post("/tools/execute", status_code=202)
 async def create_execution(body: ExecutionCreate, tenant_id: Tenant,
-                           request_id: RequestID, correlation_id: CorrelationID):
+                           request_id: RequestID, correlation_id: CorrelationID,
+                           session: AsyncSession = Depends(get_session)):
     try:
-        execution = _controller().execute(
-            **body.model_dump(exclude={"approval_token"}), tenant_id=tenant_id,
+        repository = _repository(session)
+        execution = await _call(repository, "execute",
+            **body.model_dump(exclude={"approval_token", "task_id"}),
+            task_id=_task_id(repository, body.task_id), tenant_id=tenant_id,
             token=body.approval_token, request_id=request_id,
             correlation_id=correlation_id,
         )
-        verification = _controller().verification(execution["execution_id"], tenant_id)
+        verification = await _call(repository, "verification",
+                                   _task_id(repository, execution["execution_id"]), tenant_id)
         return {**execution, "verification_code": verification["verification_code"]}
     except ControllerError as exc:
         raise _error(exc) from exc
 
 
 @router.get("/executions/{execution_id}")
-async def get_execution(execution_id: str, tenant_id: Tenant):
-    record = _controller().executions.get(execution_id)
-    if record is None or record["tenant_id"] != tenant_id:
-        raise HTTPException(404, "execution not found")
-    return record
+async def get_execution(execution_id: str, tenant_id: Tenant,
+                        session: AsyncSession = Depends(get_session)):
+    try:
+        repository = _repository(session)
+        if isinstance(repository, PostgresControllerRepository):
+            return await repository.get_execution(UUID(execution_id), tenant_id)
+        record = repository.executions.get(execution_id)
+        if record is None or record["tenant_id"] != tenant_id:
+            raise ControllerError("execution not found")
+        return record
+    except ControllerError as exc:
+        raise _error(exc) from exc
 
 
 @router.get("/verifications/{verification_code}")
-async def get_verification(verification_code: str, tenant_id: Tenant):
-    record = _controller().verifications.get(verification_code)
-    if record is None or record["tenant_id"] != tenant_id:
-        raise HTTPException(404, "verification not found")
-    return record
+async def get_verification(verification_code: str, tenant_id: Tenant,
+                           session: AsyncSession = Depends(get_session)):
+    try:
+        repository = _repository(session)
+        if isinstance(repository, PostgresControllerRepository):
+            return await repository.get_verification(verification_code, tenant_id)
+        record = repository.verifications.get(verification_code)
+        if record is None or record["tenant_id"] != tenant_id:
+            raise ControllerError("verification not found")
+        return record
+    except ControllerError as exc:
+        raise _error(exc) from exc
 
 
 @router.get("/audit/{task_id}")
-async def get_audit(task_id: str, tenant_id: Tenant):
-    _controller().get_task(task_id, tenant_id)
-    return {"task_id": task_id, "records": _controller().audits.get(task_id, [])}
+async def get_audit(task_id: str, tenant_id: Tenant, session: AsyncSession = Depends(get_session)):
+    try:
+        repository = _repository(session)
+        if isinstance(repository, PostgresControllerRepository):
+            records = await repository.get_audit(UUID(task_id), tenant_id)
+        else:
+            repository.get_task(task_id, tenant_id)
+            records = repository.audits.get(task_id, [])
+        return {"task_id": task_id, "records": records}
+    except ControllerError as exc:
+        raise _error(exc) from exc
 
 
 @router.post("/agents/register", status_code=201)

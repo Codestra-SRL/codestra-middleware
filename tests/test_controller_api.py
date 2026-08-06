@@ -29,6 +29,8 @@ def domain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> RestrictedControl
         (workspace,),
     )
     monkeypatch.setattr(controller_api, "_controller", lambda: instance)
+    monkeypatch.setattr(controller_api.settings, "controller_repository_backend", "memory")
+    monkeypatch.setattr(controller_api.settings, "controller_private_enabled", False)
     return instance
 
 
@@ -198,6 +200,19 @@ def test_api_contract_contains_all_required_routes(client):
         ("/api/v1/agents", "GET"),
     }
     assert required <= routes
+
+
+def test_private_mode_rejects_memory_and_missing_database_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(controller_api.settings, "controller_private_enabled", True)
+    monkeypatch.setattr(controller_api.settings, "controller_repository_backend", "memory")
+    with pytest.raises(controller_api.HTTPException, match="in-memory"):
+        controller_api._repository(object())
+    monkeypatch.setattr(controller_api.settings, "controller_repository_backend", "postgres")
+    monkeypatch.setattr(controller_api.settings, "database_url", "")
+    with pytest.raises(controller_api.HTTPException, match="PostgreSQL"):
+        controller_api._repository(object())
 
 
 def test_agent_inventory_is_exact_private_disabled_and_conflict_safe(client):
