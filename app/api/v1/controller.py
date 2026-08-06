@@ -46,6 +46,18 @@ class ExecutionCreate(StrictModel):
     approval_token: str
 
 
+class AgentRegistration(StrictModel):
+    server_id: str = Field(pattern=r"^(middleware|qwen|web|vici)$")
+    spiffe_id: str
+    private_endpoint: str
+    profile: str = Field(pattern=r"^(DEVELOPMENT|PRODUCTION_OBSERVER)$")
+    certificate_sha256: str = Field(pattern=r"^[A-Fa-f0-9]{64}$")
+    certificate_serial: str = Field(min_length=1, max_length=128)
+    not_after: str = Field(min_length=20, max_length=40)
+    rotation_owner: str = Field(min_length=1, max_length=128)
+    public_listener: bool = False
+
+
 def _required(value: str, name: str) -> str:
     if not value.strip():
         raise HTTPException(422, f"{name} is required")
@@ -176,3 +188,16 @@ async def get_verification(verification_code: str, tenant_id: Tenant):
 async def get_audit(task_id: str, tenant_id: Tenant):
     _controller().get_task(task_id, tenant_id)
     return {"task_id": task_id, "records": _controller().audits.get(task_id, [])}
+
+
+@router.post("/agents/register", status_code=201)
+async def register_agent(body: AgentRegistration):
+    try:
+        return _controller().register_agent(body.model_dump())
+    except ControllerError as exc:
+        raise _error(exc) from exc
+
+
+@router.get("/agents")
+async def list_agents():
+    return {"agents": list(_controller().agents.values())}

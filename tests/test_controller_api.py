@@ -185,8 +185,41 @@ def test_api_contract_contains_all_required_routes(client):
         ("/api/v1/tools/execute", "POST"),
         ("/api/v1/verifications/{verification_code}", "GET"),
         ("/api/v1/audit/{task_id}", "GET"),
+        ("/api/v1/agents/register", "POST"),
+        ("/api/v1/agents", "GET"),
     }
     assert required <= routes
+
+
+def test_agent_inventory_is_exact_private_disabled_and_conflict_safe(client):
+    registrations = {
+        "middleware": ("spiffe://codestra.internal/agent/middleware", "10.40.0.1:9443", "DEVELOPMENT"),
+        "qwen": ("spiffe://codestra.internal/agent/qwen", "10.40.0.4:9443", "DEVELOPMENT"),
+        "web": ("spiffe://codestra.internal/agent/web", "10.40.0.3:9443", "DEVELOPMENT"),
+        "vici": ("spiffe://codestra.internal/agent/vici", "10.40.0.2:9443", "PRODUCTION_OBSERVER"),
+    }
+    for index, (server, (spiffe, endpoint, profile)) in enumerate(registrations.items(), 1):
+        response = client.post("/api/v1/agents/register", json={
+            "server_id": server, "spiffe_id": spiffe,
+            "private_endpoint": endpoint, "profile": profile,
+            "certificate_sha256": f"{index:064x}",
+            "certificate_serial": str(1000 + index),
+            "not_after": "2026-09-05T00:00:00Z",
+            "rotation_owner": "fixture-security-owner",
+            "public_listener": False,
+        })
+        assert response.status_code == 201
+        assert response.json()["enabled"] is False
+    inventory = client.get("/api/v1/agents").json()["agents"]
+    assert {item["server_id"] for item in inventory} == set(registrations)
+    denied = client.post("/api/v1/agents/register", json={
+        "server_id": "qwen", "spiffe_id": registrations["qwen"][0],
+        "private_endpoint": "0.0.0.0:9443", "profile": "DEVELOPMENT",
+        "certificate_sha256": "a" * 64, "certificate_serial": "2000",
+        "not_after": "2026-09-05T00:00:00Z", "rotation_owner": "owner",
+        "public_listener": True,
+    })
+    assert denied.status_code == 403
 
 
 def test_public_middleware_does_not_mount_controller_routes():

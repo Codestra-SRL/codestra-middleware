@@ -64,6 +64,20 @@ ALLOWED_TOOLS = frozenset(
     }
 )
 
+AGENT_PROFILES = frozenset({"DEVELOPMENT", "PRODUCTION_OBSERVER"})
+AGENT_IDENTITIES = {
+    "middleware": "spiffe://codestra.internal/agent/middleware",
+    "qwen": "spiffe://codestra.internal/agent/qwen",
+    "web": "spiffe://codestra.internal/agent/web",
+    "vici": "spiffe://codestra.internal/agent/vici",
+}
+AGENT_ENDPOINTS = {
+    "middleware": "10.40.0.1:9443",
+    "qwen": "10.40.0.4:9443",
+    "web": "10.40.0.3:9443",
+    "vici": "10.40.0.2:9443",
+}
+
 FORBIDDEN_ARGUMENT_KEYS = frozenset(
     {
         "command",
@@ -225,9 +239,40 @@ class RestrictedController:
         self.tasks: dict[str, TaskRecord] = {}
         self.executions: dict[str, dict[str, Any]] = {}
         self.verifications: dict[str, dict[str, Any]] = {}
+        self.agents: dict[str, dict[str, Any]] = {}
         self.audits: dict[str, list[dict[str, Any]]] = {}
         self.idempotency: dict[tuple[str, str], tuple[str, str]] = {}
         self._lock = threading.RLock()
+
+    def register_agent(self, registration: dict[str, Any]) -> dict[str, Any]:
+        server_id = str(registration["server_id"])
+        expected_identity = AGENT_IDENTITIES.get(server_id)
+        expected_endpoint = AGENT_ENDPOINTS.get(server_id)
+        if expected_identity is None or expected_endpoint is None:
+            raise ControllerError("unknown server identity")
+        if registration["spiffe_id"] != expected_identity:
+            raise ControllerError("agent SPIFFE identity denied")
+        if registration["private_endpoint"] != expected_endpoint:
+            raise ControllerError("agent private endpoint denied")
+        if registration["profile"] not in AGENT_PROFILES:
+            raise ControllerError("agent profile denied")
+        fingerprint = str(registration["certificate_sha256"]).lower()
+        if len(fingerprint) != 64 or any(char not in "0123456789abcdef" for char in fingerprint):
+            raise ControllerError("agent certificate fingerprint invalid")
+        if registration["public_listener"]:
+            raise ControllerError("public agent listener denied")
+        record = {
+            **registration,
+            "certificate_sha256": fingerprint,
+            "enabled": False,
+            "registration_hash": canonical_hash(registration),
+        }
+        with self._lock:
+            prior = self.agents.get(server_id)
+            if prior and prior["registration_hash"] != record["registration_hash"]:
+                raise ControllerError("agent registration conflict")
+            self.agents[server_id] = record
+        return record
 
     def _audit(self, task: TaskRecord, action: str, details: dict[str, Any]) -> None:
         safe = redact(details)

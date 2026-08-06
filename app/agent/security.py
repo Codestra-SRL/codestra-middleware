@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.controller import ApprovalTokens, ControllerError
 
 
-CONTROLLER_SPIFFE = "spiffe://codestra.internal/service/controller"
+CONTROLLER_SPIFFE = "spiffe://codestra.internal/controller/middleware"
 
 
 def certificate_identity(scope: Mapping[str, Any]) -> tuple[str, str]:

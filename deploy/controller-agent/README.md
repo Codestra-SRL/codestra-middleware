@@ -11,7 +11,7 @@ Middleware app.
 - Require a server certificate for the private name and a client certificate
   chaining to the approved controller client CA.
 - The verified client leaf must contain
-  `spiffe://codestra.internal/service/controller` as a URI SAN.
+  `spiffe://codestra.internal/controller/middleware` as a URI SAN.
 - The TLS ASGI adapter must expose the verified leaf DER as
   `scope["extensions"]["tls"]["client_cert"]`; HTTP identity headers are not
   trusted.
