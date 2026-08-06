@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     ai_default_max_running_per_tenant: int = 5
     ai_daily_token_quota: int = 100000
     ai_global_emergency_limit: int = 0
+    controller_approval_signing_key_file: str = ""
+    controller_workspace_allowlist: str = "/opt/codestra/middleware,/opt/codestra/worktrees"
+    controller_private_enabled: bool = False
     send_events: bool = False
     broad_event_delivery_enabled: bool = False
     production_n8n_enabled: bool = False
