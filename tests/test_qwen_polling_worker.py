@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import importlib.util
 import sys
+from contextlib import AbstractContextManager
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,40 @@ def test_signer_uses_authoritative_canonical_contract(tmp_path, monkeypatch):
 def test_non_loopback_model_destination_fails_closed():
     with pytest.raises(worker.WorkerError, match="non-loopback"):
         worker.loopback_json("http://10.40.0.4:11434/api/generate", {}, 1)
+
+
+class FakeResponse(AbstractContextManager):
+    def read(self, _limit):
+        return b'{"choices":[]}'
+
+    def __exit__(self, *_args):
+        return None
+
+
+def test_litellm_request_uses_dedicated_projected_bearer(tmp_path, monkeypatch):
+    credential = tmp_path / "litellm.key"
+    credential.write_text("fixture-value")
+    credential.chmod(0o600)
+    captured = {}
+
+    def fake_open(request, timeout):
+        captured["authorization"] = request.get_header("Authorization")
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(worker.urllib.request, "urlopen", fake_open)
+    assert worker.loopback_json(
+        "http://127.0.0.1:4000/v1/chat/completions", {}, 7, credential
+    ) == {"choices": []}
+    assert captured == {"authorization": "Bearer fixture-value", "timeout": 7}
+
+
+def test_protected_build_selects_middleware_runtime_stage():
+    workflow = (ROOT / ".github/workflows/staging-candidate-build-sign.yml").read_text()
+    build = workflow.split("- name: Build and publish staging-only candidate", 1)[1]
+    build = build.split("- name: Resolve immutable candidate identity", 1)[0]
+    assert "docker build" in build
+    assert "--target runtime" in build
 
 
 class FakeAPI:
