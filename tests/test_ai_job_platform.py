@@ -152,9 +152,19 @@ def worker_headers(
     timestamp: str | None = None,
     service_id: str = "qwen-ai-01",
     key_id: str = "qwen-ai-01-hmac-20260804-01",
-    tenant_id: str = "00000000-0000-4000-8000-000000000001",
-    workspace_id: str = "00000000-0000-4000-8000-000000000002",
+    tenant_id: str | None = None,
+    workspace_id: str | None = None,
 ):
+    tenant_id = (
+        tenant_id
+        or settings.ai_worker_tenant_id
+        or "00000000-0000-4000-8000-000000000001"
+    )
+    workspace_id = (
+        workspace_id
+        or settings.ai_worker_workspace_id
+        or "00000000-0000-4000-8000-000000000002"
+    )
     timestamp = timestamp or str(int(time.time()))
     nonce = nonce or uuid4().hex
     digest = hashlib.sha256(body).hexdigest()
@@ -171,6 +181,8 @@ def worker_headers(
             request_id,
             correlation_id,
             worker_id,
+            tenant_id,
+            workspace_id,
         )
     )
     return {
@@ -306,6 +318,8 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     settings.ai_worker_service_id = "qwen-ai-01"
     settings.ai_worker_hmac_key_id = "qwen-ai-01-hmac-20260804-01"
     settings.ai_worker_spiffe_id = "spiffe://codestra.internal/service/qwen-ai-01"
+    settings.ai_worker_tenant_id = str(organization_id)
+    settings.ai_worker_workspace_id = str(workspace_id)
 
     auth_app = FastAPI()
     auth_app.include_router(worker_api.router)
@@ -324,6 +338,17 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     accepted = await auth_client.post(verify_path, headers=valid)
     assert accepted.status_code == 200
     assert accepted.json()["scope"] == "ai.auth.verify/read-only"
+    wrong_tenant = worker_headers(
+        "POST", verify_path, b"", client_certificate, tenant_id=str(other_organization)
+    )
+    assert (
+        await auth_client.post(verify_path, headers=wrong_tenant)
+    ).status_code == 403
+    tampered_tenant = worker_headers("POST", verify_path, b"", client_certificate)
+    tampered_tenant["X-Tenant-ID"] = str(other_organization)
+    assert (
+        await auth_client.post(verify_path, headers=tampered_tenant)
+    ).status_code == 401
     assert (await auth_client.post(verify_path, headers=valid)).status_code == 409
     restarted_app = FastAPI()
     restarted_app.include_router(worker_api.router)

@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import multiprocessing
 import secrets
 import signal
 import socket
@@ -79,6 +80,8 @@ def signed_headers(
             request_id,
             correlation_id,
             WORKER_ID,
+            tenant_id,
+            workspace_id,
         )
     ).encode("ascii")
     secret = protected(secret_file).read_bytes().strip()
@@ -295,6 +298,54 @@ def execute(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _execute_child(job: dict[str, Any], sender: Any) -> None:
+    """Run inference out of process so lease loss can stop the active request."""
+    try:
+        sender.send((True, execute(job)))
+    except Exception:  # The parent deliberately receives no provider detail.
+        sender.send((False, None))
+    finally:
+        sender.close()
+
+
+def maintain_lease(
+    api: Middleware,
+    job_id: str,
+    mutation: dict[str, object],
+    stop_heartbeat: threading.Event,
+    cancellation_requested: threading.Event,
+    lease_lost: threading.Event,
+    interval_seconds: float = 20,
+) -> None:
+    """Renew the lease and fail closed on any unverified heartbeat state."""
+    while not stop_heartbeat.wait(interval_seconds):
+        try:
+            status, _ = api.request(
+                "POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/heartbeat", mutation
+            )
+        except WorkerError:
+            lease_lost.set()
+            return
+        if status != 200:
+            lease_lost.set()
+            return
+        try:
+            status, document = api.request(
+                "POST",
+                f"/internal/api/v1/ai/worker/jobs/{job_id}/cancellation-check",
+                mutation,
+            )
+        except WorkerError:
+            lease_lost.set()
+            return
+        if status != 200:
+            lease_lost.set()
+            return
+        if document.get("cancel_requested") is True:
+            cancellation_requested.set()
+            return
+
+
 def run_once(api: Middleware) -> str:
     status, response = api.request(
         "POST", "/internal/api/v1/ai/worker/jobs/claim", {"worker_id": WORKER_ID}
@@ -311,42 +362,62 @@ def run_once(api: Middleware) -> str:
     job_id, token = str(job["id"]), int(job["fencing_token"])
     mutation = {"worker_id": WORKER_ID, "fencing_token": token}
     stop_heartbeat = threading.Event()
-    cancellation = threading.Event()
+    cancellation_requested = threading.Event()
+    lease_lost = threading.Event()
 
-    def maintain_lease() -> None:
-        while not stop_heartbeat.wait(20):
-            status, document = api.request(
-                "POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/heartbeat", mutation
-            )
-            if status != 200:
-                cancellation.set()
-                return
-            status, document = api.request(
-                "POST",
-                f"/internal/api/v1/ai/worker/jobs/{job_id}/cancellation-check",
-                mutation,
-            )
-            if status != 200 or document.get("cancel_requested") is True:
-                cancellation.set()
-                return
-
-    heartbeat = threading.Thread(target=maintain_lease, daemon=True)
+    heartbeat = threading.Thread(
+        target=maintain_lease,
+        args=(
+            api,
+            job_id,
+            mutation,
+            stop_heartbeat,
+            cancellation_requested,
+            lease_lost,
+        ),
+        daemon=True,
+    )
+    # The deployment target is Linux; fork lets the child inherit the already
+    # validated, read-only job and avoids re-running module startup code.
+    context = multiprocessing.get_context("fork")
+    receiver, sender = context.Pipe(duplex=False)
+    inference = context.Process(target=_execute_child, args=(job, sender), daemon=True)
+    inference.start()
+    sender.close()
     heartbeat.start()
     try:
-        result = execute(job)
-        if cancellation.is_set():
-            api.request(
+        while inference.is_alive() and not (
+            cancellation_requested.is_set() or lease_lost.is_set()
+        ):
+            inference.join(timeout=0.1)
+        if cancellation_requested.is_set() or lease_lost.is_set():
+            if inference.is_alive():
+                inference.terminate()
+            inference.join(timeout=2)
+        if lease_lost.is_set():
+            return "lease-lost"
+        if cancellation_requested.is_set():
+            status, document = api.request(
                 "POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/cancel", mutation
             )
+            if status != 200 or document.get("state") != "cancelled":
+                return "lease-lost"
             return "cancelled"
+        if inference.exitcode != 0 or not receiver.poll():
+            raise WorkerError("model execution failed")
+        succeeded, result = receiver.recv()
+        if not succeeded or not isinstance(result, dict):
+            raise WorkerError("model execution failed")
         status, _ = api.request(
             "POST",
             f"/internal/api/v1/ai/worker/jobs/{job_id}/complete",
             {**mutation, "result": result},
         )
-        if status not in (200, 409):
+        if status == 409:
+            return "lease-lost"
+        if status != 200:
             raise WorkerError("completion rejected")
-        return "completed" if status == 200 else "duplicate-completion"
+        return "completed"
     except WorkerError:
         api.request(
             "POST",
@@ -362,6 +433,10 @@ def run_once(api: Middleware) -> str:
     finally:
         stop_heartbeat.set()
         heartbeat.join(timeout=2)
+        if inference.is_alive():
+            inference.terminate()
+            inference.join(timeout=2)
+        receiver.close()
 
 
 def main() -> int:

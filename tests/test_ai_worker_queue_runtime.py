@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -14,7 +15,9 @@ from sqlalchemy.pool import NullPool
 from app.api.internal import ai_jobs as worker_api
 from app.core import ai_jobs, ai_orchestration
 from app.core.ai_contracts import AIResult
+from app.qwen_auth_verifier import canonical_signing_string_v2
 from tests.test_ai_orchestration_db import make_command
+from worker import qwen_polling_worker as polling_worker
 
 
 def test_exact_private_queue_route_and_auth_contract() -> None:
@@ -48,6 +51,105 @@ def test_exact_private_queue_route_and_auth_contract() -> None:
             assert required in Path(ai_jobs.__file__).read_text()
         else:
             assert required in source
+
+
+def test_hmac_v2_binds_tenant_and_workspace() -> None:
+    common = (
+        "POST",
+        "/internal/api/v1/ai/worker/jobs/claim",
+        "1770000000",
+        "nonce-0123456789abcdef",
+        "a" * 64,
+        "request-01234567",
+        "correlation-01234567",
+        "qwen-ai-01-worker",
+    )
+    first = canonical_signing_string_v2(
+        *common,
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000002",
+    )
+    other_tenant = canonical_signing_string_v2(
+        *common,
+        "00000000-0000-4000-8000-000000000003",
+        "00000000-0000-4000-8000-000000000002",
+    )
+    other_workspace = canonical_signing_string_v2(
+        *common,
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000004",
+    )
+    assert len({first, other_tenant, other_workspace}) == 3
+
+
+def test_lease_maintenance_fails_closed_on_transport_error() -> None:
+    class BrokenMiddleware:
+        def request(self, *_: object) -> tuple[int, dict[str, object]]:
+            raise polling_worker.WorkerError("transport unavailable")
+
+    stop = threading.Event()
+    cancellation = threading.Event()
+    lease_lost = threading.Event()
+    polling_worker.maintain_lease(
+        BrokenMiddleware(),  # type: ignore[arg-type]
+        "00000000-0000-4000-8000-000000000010",
+        {"worker_id": "qwen-ai-01-worker", "fencing_token": 1},
+        stop,
+        cancellation,
+        lease_lost,
+        interval_seconds=0,
+    )
+    assert lease_lost.is_set()
+    assert not cancellation.is_set()
+
+
+def test_error_details_use_an_allowlist_and_reject_raw_messages() -> None:
+    assert ai_jobs.sanitize_error_details(
+        {
+            "component": "litellm",
+            "http_status": 503,
+            "message": "Authorization: Bearer leaked-token",
+            "secret_token": "leaked-token",
+        }
+    ) == {"component": "litellm", "http_status": 503}
+
+
+@pytest.mark.asyncio
+async def test_release_and_recovery_forward_authenticated_tenant(monkeypatch) -> None:
+    tenant, workspace, job_id = uuid4(), uuid4(), uuid4()
+    principal = worker_api.WorkerPrincipal(
+        service_id="qwen-polling-worker",
+        worker_id="qwen-ai-01-worker",
+        tenant_id=tenant,
+        workspace_id=workspace,
+        request_id="request-01234567",
+        correlation_id="correlation-01234567",
+        scopes=worker_api.SERVER_SCOPES,
+    )
+    observed: dict[str, object] = {}
+
+    async def fake_finish(*args, **kwargs):
+        observed["finish_principal"] = kwargs["principal"]
+        return {"state": "retry_wait"}
+
+    async def fake_recover(db, organization_id, workspace_id):
+        observed["recover"] = (organization_id, workspace_id)
+        return {"retried": 0, "dead_lettered": 0}
+
+    monkeypatch.setattr(worker_api, "_finish", fake_finish)
+    monkeypatch.setattr(ai_jobs, "recover_expired", fake_recover)
+    mutation = worker_api.LeaseMutation(worker_id="qwen-ai-01-worker", fencing_token=1)
+    assert await worker_api.release_job(job_id, mutation, principal, object()) == {
+        "state": "retry_wait"
+    }
+    assert await worker_api.recover(principal, object()) == {
+        "retried": 0,
+        "dead_lettered": 0,
+    }
+    assert observed == {
+        "finish_principal": principal,
+        "recover": (tenant, workspace),
+    }
 
 
 @pytest.mark.skipif(
@@ -216,6 +318,157 @@ async def test_dead_letter_evidence_duplicate_result_and_approved_manual_retry()
             with pytest.raises(PermissionError, match="duplicate_result_rejected"):
                 await ai_jobs.completed_result_status(
                     db, result_command.command_id, tenant, workspace, changed
+                )
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.skipif(
+    "DATABASE_URL" not in os.environ, reason="disposable PostgreSQL required"
+)
+@pytest.mark.asyncio
+async def test_registered_worker_concurrency_and_tenant_scoped_recovery() -> None:
+    engine = create_async_engine(os.environ["DATABASE_URL"], poolclass=NullPool)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    tenant, workspace = uuid4(), uuid4()
+    other_tenant, other_workspace = uuid4(), uuid4()
+    worker_id = "qwen-ai-01-worker"
+    service_id = "qwen-polling-worker"
+    try:
+        async with sessions() as db:
+            await db.execute(
+                text("""TRUNCATE ai_job_results,ai_job_events,ai_job_dead_letters,
+              ai_job_approvals,ai_usage_ledger,ai_worker_registrations,ai_audit_events,
+              ai_worker_heartbeats,ai_job_attempts,ai_job_chunks,ai_generation_jobs,
+              ai_messages,ai_conversations,ai_service_nonces,ai_tenant_quotas CASCADE""")
+            )
+            await db.execute(
+                text("""INSERT INTO ai_worker_registrations
+              (worker_id,service_id,capability_digest,capabilities,max_concurrency,enabled)
+              VALUES(:worker,:service,:digest,'{}'::jsonb,1,true)"""),
+                {"worker": worker_id, "service": service_id, "digest": "a" * 64},
+            )
+            await db.commit()
+
+            first = make_command(tenant=tenant)
+            second = make_command(tenant=tenant)
+            foreign = make_command(tenant=other_tenant)
+            await ai_orchestration.submit(db, first, workspace)
+            await ai_orchestration.submit(db, second, workspace)
+            await ai_orchestration.submit(db, foreign, other_workspace)
+            claimed = await ai_jobs.claim(
+                db,
+                worker_id,
+                30,
+                "corr-registered-claim",
+                organization_id=tenant,
+                workspace_id=workspace,
+                service_id=service_id,
+            )
+            assert claimed is not None
+            retry_job_id = (
+                second.command_id
+                if claimed["id"] == first.command_id
+                else first.command_id
+            )
+            with pytest.raises(OverflowError, match="worker_concurrency_limit"):
+                await ai_jobs.claim(
+                    db,
+                    worker_id,
+                    30,
+                    "corr-concurrency-denied",
+                    organization_id=tenant,
+                    workspace_id=workspace,
+                    service_id=service_id,
+                )
+            await db.rollback()
+
+            await db.execute(
+                text("""UPDATE ai_generation_jobs SET state='leased',lease_owner=:worker,
+                  lease_expires_at=now()-interval '1 second',attempt_count=1,max_attempts=2
+                  WHERE id=:job"""),
+                {"worker": worker_id, "job": foreign.command_id},
+            )
+            await db.commit()
+            assert await ai_jobs.recover_expired(db, tenant, workspace) == {
+                "retried": 0,
+                "dead_lettered": 0,
+            }
+            foreign_state = (
+                await db.execute(
+                    text("SELECT state FROM ai_generation_jobs WHERE id=:job"),
+                    {"job": foreign.command_id},
+                )
+            ).scalar_one()
+            assert foreign_state == "leased"
+            assert await ai_jobs.recover_expired(db, other_tenant, other_workspace) == {
+                "retried": 1,
+                "dead_lettered": 0,
+            }
+
+            await db.execute(text("UPDATE ai_worker_registrations SET enabled=false"))
+            await db.execute(
+                text("""UPDATE ai_generation_jobs SET state='cancelled',lease_owner=NULL,
+                  lease_expires_at=NULL WHERE id=:job"""),
+                {"job": first.command_id},
+            )
+            await db.commit()
+            with pytest.raises(PermissionError, match="worker_not_enabled"):
+                await ai_jobs.claim(
+                    db,
+                    worker_id,
+                    30,
+                    "corr-disabled-worker",
+                    organization_id=tenant,
+                    workspace_id=workspace,
+                    service_id=service_id,
+                )
+
+            approval_id = uuid4()
+            await db.rollback()
+            await db.execute(
+                text("""UPDATE ai_generation_jobs SET state='dead_letter',
+                  attempt_count=10,max_attempts=10 WHERE id=:job"""),
+                {"job": retry_job_id},
+            )
+            await db.execute(
+                text("""INSERT INTO ai_job_dead_letters
+                  (job_id,organization_id,workspace_id,safe_error_code,attempt_count,
+                   payload_sha256,final_error_code,max_attempts,safe_error_details,
+                   failed_at,task_id,tenant_id,correlation_id,evidence_hash,
+                   manual_retry_requires_new_approval)
+                  SELECT id,organization_id,workspace_id,'attempts_exhausted',10,
+                   request_sha256,'attempts_exhausted',10,'{}'::jsonb,
+                   now()-interval '1 minute',id,organization_id,correlation_id,
+                   :evidence,true FROM ai_generation_jobs WHERE id=:job"""),
+                {"job": retry_job_id, "evidence": "b" * 64},
+            )
+            await db.execute(
+                text("""INSERT INTO ai_job_approvals
+                  (id,job_id,organization_id,workspace_id,action_type,proposal,
+                   proposal_sha256,state,requested_by,decided_by_fingerprint,
+                   decision_reason,decided_at)
+                  VALUES(:id,:job,:tenant,:workspace,'dead_letter.retry','{}'::jsonb,
+                   :hash,'approved','operator',:actor,'bounded retry',now())"""),
+                {
+                    "id": approval_id,
+                    "job": retry_job_id,
+                    "tenant": tenant,
+                    "workspace": workspace,
+                    "hash": hashlib.sha256(b"{}").hexdigest(),
+                    "actor": hashlib.sha256(b"approver").hexdigest(),
+                },
+            )
+            await db.commit()
+            with pytest.raises(LookupError, match="dead_letter_not_retryable"):
+                await ai_jobs.retry_dead_letter(
+                    db,
+                    retry_job_id,
+                    approval_id,
+                    tenant,
+                    workspace,
+                    worker_id,
+                    "corr-retry-limit",
                 )
     finally:
         await engine.dispose()

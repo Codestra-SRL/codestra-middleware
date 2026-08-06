@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     ai_worker_spiffe_id: str = "spiffe://codestra.internal/worker/qwen"
     ai_worker_hmac_key_id: str = "qwen-polling-worker-hmac-v1"
     ai_worker_id: str = "qwen-ai-01-worker"
+    ai_worker_tenant_id: str = ""
+    ai_worker_workspace_id: str = ""
     ai_worker_client_ca_file: str = ""
     ai_hmac_secret_file: str = ""
     ai_audit_log_file: str = ""

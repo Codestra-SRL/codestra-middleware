@@ -268,10 +268,19 @@ async def authenticate_worker(
         request_id,
         correlation_id,
         worker_id,
+        str(tenant_id),
+        str(workspace_id),
     )
     expected = hmac.new(secret, canonical, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, signature.lower()):
         raise HTTPException(401, "authentication denied")
+    try:
+        enrolled_tenant = UUID(settings.ai_worker_tenant_id)
+        enrolled_workspace = UUID(settings.ai_worker_workspace_id)
+    except ValueError as exc:
+        raise HTTPException(503, "worker authorization unavailable") from exc
+    if tenant_id != enrolled_tenant or workspace_id != enrolled_workspace:
+        raise HTTPException(403, "worker tenant binding denied")
     await _claim_nonce(db, service_id, nonce, correlation_id)
     return WorkerPrincipal(
         service_id=settings.ai_worker_service_id,
@@ -321,18 +330,24 @@ async def claim_job(
 ) -> dict[str, object]:
     if not settings.ai_worker_claims_enabled:
         raise HTTPException(503, "AI worker claims are disabled")
-    await ai_jobs.expire_deadlines(db)
-    await ai_jobs.recover_expired(db)
+    await ai_jobs.expire_deadlines(db, principal.tenant_id, principal.workspace_id)
+    await ai_jobs.recover_expired(db, principal.tenant_id, principal.workspace_id)
     if body.worker_id != principal.worker_id:
         raise HTTPException(401, "authentication denied")
-    item = await ai_jobs.claim(
-        db,
-        principal.worker_id,
-        settings.ai_job_lease_seconds,
-        principal.correlation_id,
-        organization_id=principal.tenant_id,
-        workspace_id=principal.workspace_id,
-    )
+    try:
+        item = await ai_jobs.claim(
+            db,
+            principal.worker_id,
+            settings.ai_job_lease_seconds,
+            principal.correlation_id,
+            organization_id=principal.tenant_id,
+            workspace_id=principal.workspace_id,
+            service_id=principal.service_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except OverflowError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return {"job": item}
 
 
@@ -591,21 +606,31 @@ async def cancellation_check(
 
 @router.post("/worker/recover-expired")
 async def recover(
-    _: WorkerPrincipal = Depends(require_scope("ai.worker.recover-expired")),
+    principal: WorkerPrincipal = Depends(require_scope("ai.worker.recover-expired")),
     db: AsyncSession = Depends(get_session),
 ) -> dict[str, int]:
-    return await ai_jobs.recover_expired(db)
+    return await ai_jobs.recover_expired(
+        db, principal.tenant_id, principal.workspace_id
+    )
 
 
 @router.post("/worker/jobs/{job_id}/release")
 async def release_job(
     job_id: UUID,
     body: LeaseMutation,
-    _: WorkerPrincipal = Depends(require_scope("ai.worker.fail")),
-    request_id: str = Depends(correlation),
+    principal: WorkerPrincipal = Depends(require_scope("ai.worker.fail")),
     db: AsyncSession = Depends(get_session),
 ) -> dict[str, str]:
-    return await _finish(job_id, body, True, "worker_released", True, request_id, db)
+    return await _finish(
+        job_id,
+        body,
+        True,
+        "worker_released",
+        True,
+        principal.correlation_id,
+        db,
+        principal=principal,
+    )
 
 
 @router.post("/worker/register", status_code=201)

@@ -4,12 +4,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, Mapping
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+SAFE_ERROR_DETAIL_FIELDS = frozenset(
+    {
+        "category",
+        "component",
+        "http_status",
+        "model_profile",
+        "operation",
+        "provider",
+        "timeout_seconds",
+    }
+)
 
 
 def fingerprint(value: str) -> str:
@@ -214,7 +227,36 @@ async def claim(
     *,
     organization_id: UUID | None = None,
     workspace_id: UUID | None = None,
+    service_id: str | None = None,
 ) -> dict[str, Any] | None:
+    if service_id is not None:
+        registration = (
+            (
+                await db.execute(
+                    text("""
+        SELECT max_concurrency FROM ai_worker_registrations
+        WHERE worker_id=:worker AND service_id=:service AND enabled=true
+        FOR UPDATE
+    """),
+                    {"worker": worker_id, "service": service_id},
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if registration is None:
+            raise PermissionError("worker_not_enabled")
+        active = (
+            await db.execute(
+                text("""
+        SELECT count(*) FROM ai_generation_jobs
+        WHERE state='leased' AND lease_owner=:worker AND lease_expires_at > now()
+    """),
+                {"worker": worker_id},
+            )
+        ).scalar_one()
+        if active >= registration["max_concurrency"]:
+            raise OverflowError("worker_concurrency_limit")
     row = (
         (
             await db.execute(
@@ -539,17 +581,16 @@ async def finish(
 
 
 def sanitize_error_details(details: Mapping[str, object]) -> dict[str, object]:
-    """Retain bounded diagnostic metadata while removing secret-like fields."""
+    """Retain only bounded, structured diagnostics that cannot carry raw errors."""
     safe: dict[str, object] = {}
     for key, value in details.items():
         normalized = key.lower()
-        if any(
-            part in normalized
-            for part in ("secret", "token", "password", "key", "credential")
-        ):
+        if normalized not in SAFE_ERROR_DETAIL_FIELDS:
             continue
-        if isinstance(value, (str, int, bool)):
-            safe[key[:64]] = value[:512] if isinstance(value, str) else value
+        if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._:/ -]{1,128}", value):
+            safe[normalized] = value
+        elif isinstance(value, (int, bool)):
+            safe[normalized] = value
     return safe
 
 
@@ -712,6 +753,7 @@ async def retry_dead_letter(
         text("""UPDATE ai_generation_jobs SET state='retry_wait',
       max_attempts=max_attempts+1,next_attempt_at=now(),failure_code=NULL,completed_at=NULL,
       updated_at=now(),version=version+1 WHERE id=:job AND state='dead_letter'
+      AND max_attempts < 10
       RETURNING id"""),
         {"job": job_id},
     )
@@ -736,49 +778,86 @@ async def retry_dead_letter(
     return {"state": "retry_wait"}
 
 
-async def recover_expired(db: AsyncSession) -> dict[str, int]:
+async def recover_expired(
+    db: AsyncSession,
+    organization_id: UUID | None = None,
+    workspace_id: UUID | None = None,
+) -> dict[str, int]:
     retried_result = await db.execute(
         text("""
         UPDATE ai_generation_jobs SET state='retry_wait',lease_owner=NULL,lease_expires_at=NULL,
           next_attempt_at=now(),updated_at=now()
         WHERE state='leased' AND lease_expires_at <= now() AND attempt_count < max_attempts
           AND (deadline_at IS NULL OR deadline_at > now())
-    """)
+          AND (CAST(:org AS uuid) IS NULL OR organization_id=:org)
+          AND (CAST(:workspace AS uuid) IS NULL OR workspace_id=:workspace)
+    """),
+        {"org": organization_id, "workspace": workspace_id},
     )
     retried = int(getattr(retried_result, "rowcount", 0))
-    dead_result = await db.execute(
-        text("""
+    dead_rows = (
+        (
+            await db.execute(
+                text("""
         UPDATE ai_generation_jobs SET state='dead_letter',lease_owner=NULL,lease_expires_at=NULL,
           failure_code='lease_expired',completed_at=now(),updated_at=now()
         WHERE state='leased' AND lease_expires_at <= now() AND attempt_count >= max_attempts
           AND (deadline_at IS NULL OR deadline_at > now())
-    """)
+          AND (CAST(:org AS uuid) IS NULL OR organization_id=:org)
+          AND (CAST(:workspace AS uuid) IS NULL OR workspace_id=:workspace)
+        RETURNING id,organization_id,workspace_id,attempt_count,max_attempts,
+          request_sha256,correlation_id
+    """),
+                {"org": organization_id, "workspace": workspace_id},
+            )
+        )
+        .mappings()
+        .all()
     )
-    dead = int(getattr(dead_result, "rowcount", 0))
-    if dead:
+    dead = len(dead_rows)
+    for row in dead_rows:
+        evidence_hash = hashlib.sha256(
+            f"{row['id']}:lease_expired:{row['attempt_count']}".encode()
+        ).hexdigest()
         await db.execute(
-            text("""INSERT INTO ai_job_dead_letters
+            text("""
+          INSERT INTO ai_job_dead_letters
           (job_id,organization_id,workspace_id,safe_error_code,attempt_count,payload_sha256,
            final_error_code,max_attempts,safe_error_details,failed_at,task_id,tenant_id,
            correlation_id,evidence_hash,manual_retry_requires_new_approval)
-          SELECT id,organization_id,workspace_id,'lease_expired',attempt_count,request_sha256,
-          'lease_expired',max_attempts,'{}'::jsonb,now(),id,organization_id,
-          COALESCE(correlation_id,'lease-recovery'),
-          encode(digest(id::text || ':lease_expired:' || attempt_count::text,'sha256'),'hex'),true
-          FROM ai_generation_jobs WHERE state='dead_letter' AND failure_code='lease_expired'
-          ON CONFLICT(job_id) DO NOTHING""")
+          VALUES(:job,:org,:workspace,'lease_expired',:attempts,:request_hash,
+          'lease_expired',:max_attempts,'{}'::jsonb,now(),:job,:org,
+          :correlation,:evidence,true)
+          ON CONFLICT(job_id) DO NOTHING"""),
+            {
+                "job": row["id"],
+                "org": row["organization_id"],
+                "workspace": row["workspace_id"],
+                "attempts": row["attempt_count"],
+                "request_hash": row["request_sha256"],
+                "max_attempts": row["max_attempts"],
+                "correlation": row["correlation_id"] or "lease-recovery",
+                "evidence": evidence_hash,
+            },
         )
     await db.commit()
     return {"retried": retried, "dead_lettered": dead}
 
 
-async def expire_deadlines(db: AsyncSession) -> int:
+async def expire_deadlines(
+    db: AsyncSession,
+    organization_id: UUID | None = None,
+    workspace_id: UUID | None = None,
+) -> int:
     result = await db.execute(
         text("""
         UPDATE ai_generation_jobs SET state='expired',lease_owner=NULL,lease_expires_at=NULL,
           failure_code='deadline_expired',completed_at=now(),updated_at=now()
         WHERE state IN ('queued','retry_wait','leased') AND deadline_at <= now()
-    """)
+          AND (CAST(:org AS uuid) IS NULL OR organization_id=:org)
+          AND (CAST(:workspace AS uuid) IS NULL OR workspace_id=:workspace)
+    """),
+        {"org": organization_id, "workspace": workspace_id},
     )
     await db.commit()
     return int(getattr(result, "rowcount", 0))
