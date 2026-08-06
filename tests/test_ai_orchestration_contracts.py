@@ -150,3 +150,11 @@ def test_synthetic_business_flows_are_proposal_only_and_complete():
         "approval_required": True, "dispatch_enabled": False,
         "real_odoo_writes": 0, "real_vicidial_commands": 0,
     }
+    for item in fixture["vicidial"]:
+        value = command("ai.voice.v1", "voice-summary", approval=True)
+        value["input"] = item
+        assert AICommand.model_validate(value).approval_policy.required
+    for item in fixture["odoo"]:
+        value = command("ai.crm.v1", "crm-analysis", approval=True)
+        value["input"] = item
+        assert AICommand.model_validate(value).approval_policy.required
