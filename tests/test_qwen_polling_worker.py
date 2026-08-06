@@ -27,12 +27,23 @@ def test_signer_uses_authoritative_canonical_contract(tmp_path, monkeypatch):
     body = b'{"fixture":true}'
     headers = worker.signed_headers("post", "/internal/api/v1/ai/worker/jobs/claim", body, secret)
     digest = hashlib.sha256(body).hexdigest()
-    canonical = (
-        "POST\n/internal/api/v1/ai/worker/jobs/claim\nqwen-ai-01\n"
-        f"1786000000\nfixture-nonce-1234567890\n{digest}"
-    ).encode("ascii")
+    canonical = "\n".join((
+        "POST", "/internal/api/v1/ai/worker/jobs/claim", "1786000000",
+        "fixture-nonce-1234567890", digest, headers["X-Request-ID"],
+        headers["X-Correlation-ID"], "qwen-ai-01-worker",
+    )).encode("ascii")
     assert headers["X-Signature"] == hmac.new(b"a" * 64, canonical, hashlib.sha256).hexdigest()
-    assert headers["X-HMAC-Key-ID"] == "qwen-ai-01-hmac-20260804-01"
+    assert headers["X-HMAC-Key-ID"] == "qwen-polling-worker-hmac-v1"
+    assert headers["X-Service-ID"] == "qwen-polling-worker"
+    assert headers["X-Signature-Version"] == "v2"
+
+
+def test_litellm_worker_policy_matrix():
+    allowed = frozenset({"qwen-coder-primary", "qwen-coder-fast"})
+    assert worker.litellm_policy_status("dedicated", "dedicated", "qwen-coder-primary", allowed) == 200
+    assert worker.litellm_policy_status("wrong", "dedicated", "qwen-coder-primary", allowed) == 401
+    assert worker.litellm_policy_status(None, "dedicated", "qwen-coder-primary", allowed) == 401
+    assert worker.litellm_policy_status("dedicated", "dedicated", "other-model", allowed) == 403
 
 
 def test_non_loopback_model_destination_fails_closed():
