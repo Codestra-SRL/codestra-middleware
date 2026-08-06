@@ -5,17 +5,17 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/publish-sign-qwen-auth-verifier.yml"
 TEXT = WORKFLOW.read_text()
 
-IMAGE_DIGEST = "sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef"
-VEX_SHA256 = "ba6ec01d89e3140a8538d9e5669be8b05f1e31ac3c475cf65a8d6907302dc1ff"
-SBOM_SHA256 = "380c366db3c70f743a675285cff7665d2ea86523f5967b76d53293a61b1f09ec"
-GOVERNANCE_HEAD = "7c918e328f6336761f0c65540a65fae8b84e9117"
+IMAGE_DIGEST = "sha256:cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390"
+VEX_SHA256 = "2437e123ca8f6b6a27425ead83cba8526b4dd35fab1f2a755fe84be2e3e87e0a"
+SBOM_SHA256 = "1c97030914f94412bfba5d6a0178d96d26f2cc04339de3679008bd9d76868138"
+GOVERNANCE_HEAD = "461399573993e3a878412d788f3dd8404385cdcb"
 
 
 def test_dispatch_only_and_separate_concurrency_group():
     assert "on:\n  workflow_dispatch:\n" in TEXT
     for forbidden_trigger in ("pull_request:", "push:", "schedule:"):
         assert forbidden_trigger not in TEXT
-    assert "group: publish-sign-qwen-auth-verifier-a0423439705ee7f" in TEXT
+    assert "group: publish-sign-qwen-auth-verifier-cc7e2457fdd69fdd" in TEXT
     assert "cancel-in-progress: false" in TEXT
 
 
@@ -23,7 +23,7 @@ def test_exact_subject_and_evidence_are_hard_bound_without_inputs():
     expected_lines = (
         "IMAGE_REPOSITORY: ghcr.io/codestra-srl/qwen-auth-verifier",
         f"IMAGE_DIGEST: {IMAGE_DIGEST}",
-        "OCI_ARCHIVE_PATH: /opt/codestra-jit-input/qwen-auth-verifier-a0423439705ee7f.oci.tar",
+        "OCI_ARCHIVE_PATH: /opt/codestra-jit-input/qwen-auth-verifier-cc7e2457fdd69fdd.oci.tar",
         "ORAS_VERSION: 1.3.2",
         "ORAS_ARCHIVE_SHA256: 9229ccc6d17bb282039ad4a69abb16dcb887a5bce567c075d731d9b3c7ad8eaf",
         "ORAS_SIGNING_KEY_FINGERPRINT: 2DA461D13B0C27845EDFA77FE462A3894CBAAA47",  # gitleaks:allow
@@ -31,7 +31,9 @@ def test_exact_subject_and_evidence_are_hard_bound_without_inputs():
         f"VEX_SHA256: {VEX_SHA256}",
         f"SBOM_SHA256: {SBOM_SHA256}",
         f"GOVERNANCE_HEAD: {GOVERNANCE_HEAD}",
-        "CANDIDATE_COMMIT: bbd22cf7a9ff1dd7d6ef12504d21031bc1f5ab75",
+        "CANDIDATE_COMMIT: 68dd9585e766f27a97a51329cf08f1f355445026",
+        "OCI_MANIFEST_MEDIA_TYPE: application/vnd.oci.image.manifest.v1+json",
+        "SECURITY_OWNER_RECORD_SHA256: 56cb87aa6d48dd935f1ce11c9a6ebe8d013b8254a4faf9889069deaecfce2352",
     )
     for line in expected_lines:
         assert line in TEXT
@@ -91,6 +93,12 @@ def test_oras_copy_preserves_the_complete_index_and_digest():
     assert '"${ORAS_BIN}" resolve' in TEXT
     assert 'test "${registry_digest}" = "${IMAGE_DIGEST}"' in TEXT
     assert 'test "sha256:${remote_digest}" = "${IMAGE_DIGEST}"' in TEXT
+
+
+def test_single_platform_manifest_is_selected_and_hash_verified():
+    assert 'select(.mediaType == "application/vnd.oci.image.manifest.v1+json")' in TEXT
+    assert 'jq -r .mediaType)" = "${OCI_MANIFEST_MEDIA_TYPE}"' in TEXT
+    assert 'sha256sum | cut -d\' \' -f1)" = "${IMAGE_DIGEST#sha256:}"' in TEXT
 
 
 def test_oras_release_signature_checksum_and_archive_are_verified():

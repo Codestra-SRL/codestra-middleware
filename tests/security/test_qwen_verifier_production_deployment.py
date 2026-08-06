@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy" / "qwen-auth-verifier"
 IMAGE = (
     "ghcr.io/codestra-srl/qwen-auth-verifier@sha256:"
-    "a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef"
+    "cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390"
 )
 
 
@@ -75,7 +75,7 @@ def test_replay_init_is_bounded_deterministic_and_networkless():
     assert "--cap-drop ALL" in text
     assert "--cap-add CHOWN --cap-add FOWNER" in text
     assert "--entrypoint python" in text
-    assert "@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef" in text
+    assert "@sha256:cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390" in text
     assert "os.chown(p,10001,10001)" in text
     assert "os.chmod(p,0o700)" in text
 
@@ -86,8 +86,21 @@ def test_caddy_route_is_exact_private_and_overwrites_identity_header():
     assert "method POST" in text
     assert "path /internal/api/v1/ai/auth/verify" in text
     assert "reverse_proxy qwen-auth-verifier:8095" in text
-    assert "header_up -X-Codestra-Client-Certificate" in text
-    assert "header_up X-Codestra-Client-Certificate" in text
+    overwrite = (
+        'header_up X-Codestra-Client-Certificate-DER '
+        '"{http.request.tls.client.certificate_der_base64}"'
+    )
+    assert text.count(overwrite) == 1
+    assert text.count("header_up -X-Codestra-Client-Certificate") == 1
+    assert "header_up -X-Codestra-Client-Certificate-DER" not in text
+    assert "certificate_pem" not in text
+
+
+def test_caddy_certificate_header_has_no_client_controlled_fallback():
+    text = load_text("Caddyfile.production.snippet")
+    assert "{http.request.header.X-Codestra-Client-Certificate}" not in text
+    assert "{http.request.header.X-Codestra-Client-Certificate-DER}" not in text
+    assert "{http.request.tls.client.certificate_der_base64}" in text
 
 
 def test_runbook_requires_rollback_and_preserves_vicidial():

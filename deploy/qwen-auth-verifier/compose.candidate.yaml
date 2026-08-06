@@ -1,11 +1,11 @@
-name: codestra-qwen-auth-verifier
+name: codestra-qwen-auth-verifier-candidate
 
 services:
   qwen-auth-verifier:
-    image: ghcr.io/codestra-srl/qwen-auth-verifier@sha256:cc7e2457fdd69fdd1bf766831f8f86396495b47e377e86b2d9df1d4fb5432390
+    image: ${QWEN_VERIFIER_IMAGE:?set immutable image name@sha256 digest}
     user: "10001:10001"
     init: true
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt:
@@ -20,22 +20,18 @@ services:
       QWEN_HMAC_KEY_ID: qwen-ai-01-hmac-20260804-01
       QWEN_HMAC_SECRET_FILE: /run/secrets/qwen-hmac
       QWEN_CLIENT_CA_FILE: /run/secrets/client-ca.crt
-      # X.509 INTEGER value for the canonical OpenSSL hexadecimal serial 3001.
       QWEN_CERTIFICATE_SERIAL: "12289"
       QWEN_CERTIFICATE_URI_SAN: spiffe://codestra.internal/service/qwen-ai-01
       QWEN_CERTIFICATE_IP_SAN: 10.40.0.4
       QWEN_REPLAY_DIRECTORY: /var/lib/codestra/qwen-auth-replay
-      QWEN_TRUSTED_PROXY_CIDR: 10.250.241.2/32
+      QWEN_TRUSTED_PROXY_CIDR: 172.18.0.0/16
       QWEN_ALLOWED_CLOCK_SKEW_SECONDS: "300"
     volumes:
-      - /run/codestra/qwen-auth-verifier-secrets/qwen-hmac:/run/secrets/qwen-hmac:ro
-      - /run/codestra/qwen-auth-verifier-secrets/client-ca.crt:/run/secrets/client-ca.crt:ro
+      - /etc/codestra/secrets/middleware-staging/qwen-ai-01/qwen-ai-01-hmac-20260804-01:/run/secrets/qwen-hmac:ro
+      - /etc/codestra/pki/middleware-private-ingress/client-ca.crt:/run/secrets/client-ca.crt:ro
       - qwen_auth_replay:/var/lib/codestra/qwen-auth-replay
-    expose:
-      - "8095"
     networks:
-      qwen_auth_private:
-        ipv4_address: 10.250.241.3
+      - middleware_backend
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=2); urllib.request.urlopen('http://127.0.0.1:8095/readyz', timeout=2)"]
       interval: 15s
@@ -47,6 +43,6 @@ volumes:
   qwen_auth_replay: {}
 
 networks:
-  qwen_auth_private:
+  middleware_backend:
     external: true
-    name: codestra_qwen_auth_private
+    name: codestra_backend
