@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import ipaddress
+import json
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -671,6 +672,50 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
             correlation_id="corr-third",
             max_attempts=2,
         )
+        result_only = await ai_jobs.create_message_job(
+            db,
+            conversation_id=conversation["conversation_id"],
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            user_id="synthetic-user",
+            content="result bridge synthetic prompt",
+            task_type="chat",
+            project_key=None,
+            idempotency_key="fixture-key-result-bridge",
+            correlation_id="corr-result-bridge",
+            max_attempts=2,
+        )
+        await db.execute(
+            text(
+                "UPDATE ai_generation_jobs SET state='completed',completed_at=now(),"
+                "updated_at=now() WHERE id=:job"
+            ),
+            {"job": result_only["job_id"]},
+        )
+        await db.execute(
+            text("""
+                INSERT INTO ai_job_results
+                  (job_id,organization_id,workspace_id,result_schema_version,
+                   model_used,provider_used,started_at,completed_at,latency_ms,
+                   output,retryability,audit_reference,output_sha256)
+                VALUES (:job,:org,:workspace,'1.0','fixture-model','mock',now(),now(),1,
+                  CAST(:output AS jsonb),'none','audit-result-bridge',:hash)
+            """),
+            {
+                "job": result_only["job_id"],
+                "org": organization_id,
+                "workspace": workspace_id,
+                "output": json.dumps({"proposal": "CODESTRA_AI_E2E_OK"}),
+                "hash": hashlib.sha256(
+                    json.dumps(
+                        {"proposal": "CODESTRA_AI_E2E_OK"},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest(),
+            },
+        )
+        await db.commit()
 
     app = FastAPI()
     app.include_router(ai_console.router)
@@ -825,11 +870,23 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     stream = await client.get(f"/api/v1/ai/jobs/{job_id}/stream", headers=base_headers)
     assert stream.status_code == 200
     assert "synthetic output" in stream.text and '"state": "completed"' in stream.text
+    result_stream = await client.get(
+        f"/api/v1/ai/jobs/{result_only['job_id']}/stream", headers=base_headers
+    )
+    assert result_stream.status_code == 200
+    assert result_stream.text.count("CODESTRA_AI_E2E_OK") == 1
+    assert "event: chunk" in result_stream.text
+    assert '"state": "completed"' in result_stream.text
     tenant_state["organization_id"] = other_organization
     isolated = await client.get(
         f"/api/v1/ai/jobs/{job_id}/stream", headers=base_headers
     )
     assert '"code":"not_found"' in isolated.text
+    isolated_result = await client.get(
+        f"/api/v1/ai/jobs/{result_only['job_id']}/stream", headers=base_headers
+    )
+    assert "CODESTRA_AI_E2E_OK" not in isolated_result.text
+    assert '"code":"not_found"' in isolated_result.text
     await client.aclose()
     app.dependency_overrides.clear()
     await engine.dispose()
