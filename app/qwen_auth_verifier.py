@@ -82,11 +82,17 @@ class VerifierConfig:
     additional_identities: tuple[IdentityConfig, ...] = ()
 
     def identities(self) -> tuple[IdentityConfig, ...]:
-        return (IdentityConfig(
-            self.service_id, self.hmac_key_id, self.hmac_secret_file,
-            self.certificate_serial, self.certificate_uri_san,
-            self.certificate_ip_san,
-        ), *self.additional_identities)
+        return (
+            IdentityConfig(
+                self.service_id,
+                self.hmac_key_id,
+                self.hmac_secret_file,
+                self.certificate_serial,
+                self.certificate_uri_san,
+                self.certificate_ip_san,
+            ),
+            *self.additional_identities,
+        )
 
     @classmethod
     def from_environment(cls) -> VerifierConfig:
@@ -110,19 +116,27 @@ class VerifierConfig:
         registry_value = os.getenv("QWEN_IDENTITY_REGISTRY_FILE", "")
         if registry_value:
             registry = Path(registry_value)
-            if (not registry.is_absolute() or registry.is_symlink() or not registry.is_file()
-                    or registry.stat().st_mode & 0o077):
+            if (
+                not registry.is_absolute()
+                or registry.is_symlink()
+                or not registry.is_file()
+                or registry.stat().st_mode & 0o077
+            ):
                 raise RuntimeError("Qwen identity registry is unavailable")
             try:
                 document = json.loads(registry.read_text())
                 rows = document["identities"]
-                additional = tuple(IdentityConfig(
-                    service_id=row["service_id"], hmac_key_id=row["hmac_key_id"],
-                    hmac_secret_file=Path(row["hmac_secret_file"]),
-                    certificate_serial=int(row["certificate_serial"]),
-                    certificate_uri_san=row["certificate_uri_san"],
-                    certificate_ip_san=_ipv4_address(row["certificate_ip_san"]),
-                ) for row in rows)
+                additional = tuple(
+                    IdentityConfig(
+                        service_id=row["service_id"],
+                        hmac_key_id=row["hmac_key_id"],
+                        hmac_secret_file=Path(row["hmac_secret_file"]),
+                        certificate_serial=int(row["certificate_serial"]),
+                        certificate_uri_san=row["certificate_uri_san"],
+                        certificate_ip_san=_ipv4_address(row["certificate_ip_san"]),
+                    )
+                    for row in rows
+                )
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise RuntimeError("Qwen identity registry is invalid") from exc
         return cls(
@@ -155,17 +169,38 @@ def canonical_signing_string(
     nonce: str,
     body_digest: str,
 ) -> bytes:
-    return f"{method}\n{path}\n{service_id}\n{timestamp}\n{nonce}\n{body_digest}".encode(
-        "ascii"
+    return (
+        f"{method}\n{path}\n{service_id}\n{timestamp}\n{nonce}\n{body_digest}".encode(
+            "ascii"
+        )
     )
 
 
 def canonical_signing_string_v2(
-    method: str, path: str, timestamp: str, nonce: str, body_digest: str,
-    request_id: str, correlation_id: str, worker_id: str,
+    method: str,
+    path: str,
+    timestamp: str,
+    nonce: str,
+    body_digest: str,
+    request_id: str,
+    correlation_id: str,
+    worker_id: str,
+    tenant_id: str = "",
+    workspace_id: str = "",
 ) -> bytes:
-    return "\n".join((method, path, timestamp, nonce, body_digest, request_id,
-                       correlation_id, worker_id)).encode("ascii")
+    fields: tuple[str, ...] = (
+        method,
+        path,
+        timestamp,
+        nonce,
+        body_digest,
+        request_id,
+        correlation_id,
+        worker_id,
+    )
+    if tenant_id or workspace_id:
+        fields += (tenant_id, workspace_id)
+    return "\n".join(fields).encode("ascii")
 
 
 def _load_secret(identity: IdentityConfig) -> bytes:
@@ -181,10 +216,14 @@ def _load_secret(identity: IdentityConfig) -> bytes:
     return secret
 
 
-def _verified_certificate(encoded_certificate: str, config: VerifierConfig,
-                          identity: IdentityConfig) -> None:
+def _verified_certificate(
+    encoded_certificate: str, config: VerifierConfig, identity: IdentityConfig
+) -> None:
     try:
-        if not encoded_certificate or len(encoded_certificate) > MAX_CERTIFICATE_DER_BASE64_BYTES:
+        if (
+            not encoded_certificate
+            or len(encoded_certificate) > MAX_CERTIFICATE_DER_BASE64_BYTES
+        ):
             raise ValueError("certificate size")
         der = base64.b64decode(encoded_certificate, validate=True)
         if not der or len(der) > 12_288:
@@ -207,7 +246,9 @@ def _verified_certificate(encoded_certificate: str, config: VerifierConfig,
         now = datetime.now(UTC)
         if certificate.serial_number != identity.certificate_serial:
             raise ValueError("serial")
-        if not (certificate.not_valid_before_utc <= now <= certificate.not_valid_after_utc):
+        if not (
+            certificate.not_valid_before_utc <= now <= certificate.not_valid_after_utc
+        ):
             raise ValueError("validity")
         uris = certificate.extensions.get_extension_for_class(
             x509.SubjectAlternativeName
@@ -313,8 +354,14 @@ def create_app(config: VerifierConfig | None = None) -> FastAPI:
             raise HTTPException(401, "authentication denied")
         if legacy_client_certificate is not None:
             raise HTTPException(401, "authentication denied")
-        identity = next((item for item in verifier.identities()
-                         if item.service_id == x_service_id and item.hmac_key_id == x_hmac_key_id), None)
+        identity = next(
+            (
+                item
+                for item in verifier.identities()
+                if item.service_id == x_service_id and item.hmac_key_id == x_hmac_key_id
+            ),
+            None,
+        )
         if identity is None:
             raise HTTPException(401, "authentication denied")
         _verified_certificate(x_client_certificate_der, verifier, identity)
@@ -336,21 +383,37 @@ def create_app(config: VerifierConfig | None = None) -> FastAPI:
             raise HTTPException(401, "authentication denied")
         if x_signature_version == "v1":
             canonical = canonical_signing_string(
-                request.method, request.url.path, x_service_id, x_timestamp,
-                x_nonce, x_body_sha256,
+                request.method,
+                request.url.path,
+                x_service_id,
+                x_timestamp,
+                x_nonce,
+                x_body_sha256,
             )
         elif x_signature_version == "v2":
-            if not x_request_id or not x_worker_id or not SAFE_CORRELATION.fullmatch(x_request_id):
+            if (
+                not x_request_id
+                or not x_worker_id
+                or not SAFE_CORRELATION.fullmatch(x_request_id)
+            ):
                 raise HTTPException(401, "authentication denied")
             if not SAFE_CORRELATION.fullmatch(x_worker_id):
                 raise HTTPException(401, "authentication denied")
             canonical = canonical_signing_string_v2(
-                request.method, request.url.path, x_timestamp, x_nonce,
-                x_body_sha256, x_request_id, x_correlation_id, x_worker_id,
+                request.method,
+                request.url.path,
+                x_timestamp,
+                x_nonce,
+                x_body_sha256,
+                x_request_id,
+                x_correlation_id,
+                x_worker_id,
             )
         else:
             raise HTTPException(401, "authentication denied")
-        expected = hmac.new(_load_secret(identity), canonical, hashlib.sha256).hexdigest()
+        expected = hmac.new(
+            _load_secret(identity), canonical, hashlib.sha256
+        ).hexdigest()
         if not hmac.compare_digest(expected, x_signature):
             raise HTTPException(401, "authentication denied")
         _claim_nonce(verifier, x_service_id, x_nonce)
