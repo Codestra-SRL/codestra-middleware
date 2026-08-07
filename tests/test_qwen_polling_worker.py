@@ -4,6 +4,8 @@ import hashlib
 import hmac
 import importlib.util
 import sys
+import threading
+import time
 from contextlib import AbstractContextManager
 from pathlib import Path
 
@@ -196,3 +198,178 @@ def test_all_worker_command_families_are_allowlisted():
         "ai.embeddings.v1",
     }
     assert worker.MODEL_REGISTRY["embedding-default"] is None
+
+
+class ConcurrentAPI:
+    def __init__(self, jobs, registration_limit=2):
+        self.jobs = list(jobs)
+        self.registration_limit = registration_limit
+        self.claim_count = 0
+        self._lock = threading.Lock()
+
+    def request(self, method, path, value):
+        del method, value
+        if path.endswith("/config"):
+            return 200, {
+                "registration_max_concurrency": self.registration_limit,
+            }
+        if path.endswith("/claim"):
+            with self._lock:
+                self.claim_count += 1
+                job = self.jobs.pop(0) if self.jobs else None
+            return 200, {"job": job}
+        raise AssertionError(path)
+
+
+def distinct_job(job_id):
+    job = fixture_job()
+    job["id"] = job_id
+    return job
+
+
+@pytest.mark.parametrize(
+    ("local_limit", "registration_limit", "expected"),
+    [(1, 2, 1), (2, 1, 1), (2, 2, 2), (2, 99, 2)],
+)
+def test_effective_concurrency_is_bounded_by_local_registration_and_hard_cap(
+    local_limit, registration_limit, expected
+):
+    runtime = worker.BoundedWorkerRuntime(
+        ConcurrentAPI([], registration_limit), local_limit
+    )
+    try:
+        assert runtime.effective_limit() == expected
+    finally:
+        runtime.shutdown()
+
+
+def test_invalid_local_concurrency_fails_closed(monkeypatch):
+    monkeypatch.setenv("QWEN_MAX_IN_PROCESS_JOBS", "0")
+    with pytest.raises(worker.WorkerError, match="configured concurrency"):
+        worker.configured_concurrency()
+    monkeypatch.setenv("QWEN_MAX_IN_PROCESS_JOBS", "99")
+    assert worker.configured_concurrency() == 2
+
+
+def test_two_slots_run_in_parallel_without_claiming_a_third(monkeypatch):
+    first = distinct_job("00000000-0000-4000-8000-000000000001")
+    second = distinct_job("00000000-0000-4000-8000-000000000002")
+    third = distinct_job("00000000-0000-4000-8000-000000000003")
+    api = ConcurrentAPI([first, second, third])
+    started = set()
+    release = threading.Event()
+    lock = threading.Lock()
+
+    def run_slot(_api, job, **_kwargs):
+        with lock:
+            started.add(job["id"])
+        assert release.wait(2)
+        return "completed"
+
+    monkeypatch.setattr(worker, "run_claimed_job", run_slot)
+    runtime = worker.BoundedWorkerRuntime(api, 2)
+    try:
+        assert runtime.poll() == "claimed"
+        assert runtime.poll() == "claimed"
+        deadline = time.monotonic() + 2
+        while len(started) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert len(started) == 2
+        assert runtime.poll() == "capacity"
+        assert api.claim_count == 2
+        assert runtime.metrics.snapshot()["codestra_ai_worker_active_jobs"] == 2
+        release.set()
+    finally:
+        release.set()
+        runtime.shutdown()
+
+
+def test_registration_one_preserves_serial_behavior(monkeypatch):
+    api = ConcurrentAPI(
+        [
+            distinct_job("00000000-0000-4000-8000-000000000001"),
+            distinct_job("00000000-0000-4000-8000-000000000002"),
+        ],
+        registration_limit=1,
+    )
+    release = threading.Event()
+    monkeypatch.setattr(
+        worker,
+        "run_claimed_job",
+        lambda *_args, **_kwargs: "completed" if release.wait(2) else "timeout",
+    )
+    runtime = worker.BoundedWorkerRuntime(api, 2)
+    try:
+        assert runtime.poll() == "claimed"
+        assert runtime.poll() == "capacity"
+        assert api.claim_count == 1
+    finally:
+        release.set()
+        runtime.shutdown()
+
+
+def test_job_state_and_shutdown_are_isolated(monkeypatch):
+    jobs = [
+        distinct_job("00000000-0000-4000-8000-00000000000a"),
+        distinct_job("00000000-0000-4000-8000-00000000000b"),
+    ]
+    api = ConcurrentAPI(jobs)
+    observed = {}
+    both_started = threading.Barrier(2)
+
+    def run_slot(_api, job, *, shutdown_requested, metrics):
+        del metrics
+        both_started.wait(timeout=2)
+        observed[job["id"]] = shutdown_requested.wait(2)
+        return "shutdown"
+
+    monkeypatch.setattr(worker, "run_claimed_job", run_slot)
+    runtime = worker.BoundedWorkerRuntime(api, 2)
+    assert runtime.poll() == "claimed"
+    assert runtime.poll() == "claimed"
+    runtime.shutdown(timeout_seconds=2)
+    assert set(observed) == {job["id"] for job in jobs}
+    assert all(observed.values())
+    assert api.claim_count == 2
+
+
+def test_parallel_heartbeat_failure_and_cancellation_are_isolated():
+    class LeaseAPI:
+        def request(self, _method, path, _value):
+            if "00000000000a" in path:
+                raise worker.WorkerError("job A transport failed")
+            if path.endswith("/heartbeat"):
+                return 200, {"accepted": True}
+            return 200, {"cancel_requested": True}
+
+    api = LeaseAPI()
+    states = []
+    for suffix in ("a", "b"):
+        cancellation = threading.Event()
+        lease_lost = threading.Event()
+        worker.maintain_lease(
+            api,
+            f"00000000-0000-4000-8000-00000000000{suffix}",
+            {"worker_id": worker.WORKER_ID, "fencing_token": 1},
+            threading.Event(),
+            cancellation,
+            lease_lost,
+            interval_seconds=0,
+        )
+        states.append((cancellation.is_set(), lease_lost.is_set()))
+    assert states == [(False, True), (True, False)]
+
+
+def test_metric_snapshot_has_bounded_names_and_no_job_labels():
+    metrics = worker.WorkerMetrics(configured_concurrency=2)
+    metrics.update_limit(2)
+    metrics.claimed()
+    metrics.cancelled()
+    metrics.heartbeat_failed()
+    metrics.finished(1.25)
+    snapshot = metrics.snapshot()
+    assert snapshot["codestra_ai_worker_active_jobs"] == 0
+    assert snapshot["codestra_ai_worker_available_slots"] == 2
+    assert snapshot["codestra_ai_worker_cancellations_total"] == 1
+    assert snapshot["codestra_ai_worker_heartbeat_failures_total"] == 1
+    assert all("00000000" not in name for name in snapshot)
