@@ -5,12 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.ai_contracts import AICommand, ApprovalPolicy, CommandType, ModelPolicy
+from app.core.ai_contracts import ResourceLimits
 
 SAFE_ERROR_DETAIL_FIELDS = frozenset(
     {
@@ -40,6 +43,16 @@ BROWSER_CAPABILITY_PROFILES = {
     "coding": "coding-default",
 }
 
+BROWSER_CAPABILITY_COMMAND_TYPES = {
+    "chat": CommandType.CHAT,
+    "coding": CommandType.CODING,
+}
+
+BROWSER_CAPABILITY_MAX_TOKENS = {
+    "chat": 2048,
+    "coding": 4096,
+}
+
 
 def resolve_browser_model_profile(task_type: str) -> str:
     """Resolve an unprivileged browser capability to a governed worker profile."""
@@ -47,6 +60,61 @@ def resolve_browser_model_profile(task_type: str) -> str:
     if model_profile is None or model_profile not in MODEL_RUNTIME_CLASSES:
         raise ValueError("unsupported_browser_capability")
     return model_profile
+
+
+def build_browser_worker_contract(
+    *,
+    job_id: UUID,
+    conversation_id: UUID,
+    organization_id: UUID,
+    user_id: str,
+    content: str,
+    task_type: str,
+    project_key: str | None,
+    idempotency_key: str,
+    correlation_id: str,
+    max_attempts: int,
+) -> AICommand:
+    """Build the complete worker contract from server-authoritative policy."""
+    model_profile = resolve_browser_model_profile(task_type)
+    command_type = BROWSER_CAPABILITY_COMMAND_TYPES.get(task_type)
+    max_tokens = BROWSER_CAPABILITY_MAX_TOKENS.get(task_type)
+    if command_type is None or max_tokens is None:
+        raise ValueError("unsupported_browser_capability")
+    requested_at = datetime.now(timezone.utc)
+    command_input = {"text": content}
+    if project_key is not None:
+        command_input["project_key"] = project_key
+    return AICommand(
+        command_id=job_id,
+        command_type=command_type,
+        schema_version="1.0",
+        tenant_id=organization_id,
+        actor_id=user_id,
+        actor_type="user",
+        correlation_id=correlation_id,
+        idempotency_key=idempotency_key,
+        priority=5,
+        requested_at=requested_at,
+        deadline_at=requested_at + timedelta(minutes=10),
+        input=command_input,
+        model_policy=ModelPolicy.model_validate(
+            {"profile": model_profile, "max_tokens": max_tokens}
+        ),
+        resource_limits=ResourceLimits(
+            runtime_seconds=300,
+            output_bytes=262_144,
+            retry_count=max_attempts - 1,
+            token_budget=max_tokens * 2,
+        ),
+        data_classification="internal",
+        approval_policy=ApprovalPolicy(required=False),
+        metadata={
+            "source": "ai-console",
+            "conversation_id": str(conversation_id),
+            "capability": task_type,
+        },
+    )
 
 
 RUNTIME_CLASS_COMPATIBILITY = {
@@ -225,6 +293,19 @@ async def create_message_job(
     if not owns:
         raise LookupError("conversation_not_found")
     message_id, job_id = uuid4(), uuid4()
+    command = build_browser_worker_contract(
+        job_id=job_id,
+        conversation_id=conversation_id,
+        organization_id=organization_id,
+        user_id=user_id,
+        content=content,
+        task_type=task_type,
+        project_key=project_key,
+        idempotency_key=idempotency_key,
+        correlation_id=correlation_id,
+        max_attempts=max_attempts,
+    )
+    command_payload = command.model_dump(mode="json")
     content_hash = hashlib.sha256(content.encode()).hexdigest()
     await db.execute(
         text("""
@@ -246,9 +327,17 @@ async def create_message_job(
         INSERT INTO ai_generation_jobs
           (id, conversation_id, request_message_id, organization_id, workspace_id,
            requested_by, task_type, model_profile, project_key, idempotency_key,
-           request_sha256, max_attempts)
+           request_sha256, max_attempts, command_type, schema_version, actor_id,
+           actor_type, correlation_id, priority, deadline_at, command_payload,
+           resource_limits, data_classification, approval_policy, callback_policy,
+           command_metadata)
         VALUES (:id, :conversation, :message, :org, :workspace, :user, :task,
-                :model_profile, :project, :key, :hash, :max_attempts)
+                :model_profile, :project, :key, :hash, :max_attempts,
+                :command_type, :schema_version, :actor_id, :actor_type,
+                :correlation_id, :priority, :deadline_at, CAST(:command_payload AS jsonb),
+                CAST(:resource_limits AS jsonb), :data_classification,
+                CAST(:approval_policy AS jsonb), CAST(:callback_policy AS jsonb),
+                CAST(:command_metadata AS jsonb))
     """),
         {
             "id": job_id,
@@ -263,6 +352,25 @@ async def create_message_job(
             "key": idempotency_key,
             "hash": request_hash,
             "max_attempts": max_attempts,
+            "command_type": command.command_type.value,
+            "schema_version": command.schema_version,
+            "actor_id": command.actor_id,
+            "actor_type": command.actor_type,
+            "correlation_id": command.correlation_id,
+            "priority": command.priority,
+            "deadline_at": command.deadline_at,
+            "command_payload": json.dumps(command_payload),
+            "resource_limits": json.dumps(
+                command.resource_limits.model_dump(mode="json")
+            ),
+            "data_classification": command.data_classification,
+            "approval_policy": json.dumps(
+                command.approval_policy.model_dump(mode="json")
+            ),
+            "callback_policy": json.dumps(
+                command.callback_policy.model_dump(mode="json")
+            ),
+            "command_metadata": json.dumps(command.metadata),
         },
     )
     await audit(
