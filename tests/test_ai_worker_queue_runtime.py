@@ -106,6 +106,41 @@ def test_lease_maintenance_fails_closed_on_transport_error() -> None:
     assert not cancellation.is_set()
 
 
+def test_lease_maintenance_observes_cancellation_after_heartbeat() -> None:
+    class CancellingMiddleware:
+        def __init__(self) -> None:
+            self.paths: list[str] = []
+
+        def request(
+            self, method: str, path: str, body: object
+        ) -> tuple[int, dict[str, object]]:
+            assert method == "POST"
+            self.paths.append(path)
+            if path.endswith("/heartbeat"):
+                return 200, {"accepted": True}
+            return 200, {"cancel_requested": True}
+
+    middleware = CancellingMiddleware()
+    stop = threading.Event()
+    cancellation = threading.Event()
+    lease_lost = threading.Event()
+    polling_worker.maintain_lease(
+        middleware,  # type: ignore[arg-type]
+        "00000000-0000-4000-8000-000000000010",
+        {"worker_id": "qwen-ai-01-worker", "fencing_token": 1},
+        stop,
+        cancellation,
+        lease_lost,
+        interval_seconds=0,
+    )
+    assert cancellation.is_set()
+    assert not lease_lost.is_set()
+    assert middleware.paths == [
+        "/internal/api/v1/ai/worker/jobs/00000000-0000-4000-8000-000000000010/heartbeat",
+        "/internal/api/v1/ai/worker/jobs/00000000-0000-4000-8000-000000000010/cancellation-check",
+    ]
+
+
 def test_error_details_use_an_allowlist_and_reject_raw_messages() -> None:
     assert ai_jobs.sanitize_error_details(
         {
@@ -475,5 +510,192 @@ async def test_registered_worker_concurrency_and_tenant_scoped_recovery() -> Non
                     worker_id,
                     "corr-retry-limit",
                 )
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.skipif(
+    "DATABASE_URL" not in os.environ, reason="disposable PostgreSQL required"
+)
+@pytest.mark.asyncio
+async def test_cancel_requested_lease_is_fenced_idempotent_and_recoverable() -> None:
+    engine = create_async_engine(os.environ["DATABASE_URL"], poolclass=NullPool)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    tenant, workspace = uuid4(), uuid4()
+    other_tenant, other_workspace = uuid4(), uuid4()
+    worker_id = "qwen-ai-01-worker"
+    try:
+        async with sessions() as db:
+            await db.execute(
+                text("""TRUNCATE ai_job_results,ai_job_events,ai_job_dead_letters,
+              ai_job_approvals,ai_usage_ledger,ai_worker_registrations,ai_audit_events,
+              ai_worker_heartbeats,ai_job_attempts,ai_job_chunks,ai_generation_jobs,
+              ai_messages,ai_conversations,ai_service_nonces,ai_tenant_quotas CASCADE""")
+            )
+            await db.execute(
+                text("""INSERT INTO ai_worker_registrations
+                  (worker_id,service_id,capability_digest,capabilities,max_concurrency,enabled)
+                  VALUES(:worker,'qwen-polling-worker',:digest,'{}'::jsonb,1,true)"""),
+                {"worker": worker_id, "digest": "a" * 64},
+            )
+            await db.commit()
+
+            command = make_command(tenant=tenant)
+            await ai_orchestration.submit(db, command, workspace)
+            claim = await ai_jobs.claim(
+                db,
+                worker_id,
+                30,
+                "corr-cancel-claim",
+                organization_id=tenant,
+                workspace_id=workspace,
+                service_id="qwen-polling-worker",
+            )
+            assert claim is not None
+            token = claim["fencing_token"]
+            assert await ai_orchestration.cancel(
+                db,
+                command.command_id,
+                tenant,
+                workspace,
+                "synthetic-user",
+                "corr-cancel-request",
+            ) == "CANCEL_REQUESTED"
+
+            expires = await ai_jobs.heartbeat(
+                db,
+                command.command_id,
+                worker_id,
+                token,
+                30,
+                service_id="qwen-polling-worker",
+                certificate_serial="12296",
+                spiffe_id="spiffe://codestra.internal/worker/qwen",
+                organization_id=tenant,
+                workspace_id=workspace,
+            )
+            assert expires > datetime.now(timezone.utc)
+            cancellable = await ai_jobs.assert_lease(
+                db,
+                command.command_id,
+                worker_id,
+                token,
+                organization_id=tenant,
+                workspace_id=workspace,
+                allow_cancel_requested=True,
+            )
+            assert cancellable["state"] == "cancel_requested"
+            with pytest.raises(PermissionError, match="stale_or_invalid_lease"):
+                await ai_jobs.assert_lease(
+                    db,
+                    command.command_id,
+                    "wrong-worker",
+                    token,
+                    organization_id=tenant,
+                    workspace_id=workspace,
+                    allow_cancel_requested=True,
+                )
+            await db.rollback()
+            with pytest.raises(PermissionError, match="stale_or_invalid_lease"):
+                await ai_jobs.assert_lease(
+                    db,
+                    command.command_id,
+                    worker_id,
+                    token,
+                    organization_id=other_tenant,
+                    workspace_id=other_workspace,
+                    allow_cancel_requested=True,
+                )
+            await db.rollback()
+
+            queued_while_cancelling = make_command(tenant=tenant)
+            await ai_orchestration.submit(db, queued_while_cancelling, workspace)
+            with pytest.raises(OverflowError, match="worker_concurrency_limit"):
+                await ai_jobs.claim(
+                    db,
+                    worker_id,
+                    30,
+                    "corr-cancel-concurrency",
+                    organization_id=tenant,
+                    workspace_id=workspace,
+                    service_id="qwen-polling-worker",
+                )
+            await db.rollback()
+
+            expected = {"cancel_requested": True, "state": "cancelled"}
+            assert await ai_jobs.worker_cancel(
+                db,
+                command.command_id,
+                worker_id,
+                token,
+                tenant,
+                workspace,
+                "corr-cancel-finalize",
+            ) == expected
+            assert await ai_jobs.worker_cancel(
+                db,
+                command.command_id,
+                worker_id,
+                token,
+                tenant,
+                workspace,
+                "corr-cancel-finalize-replay",
+            ) == expected
+            attempt_state = (
+                await db.execute(
+                    text("""SELECT state FROM ai_job_attempts
+                      WHERE job_id=:job AND fencing_token=:token"""),
+                    {"job": command.command_id, "token": token},
+                )
+            ).scalar_one()
+            assert attempt_state == "cancelled"
+
+            recovery = queued_while_cancelling
+            recovery_claim = await ai_jobs.claim(
+                db,
+                worker_id,
+                30,
+                "corr-cancel-recovery-claim",
+                organization_id=tenant,
+                workspace_id=workspace,
+                service_id="qwen-polling-worker",
+            )
+            assert recovery_claim is not None
+            assert await ai_orchestration.cancel(
+                db,
+                recovery.command_id,
+                tenant,
+                workspace,
+                "synthetic-user",
+                "corr-cancel-recovery-request",
+            ) == "CANCEL_REQUESTED"
+            await db.execute(
+                text("""UPDATE ai_generation_jobs SET lease_expires_at=now()-interval '1 second'
+                  WHERE id=:job"""),
+                {"job": recovery.command_id},
+            )
+            await db.commit()
+            assert await ai_jobs.recover_expired(db, tenant, workspace) == {
+                "retried": 0,
+                "dead_lettered": 0,
+            }
+            recovered = (
+                await db.execute(
+                    text("""SELECT state,lease_owner,lease_expires_at
+                      FROM ai_generation_jobs WHERE id=:job"""),
+                    {"job": recovery.command_id},
+                )
+            ).mappings().one()
+            assert dict(recovered) == {
+                "state": "cancelled",
+                "lease_owner": None,
+                "lease_expires_at": None,
+            }
+            assert (
+                await db.execute(
+                    text("SELECT count(*) FROM ai_job_results WHERE job_id=:job"),
+                    {"job": recovery.command_id},
+                )
+            ).scalar_one() == 0
     finally:
         await engine.dispose()
