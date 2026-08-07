@@ -12,6 +12,7 @@ Type=exec
 User=qwen-agent
 Group=qwen-agent
 UMask=0077
+Environment=QWEN_MAX_IN_PROCESS_JOBS=1
 ExecStartPre=+/usr/bin/install -o qwen-agent -g qwen-agent -m 0400 /etc/codestra/mtls/qwen-ai-01/client.crt /run/codestra-qwen-worker/client.crt
 ExecStartPre=+/usr/bin/install -o qwen-agent -g qwen-agent -m 0400 /etc/codestra/mtls/qwen-ai-01/client.key /run/codestra-qwen-worker/client.key
 ExecStartPre=+/usr/bin/install -o qwen-agent -g qwen-agent -m 0400 /etc/codestra/mtls/qwen-ai-01/private-ca.crt /run/codestra-qwen-worker/private-ca.crt

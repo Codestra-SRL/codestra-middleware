@@ -191,6 +191,35 @@ async def test_release_and_recovery_forward_authenticated_tenant(monkeypatch) ->
     }
 
 
+@pytest.mark.asyncio
+async def test_worker_config_exposes_authenticated_registration_limit() -> None:
+    principal = worker_api.WorkerPrincipal(
+        service_id="qwen-polling-worker",
+        worker_id="qwen-ai-01-worker",
+        tenant_id=uuid4(),
+        workspace_id=uuid4(),
+        request_id="request-01234567",
+        correlation_id="correlation-01234567",
+        scopes=worker_api.SERVER_SCOPES,
+    )
+
+    class Result:
+        def scalar_one_or_none(self):
+            return 2
+
+    class DB:
+        async def execute(self, _statement, parameters):
+            assert parameters == {
+                "worker": principal.worker_id,
+                "service": principal.service_id,
+            }
+            return Result()
+
+    response = await worker_api.worker_config(principal, cast(AsyncSession, DB()))
+    assert response["registration_max_concurrency"] == 2
+    assert response["hard_safety_cap"] == 2
+
+
 @pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="disposable PostgreSQL required"
 )
@@ -510,6 +539,103 @@ async def test_registered_worker_concurrency_and_tenant_scoped_recovery() -> Non
                     worker_id,
                     "corr-retry-limit",
                 )
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.skipif(
+    "DATABASE_URL" not in os.environ, reason="disposable PostgreSQL required"
+)
+@pytest.mark.asyncio
+async def test_registered_worker_allows_two_fenced_leases_and_rejects_third() -> None:
+    engine = create_async_engine(os.environ["DATABASE_URL"], poolclass=NullPool)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    tenant, workspace = uuid4(), uuid4()
+    worker_id = "qwen-ai-01-worker"
+    service_id = "qwen-polling-worker"
+    try:
+        async with sessions() as db:
+            await db.execute(
+                text("""TRUNCATE ai_job_results,ai_job_events,ai_job_dead_letters,
+                  ai_job_approvals,ai_usage_ledger,ai_worker_registrations,ai_audit_events,
+                  ai_worker_heartbeats,ai_job_attempts,ai_job_chunks,ai_generation_jobs,
+                  ai_messages,ai_conversations,ai_service_nonces,ai_tenant_quotas CASCADE""")
+            )
+            await db.execute(
+                text("""INSERT INTO ai_worker_registrations
+                  (worker_id,service_id,capability_digest,capabilities,max_concurrency,enabled)
+                  VALUES(:worker,:service,:digest,'{}'::jsonb,2,true)"""),
+                {"worker": worker_id, "service": service_id, "digest": "b" * 64},
+            )
+            commands = [make_command(tenant=tenant) for _ in range(3)]
+            for command in commands:
+                await ai_orchestration.submit(db, command, workspace)
+            first = await ai_jobs.claim(
+                db,
+                worker_id,
+                30,
+                "corr-parallel-first",
+                organization_id=tenant,
+                workspace_id=workspace,
+                service_id=service_id,
+            )
+            second = await ai_jobs.claim(
+                db,
+                worker_id,
+                30,
+                "corr-parallel-second",
+                organization_id=tenant,
+                workspace_id=workspace,
+                service_id=service_id,
+            )
+            assert first is not None and second is not None
+            assert first["id"] != second["id"]
+            with pytest.raises(OverflowError, match="worker_concurrency_limit"):
+                await ai_jobs.claim(
+                    db,
+                    worker_id,
+                    30,
+                    "corr-parallel-third",
+                    organization_id=tenant,
+                    workspace_id=workspace,
+                    service_id=service_id,
+                )
+            await db.rollback()
+
+            for lease in (first, second):
+                expires = await ai_jobs.heartbeat(
+                    db,
+                    lease["id"],
+                    worker_id,
+                    lease["fencing_token"],
+                    30,
+                    service_id=service_id,
+                    certificate_serial="3008",
+                    spiffe_id="spiffe://codestra.internal/worker/qwen",
+                    organization_id=tenant,
+                    workspace_id=workspace,
+                )
+                assert expires > datetime.now(timezone.utc)
+
+            await ai_jobs.finish(
+                db,
+                first["id"],
+                worker_id,
+                first["fencing_token"],
+                failed=False,
+                error_code=None,
+                retryable=False,
+                correlation_id="corr-parallel-finish-first",
+            )
+            healthy_second = await ai_jobs.assert_lease(
+                db,
+                second["id"],
+                worker_id,
+                second["fencing_token"],
+                organization_id=tenant,
+                workspace_id=workspace,
+            )
+            assert healthy_second["state"] == "leased"
     finally:
         await engine.dispose()
 

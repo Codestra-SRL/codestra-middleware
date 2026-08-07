@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import hmac
 import http.client
 import json
 import multiprocessing
+import os
 import secrets
 import signal
 import socket
@@ -17,7 +19,7 @@ import time
 import threading
 import urllib.request
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,7 @@ SERVICE_ID = "qwen-polling-worker"
 KEY_ID = "qwen-polling-worker-hmac-v1"
 BASE = Path("/run/codestra-qwen-worker")
 WORKER_ID = "qwen-ai-01-worker"
+HARD_SAFETY_CAP = 2
 ALLOWED_TYPES = frozenset(
     {"ai.chat.v1", "ai.coding.v1", "ai.crm.v1", "ai.voice.v1", "ai.embeddings.v1"}
 )
@@ -43,6 +46,67 @@ MODEL_REGISTRY = {
 
 class WorkerError(RuntimeError):
     pass
+
+
+@dataclass(slots=True)
+class WorkerMetrics:
+    """Thread-safe, bounded-cardinality worker concurrency metrics."""
+
+    configured_concurrency: int
+    effective_concurrency: int = 1
+    active_jobs: int = 0
+    claims_total: int = 0
+    over_capacity_claim_attempts: int = 0
+    heartbeat_failures_total: int = 0
+    cancellations_total: int = 0
+    completed_jobs: int = 0
+    total_job_latency_seconds: float = 0.0
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def update_limit(self, effective: int) -> None:
+        with self._lock:
+            self.effective_concurrency = effective
+
+    def claimed(self) -> None:
+        with self._lock:
+            self.claims_total += 1
+            self.active_jobs += 1
+
+    def finished(self, elapsed: float) -> None:
+        with self._lock:
+            self.active_jobs -= 1
+            self.completed_jobs += 1
+            self.total_job_latency_seconds += elapsed
+
+    def heartbeat_failed(self) -> None:
+        with self._lock:
+            self.heartbeat_failures_total += 1
+
+    def cancelled(self) -> None:
+        with self._lock:
+            self.cancellations_total += 1
+
+    def snapshot(self) -> dict[str, int | float]:
+        with self._lock:
+            return {
+                "codestra_ai_worker_active_jobs": self.active_jobs,
+                "codestra_ai_worker_available_slots": max(
+                    self.effective_concurrency - self.active_jobs, 0
+                ),
+                "codestra_ai_worker_configured_concurrency": self.configured_concurrency,
+                "codestra_ai_worker_effective_concurrency": self.effective_concurrency,
+                "codestra_ai_worker_claims_total": self.claims_total,
+                "codestra_ai_worker_over_capacity_claim_attempts": (
+                    self.over_capacity_claim_attempts
+                ),
+                "codestra_ai_worker_job_latency_seconds": (
+                    self.total_job_latency_seconds
+                ),
+                "codestra_ai_worker_heartbeat_failures_total": (
+                    self.heartbeat_failures_total
+                ),
+                "codestra_ai_worker_cancellations_total": self.cancellations_total,
+            }
 
 
 def protected(path: Path) -> Path:
@@ -316,6 +380,7 @@ def maintain_lease(
     cancellation_requested: threading.Event,
     lease_lost: threading.Event,
     interval_seconds: float = 20,
+    metrics: WorkerMetrics | None = None,
 ) -> None:
     """Renew the lease and fail closed on any unverified heartbeat state."""
     while not stop_heartbeat.wait(interval_seconds):
@@ -324,9 +389,13 @@ def maintain_lease(
                 "POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/heartbeat", mutation
             )
         except WorkerError:
+            if metrics is not None:
+                metrics.heartbeat_failed()
             lease_lost.set()
             return
         if status != 200:
+            if metrics is not None:
+                metrics.heartbeat_failed()
             lease_lost.set()
             return
         try:
@@ -336,29 +405,45 @@ def maintain_lease(
                 mutation,
             )
         except WorkerError:
+            if metrics is not None:
+                metrics.heartbeat_failed()
             lease_lost.set()
             return
         if status != 200:
+            if metrics is not None:
+                metrics.heartbeat_failed()
             lease_lost.set()
             return
         if document.get("cancel_requested") is True:
+            if metrics is not None:
+                metrics.cancelled()
             cancellation_requested.set()
             return
 
 
-def run_once(api: Middleware) -> str:
+def claim_one(api: Middleware) -> dict[str, Any] | None:
     status, response = api.request(
         "POST", "/internal/api/v1/ai/worker/jobs/claim", {"worker_id": WORKER_ID}
     )
     if status == 503:
-        return "claims-disabled"
+        raise WorkerError("claims disabled")
     if status != 200:
         raise WorkerError("claim rejected")
     job = response.get("job")
     if job is None:
-        return "empty"
+        return None
     if not isinstance(job, dict):
         raise WorkerError("claim schema invalid")
+    return job
+
+
+def run_claimed_job(
+    api: Middleware,
+    job: dict[str, Any],
+    *,
+    shutdown_requested: threading.Event | None = None,
+    metrics: WorkerMetrics | None = None,
+) -> str:
     job_id, token = str(job["id"]), int(job["fencing_token"])
     mutation = {"worker_id": WORKER_ID, "fencing_token": token}
     stop_heartbeat = threading.Event()
@@ -374,12 +459,21 @@ def run_once(api: Middleware) -> str:
             stop_heartbeat,
             cancellation_requested,
             lease_lost,
+            20,
+            metrics,
         ),
         daemon=True,
     )
     # The deployment target is Linux; fork lets the child inherit the already
     # validated, read-only job and avoids re-running module startup code.
-    context = multiprocessing.get_context("fork")
+    # Slot threads must never fork a multithreaded parent. Spawn gives each
+    # inference an isolated interpreter and deterministic cancellation boundary.
+    # The direct one-shot compatibility path retains fork on the main thread.
+    context: Any
+    if threading.current_thread() is threading.main_thread():
+        context = multiprocessing.get_context("fork")
+    else:
+        context = multiprocessing.get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)
     inference = context.Process(target=_execute_child, args=(job, sender), daemon=True)
     inference.start()
@@ -387,15 +481,26 @@ def run_once(api: Middleware) -> str:
     heartbeat.start()
     try:
         while inference.is_alive() and not (
-            cancellation_requested.is_set() or lease_lost.is_set()
+            cancellation_requested.is_set()
+            or lease_lost.is_set()
+            or (shutdown_requested is not None and shutdown_requested.is_set())
         ):
             inference.join(timeout=0.1)
-        if cancellation_requested.is_set() or lease_lost.is_set():
+        if (
+            cancellation_requested.is_set()
+            or lease_lost.is_set()
+            or (shutdown_requested is not None and shutdown_requested.is_set())
+        ):
             if inference.is_alive():
                 inference.terminate()
             inference.join(timeout=2)
         if lease_lost.is_set():
             return "lease-lost"
+        if shutdown_requested is not None and shutdown_requested.is_set():
+            status, _ = api.request(
+                "POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/release", mutation
+            )
+            return "shutdown" if status == 200 else "lease-lost"
         if cancellation_requested.is_set():
             status, document = api.request(
                 "POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/cancel", mutation
@@ -439,6 +544,116 @@ def run_once(api: Middleware) -> str:
         receiver.close()
 
 
+def run_once(api: Middleware) -> str:
+    """Backward-compatible concurrency-one claim and execution operation."""
+    try:
+        job = claim_one(api)
+    except WorkerError as exc:
+        if str(exc) == "claims disabled":
+            return "claims-disabled"
+        raise
+    if job is None:
+        return "empty"
+    return run_claimed_job(api, job)
+
+
+def configured_concurrency() -> int:
+    raw = os.environ.get("QWEN_MAX_IN_PROCESS_JOBS", "1")
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise WorkerError("configured concurrency is invalid") from exc
+    if value < 1:
+        raise WorkerError("configured concurrency is invalid")
+    return min(value, HARD_SAFETY_CAP)
+
+
+def registration_concurrency(api: Middleware) -> int:
+    status, document = api.request("GET", "/internal/api/v1/ai/worker/config", {})
+    if status != 200:
+        raise WorkerError("worker configuration unavailable")
+    value = document.get("registration_max_concurrency")
+    if not isinstance(value, int) or value < 1:
+        raise WorkerError("registration concurrency unavailable")
+    return value
+
+
+class BoundedWorkerRuntime:
+    """Claims only into free slots and isolates every job lifecycle."""
+
+    def __init__(self, api: Middleware, local_limit: int) -> None:
+        self.api = api
+        self.local_limit = min(local_limit, HARD_SAFETY_CAP)
+        self.metrics = WorkerMetrics(self.local_limit)
+        self.shutdown_requested = threading.Event()
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=HARD_SAFETY_CAP,
+            thread_name_prefix="qwen-job",
+        )
+        self._active: set[concurrent.futures.Future[str]] = set()
+
+    def effective_limit(self) -> int:
+        effective = min(
+            self.local_limit, registration_concurrency(self.api), HARD_SAFETY_CAP
+        )
+        self.metrics.update_limit(effective)
+        return effective
+
+    def reap(self) -> list[str]:
+        completed: list[str] = []
+        for future in tuple(self._active):
+            if future.done():
+                self._active.remove(future)
+                completed.append(future.result())
+        return completed
+
+    def poll(self) -> str:
+        self.reap()
+        if self.shutdown_requested.is_set():
+            return "stopping"
+        if len(self._active) >= self.effective_limit():
+            return "capacity"
+        job = claim_one(self.api)
+        if job is None:
+            return "empty"
+        if self.shutdown_requested.is_set():
+            mutation = {
+                "worker_id": WORKER_ID,
+                "fencing_token": int(job["fencing_token"]),
+            }
+            status, _ = self.api.request(
+                "POST",
+                f"/internal/api/v1/ai/worker/jobs/{job['id']}/release",
+                mutation,
+            )
+            return "stopping" if status == 200 else "lease-lost"
+        started = time.monotonic()
+        self.metrics.claimed()
+
+        def execute_slot() -> str:
+            try:
+                return run_claimed_job(
+                    self.api,
+                    job,
+                    shutdown_requested=self.shutdown_requested,
+                    metrics=self.metrics,
+                )
+            finally:
+                self.metrics.finished(time.monotonic() - started)
+
+        self._active.add(self._executor.submit(execute_slot))
+        return "claimed"
+
+    def shutdown(self, timeout_seconds: float = 40) -> None:
+        self.shutdown_requested.set()
+        deadline = time.monotonic() + timeout_seconds
+        while self._active and time.monotonic() < deadline:
+            self.reap()
+            if self._active:
+                time.sleep(0.05)
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--validate-only", action="store_true")
@@ -453,24 +668,32 @@ def main() -> int:
     if args.once:
         print(f"WORKER_OUTCOME={run_once(api)}")
         return 0
-    stopping = False
+    runtime = BoundedWorkerRuntime(api, configured_concurrency())
 
     def stop(*_: object) -> None:
-        nonlocal stopping
-        stopping = True
+        runtime.shutdown_requested.set()
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     delay = 2.0
-    while not stopping:
+    next_metrics = time.monotonic() + 30
+    while not runtime.shutdown_requested.is_set():
         try:
-            outcome = run_once(api)
+            outcome = runtime.poll()
             delay = 2.0
-            if outcome in {"empty", "claims-disabled"}:
+            if outcome in {"empty", "capacity"}:
                 time.sleep(2)
-        except WorkerError:
-            time.sleep(delay)
+        except WorkerError as exc:
+            if str(exc) == "claims disabled":
+                time.sleep(2)
+            else:
+                time.sleep(delay)
             delay = min(delay * 2, 60)
+        if time.monotonic() >= next_metrics:
+            print(json.dumps(runtime.metrics.snapshot(), sort_keys=True))
+            next_metrics = time.monotonic() + 30
+    runtime.shutdown()
+    print(json.dumps(runtime.metrics.snapshot(), sort_keys=True))
     return 0
 
 

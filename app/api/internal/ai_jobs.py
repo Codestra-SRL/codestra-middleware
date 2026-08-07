@@ -698,13 +698,25 @@ async def worker_heartbeat(
 
 @router.get("/worker/config")
 async def worker_config(
-    _: WorkerPrincipal = Depends(require_scope("ai.worker.claim")),
+    principal: WorkerPrincipal = Depends(require_scope("ai.worker.claim")),
+    db: AsyncSession = Depends(get_session),
 ) -> dict[str, object]:
+    registration_max = (
+        await db.execute(
+            text("""SELECT max_concurrency FROM ai_worker_registrations
+              WHERE worker_id=:worker AND service_id=:service AND enabled=true"""),
+            {"worker": principal.worker_id, "service": principal.service_id},
+        )
+    ).scalar_one_or_none()
+    if registration_max is None:
+        raise HTTPException(403, "worker_not_enabled")
     return {
         "contract_version": "1.0",
         "claims_enabled": settings.ai_worker_claims_enabled,
         "lease_seconds": settings.ai_job_lease_seconds,
         "max_output_bytes": settings.ai_job_max_output_bytes,
+        "registration_max_concurrency": registration_max,
+        "hard_safety_cap": 2,
         "approved_profiles": [
             "fast-chat",
             "quality-chat",
