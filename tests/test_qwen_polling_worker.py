@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from app.core import ai_jobs
+
 ROOT = Path(__file__).resolve().parents[1]
 PATH = ROOT / "worker/qwen_polling_worker.py"
 SPEC = importlib.util.spec_from_file_location("qwen_polling_worker_test", PATH)
@@ -146,6 +148,53 @@ def fixture_job(command_type="ai.chat.v1", profile="fast-chat"):
         "resource_limits": {"runtime_seconds": 10},
         "fencing_token": 1,
     }
+
+
+@pytest.mark.parametrize(
+    ("task_type", "expected_model", "project_key"),
+    [
+        ("chat", "qwen-runtime-fast", None),
+        ("coding", "qwen-coder-fallback", "codestra-ai-console"),
+    ],
+)
+def test_worker_accepts_server_generated_browser_contract(
+    task_type, expected_model, project_key, monkeypatch
+):
+    from uuid import uuid4
+
+    job_id = uuid4()
+    contract = ai_jobs.build_browser_worker_contract(
+        job_id=job_id,
+        conversation_id=uuid4(),
+        organization_id=uuid4(),
+        user_id="synthetic-user",
+        content="safe browser request",
+        task_type=task_type,
+        project_key=project_key,
+        idempotency_key=f"worker-browser-{task_type}",
+        correlation_id=f"corr-worker-browser-{task_type}",
+        max_attempts=2,
+    )
+    observed = {}
+
+    def fake_loopback(url, payload, timeout, bearer_file=None):
+        observed.update({"url": url, "payload": payload, "timeout": timeout})
+        return {"choices": [{"message": {"content": "synthetic result"}}]}
+
+    monkeypatch.setattr(worker, "loopback_json", fake_loopback)
+    result = worker.execute(
+        {
+            "id": str(job_id),
+            "command_type": contract.command_type.value,
+            "command_payload": contract.model_dump(mode="json"),
+            "model_profile": contract.model_policy.profile,
+            "resource_limits": contract.resource_limits.model_dump(mode="json"),
+            "fencing_token": 1,
+        }
+    )
+    assert result["status"] == "SUCCEEDED"
+    assert result["model_used"] == expected_model
+    assert observed["payload"]["model"] == expected_model
 
 
 def test_worker_empty_completion_duplicate_and_failure_paths(monkeypatch):

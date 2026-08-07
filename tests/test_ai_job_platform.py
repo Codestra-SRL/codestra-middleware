@@ -28,6 +28,7 @@ from app.api.internal import ai_jobs as worker_api
 from app.api.v1 import ai_console
 from app import main as middleware_main
 from app.core import ai_jobs
+from app.core.ai_contracts import AICommand
 from app.core.config import settings
 
 SECRET = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -47,8 +48,47 @@ def test_browser_capabilities_resolve_to_governed_profiles():
         )
 
 
+@pytest.mark.parametrize(
+    ("task_type", "profile", "command_type", "project_key"),
+    [
+        ("chat", "fast-chat", "ai.chat.v1", None),
+        ("coding", "coding-default", "ai.coding.v1", "codestra-ai-console"),
+    ],
+)
+def test_browser_capabilities_build_complete_canonical_worker_contracts(
+    task_type, profile, command_type, project_key
+):
+    job_id, conversation_id, organization_id = uuid4(), uuid4(), uuid4()
+    contract = ai_jobs.build_browser_worker_contract(
+        job_id=job_id,
+        conversation_id=conversation_id,
+        organization_id=organization_id,
+        user_id="synthetic-user",
+        content="safe browser request",
+        task_type=task_type,
+        project_key=project_key,
+        idempotency_key=f"browser-contract-{task_type}",
+        correlation_id=f"corr-browser-contract-{task_type}",
+        max_attempts=2,
+    )
+    assert isinstance(contract, AICommand)
+    assert contract.command_id == job_id
+    assert contract.tenant_id == organization_id
+    assert contract.model_policy.profile == profile
+    assert contract.command_type.value == command_type
+    assert contract.input["text"] == "safe browser request"
+    assert contract.input.get("project_key") == project_key
+    assert contract.metadata == {
+        "source": "ai-console",
+        "conversation_id": str(conversation_id),
+        "capability": task_type,
+    }
+
+
 def test_browser_coding_policy_is_role_and_project_bound():
-    source = (Path(__file__).resolve().parents[1] / "app/api/v1/ai_console.py").read_text()
+    source = (
+        Path(__file__).resolve().parents[1] / "app/api/v1/ai_console.py"
+    ).read_text()
     assert '{"codestra_ai_developer", "codestra_admin"}' in source
     assert "coding role required" in source
     assert "project is not approved" in source
@@ -523,14 +563,30 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
                 correlation_id="corr-unknown",
                 max_attempts=2,
             )
-        null_profiles = (
-            await db.execute(
-                text("SELECT count(*) FROM ai_generation_jobs WHERE model_profile IS NULL")
+        null_contract_fields = (
+            (
+                await db.execute(
+                    text(
+                        "SELECT count(*) FILTER (WHERE model_profile IS NULL) null_profile, "
+                        "count(*) FILTER (WHERE command_type IS NULL) null_command_type, "
+                        "count(*) FILTER (WHERE command_payload IS NULL) null_command_payload "
+                        "FROM ai_generation_jobs"
+                    )
+                )
             )
-        ).scalar_one()
-        assert null_profiles == 0
+            .mappings()
+            .one()
+        )
+        assert dict(null_contract_fields) == {
+            "null_profile": 0,
+            "null_command_type": 0,
+            "null_command_payload": 0,
+        }
         claimed = await ai_jobs.claim(db, "synthetic-worker", 30, "corr-claim")
         assert claimed and claimed["id"] == job["job_id"]
+        assert claimed["model_profile"] == "fast-chat"
+        assert claimed["command_type"] == "ai.chat.v1"
+        assert AICommand.model_validate(claimed["command_payload"])
         job_id = claimed["id"]
         assert await ai_jobs.append_chunk(
             db,
@@ -647,30 +703,65 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
         "X-User-ID": "synthetic-user",
         "X-Correlation-ID": "corr-cancel",
     }
-    message_path = f"/api/v1/ai/conversations/{conversation['conversation_id']}/messages"
+    message_path = (
+        f"/api/v1/ai/conversations/{conversation['conversation_id']}/messages"
+    )
     arbitrary = await client.post(
         message_path,
         headers={**base_headers, "Idempotency-Key": "browser-arbitrary-profile"},
-        json={"content": "attempt", "task_type": "chat", "model_profile": "coding-large"},
+        json={
+            "content": "attempt",
+            "task_type": "chat",
+            "model_profile": "coding-large",
+        },
     )
     assert arbitrary.status_code == 422
+    for trusted_field, trusted_value in (
+        ("command_type", "ai.coding.v1"),
+        ("command_payload", {"input": {"text": "escalated"}}),
+    ):
+        escalation = await client.post(
+            message_path,
+            headers={
+                **base_headers,
+                "Idempotency-Key": f"browser-arbitrary-{trusted_field}",
+            },
+            json={
+                "content": "attempt",
+                "task_type": "chat",
+                trusted_field: trusted_value,
+            },
+        )
+        assert escalation.status_code == 422
     coding_without_role = await client.post(
         message_path,
         headers={**base_headers, "Idempotency-Key": "browser-coding-role-denied"},
-        json={"content": "attempt", "task_type": "coding", "project_key": "codestra-ai-console"},
+        json={
+            "content": "attempt",
+            "task_type": "coding",
+            "project_key": "codestra-ai-console",
+        },
     )
     assert coding_without_role.status_code == 403
     tenant_state["roles"] = frozenset({"codestra_ai_user", "codestra_ai_developer"})
     coding_bad_project = await client.post(
         message_path,
         headers={**base_headers, "Idempotency-Key": "browser-project-denied"},
-        json={"content": "attempt", "task_type": "coding", "project_key": "not-approved"},
+        json={
+            "content": "attempt",
+            "task_type": "coding",
+            "project_key": "not-approved",
+        },
     )
     assert coding_bad_project.status_code == 403
     coding = await client.post(
         message_path,
         headers={**base_headers, "Idempotency-Key": "browser-coding-approved"},
-        json={"content": "approved coding", "task_type": "coding", "project_key": "codestra-ai-console"},
+        json={
+            "content": "approved coding",
+            "task_type": "coding",
+            "project_key": "codestra-ai-console",
+        },
     )
     assert coding.status_code == 202
     default_chat = await client.post(
@@ -680,22 +771,48 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     )
     assert default_chat.status_code == 202
     async with session_factory() as profile_db:
-        profiles = dict(
-            (
+        contracts = {
+            row["id"]: row
+            for row in (
                 await profile_db.execute(
                     text(
-                        "SELECT id,model_profile FROM ai_generation_jobs "
-                        "WHERE id IN (:coding,:chat)"
+                        "SELECT id,model_profile,command_type,command_payload "
+                        "FROM ai_generation_jobs WHERE id IN (:coding,:chat)"
                     ),
                     {
                         "coding": coding.json()["job_id"],
                         "chat": default_chat.json()["job_id"],
                     },
                 )
-            ).all()
+            ).mappings()
+        }
+        invalid_counts = (
+            (
+                await profile_db.execute(
+                    text(
+                        "SELECT count(*) FILTER (WHERE model_profile IS NULL) null_profile, "
+                        "count(*) FILTER (WHERE command_type IS NULL) null_command_type, "
+                        "count(*) FILTER (WHERE command_payload IS NULL) null_command_payload "
+                        "FROM ai_generation_jobs WHERE state IN ('queued','retry_wait')"
+                    )
+                )
+            )
+            .mappings()
+            .one()
         )
-    assert profiles[UUID(coding.json()["job_id"])] == "coding-default"
-    assert profiles[UUID(default_chat.json()["job_id"])] == "fast-chat"
+    coding_contract = contracts[UUID(coding.json()["job_id"])]
+    chat_contract = contracts[UUID(default_chat.json()["job_id"])]
+    assert coding_contract["model_profile"] == "coding-default"
+    assert coding_contract["command_type"] == "ai.coding.v1"
+    assert AICommand.model_validate(coding_contract["command_payload"])
+    assert chat_contract["model_profile"] == "fast-chat"
+    assert chat_contract["command_type"] == "ai.chat.v1"
+    assert AICommand.model_validate(chat_contract["command_payload"])
+    assert dict(invalid_counts) == {
+        "null_profile": 0,
+        "null_command_type": 0,
+        "null_command_payload": 0,
+    }
     for queued in (coding.json()["job_id"], default_chat.json()["job_id"]):
         queued_cancel = await client.post(
             f"/api/v1/ai/jobs/{queued}/cancel", headers=base_headers
