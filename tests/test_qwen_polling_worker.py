@@ -205,19 +205,50 @@ class ConcurrentAPI:
         self.jobs = list(jobs)
         self.registration_limit = registration_limit
         self.claim_count = 0
+        self.claim_bodies = []
+        self.release_count = 0
         self._lock = threading.Lock()
 
     def request(self, method, path, value):
-        del method, value
+        del method
         if path.endswith("/config"):
             return 200, {
                 "registration_max_concurrency": self.registration_limit,
+                "model_runtime_classes": {
+                    "fast-chat": "chat-light",
+                    "crm-analysis": "chat-light",
+                    "coding-default": "coding-fallback",
+                    "quality-chat": "single-admission",
+                    "coding-large": "single-admission",
+                    "voice-summary": "single-admission",
+                    "embedding-default": "unavailable",
+                },
+                "runtime_class_compatibility": {
+                    "chat-light": ["chat-light"],
+                    "coding-fallback": ["coding-fallback"],
+                    "single-admission": [],
+                    "unavailable": [],
+                },
             }
         if path.endswith("/claim"):
             with self._lock:
                 self.claim_count += 1
-                job = self.jobs.pop(0) if self.jobs else None
+                self.claim_bodies.append(value)
+                allowed = value.get("allowed_model_profiles")
+                job = next(
+                    (
+                        candidate
+                        for candidate in self.jobs
+                        if allowed is None or candidate.get("model_profile") in allowed
+                    ),
+                    None,
+                )
+                if job is not None:
+                    self.jobs.remove(job)
             return 200, {"job": job}
+        if path.endswith("/release"):
+            self.release_count += 1
+            return 200, {"state": "retry_wait"}
         raise AssertionError(path)
 
 
@@ -277,6 +308,13 @@ def test_two_slots_run_in_parallel_without_claiming_a_third(monkeypatch):
         assert len(started) == 2
         assert runtime.poll() == "capacity"
         assert api.claim_count == 2
+        assert api.claim_bodies == [
+            {"worker_id": worker.WORKER_ID},
+            {
+                "worker_id": worker.WORKER_ID,
+                "allowed_model_profiles": ["crm-analysis", "fast-chat"],
+            },
+        ]
         assert runtime.metrics.snapshot()["codestra_ai_worker_active_jobs"] == 2
         release.set()
     finally:
@@ -292,6 +330,87 @@ def test_registration_one_preserves_serial_behavior(monkeypatch):
         ],
         registration_limit=1,
     )
+    release = threading.Event()
+    monkeypatch.setattr(
+        worker,
+        "run_claimed_job",
+        lambda *_args, **_kwargs: "completed" if release.wait(2) else "timeout",
+    )
+    runtime = worker.BoundedWorkerRuntime(api, 2)
+    try:
+        assert runtime.poll() == "claimed"
+        assert runtime.poll() == "capacity"
+        assert api.claim_count == 1
+    finally:
+        release.set()
+        runtime.shutdown()
+
+
+def test_mixed_runtime_models_are_not_claimed_into_second_slot(monkeypatch):
+    first = distinct_job("00000000-0000-4000-8000-000000000001")
+    first["model_profile"] = "coding-default"
+    second = distinct_job("00000000-0000-4000-8000-000000000002")
+    second["model_profile"] = "fast-chat"
+    api = ConcurrentAPI([first, second])
+    release = threading.Event()
+    monkeypatch.setattr(
+        worker,
+        "run_claimed_job",
+        lambda *_args, **_kwargs: "completed" if release.wait(2) else "timeout",
+    )
+    runtime = worker.BoundedWorkerRuntime(api, 2)
+    try:
+        assert runtime.poll() == "claimed"
+        assert runtime.poll() == "empty"
+        assert api.claim_bodies[-1]["allowed_model_profiles"] == ["coding-default"]
+    finally:
+        release.set()
+        runtime.shutdown()
+
+
+def test_worker_releases_mismatched_claim_response(monkeypatch, capsys):
+    coding = distinct_job("00000000-0000-4000-8000-000000000001")
+    coding["model_profile"] = "coding-default"
+    incompatible = distinct_job("00000000-0000-4000-8000-000000000002")
+    incompatible["model_profile"] = "fast-chat"
+
+    class BuggyController(ConcurrentAPI):
+        def request(self, method, path, value):
+            if path.endswith("/claim") and value.get("allowed_model_profiles"):
+                self.claim_count += 1
+                self.claim_bodies.append(value)
+                return 200, {"job": incompatible}
+            return super().request(method, path, value)
+
+    api = BuggyController([coding])
+    release = threading.Event()
+    inference_started: set[str] = set()
+
+    def run_slot(_api, job, **_kwargs):
+        inference_started.add(job["id"])
+        release.wait(2)
+        return "completed"
+
+    monkeypatch.setattr(worker, "run_claimed_job", run_slot)
+    runtime = worker.BoundedWorkerRuntime(api, 2)
+    try:
+        assert runtime.poll() == "claimed"
+        assert runtime.poll() == "profile-mismatch"
+        assert incompatible["id"] not in inference_started
+        assert api.release_count == 1
+        snapshot = runtime.metrics.snapshot()
+        assert snapshot["codestra_ai_worker_profile_mismatch_total"] == 1
+        assert '"event": "worker_profile_admission_mismatch"' in capsys.readouterr().out
+    finally:
+        release.set()
+        runtime.shutdown()
+
+
+@pytest.mark.parametrize("profile", ["quality-chat", "coding-large", "voice-summary"])
+def test_unproven_runtime_profile_remains_single_admission(monkeypatch, profile):
+    first = distinct_job("00000000-0000-4000-8000-000000000001")
+    first["model_profile"] = profile
+    api = ConcurrentAPI([first, distinct_job("00000000-0000-4000-8000-000000000002")])
     release = threading.Event()
     monkeypatch.setattr(
         worker,

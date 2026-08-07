@@ -59,24 +59,36 @@ class WorkerMetrics:
     over_capacity_claim_attempts: int = 0
     heartbeat_failures_total: int = 0
     cancellations_total: int = 0
+    admission_rejections_total: int = 0
+    profile_mismatch_total: int = 0
+    compatibility_rejections_total: int = 0
     completed_jobs: int = 0
     total_job_latency_seconds: float = 0.0
+    _active_profile_classes: dict[str, int] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def update_limit(self, effective: int) -> None:
         with self._lock:
             self.effective_concurrency = effective
 
-    def claimed(self) -> None:
+    def claimed(self, profile_class: str = "unknown") -> None:
         with self._lock:
             self.claims_total += 1
             self.active_jobs += 1
+            self._active_profile_classes[profile_class] = (
+                self._active_profile_classes.get(profile_class, 0) + 1
+            )
 
-    def finished(self, elapsed: float) -> None:
+    def finished(self, elapsed: float, profile_class: str = "unknown") -> None:
         with self._lock:
             self.active_jobs -= 1
             self.completed_jobs += 1
             self.total_job_latency_seconds += elapsed
+            remaining = self._active_profile_classes.get(profile_class, 0) - 1
+            if remaining > 0:
+                self._active_profile_classes[profile_class] = remaining
+            else:
+                self._active_profile_classes.pop(profile_class, None)
 
     def heartbeat_failed(self) -> None:
         with self._lock:
@@ -86,8 +98,19 @@ class WorkerMetrics:
         with self._lock:
             self.cancellations_total += 1
 
-    def snapshot(self) -> dict[str, int | float]:
+    def admission_rejected(self, *, mismatch: bool = False) -> None:
         with self._lock:
+            self.admission_rejections_total += 1
+            if mismatch:
+                self.profile_mismatch_total += 1
+
+    def compatibility_rejected(self) -> None:
+        with self._lock:
+            self.compatibility_rejections_total += 1
+
+    def snapshot(self) -> dict[str, int | float | str]:
+        with self._lock:
+            active_classes = sorted(self._active_profile_classes)
             return {
                 "codestra_ai_worker_active_jobs": self.active_jobs,
                 "codestra_ai_worker_available_slots": max(
@@ -106,6 +129,22 @@ class WorkerMetrics:
                     self.heartbeat_failures_total
                 ),
                 "codestra_ai_worker_cancellations_total": self.cancellations_total,
+                "codestra_ai_worker_admission_rejections_total": (
+                    self.admission_rejections_total
+                ),
+                "codestra_ai_worker_profile_mismatch_total": (
+                    self.profile_mismatch_total
+                ),
+                "codestra_ai_worker_active_profile_class": (
+                    active_classes[0]
+                    if len(active_classes) == 1
+                    else "none"
+                    if not active_classes
+                    else "mixed"
+                ),
+                "codestra_ai_worker_compatibility_rejections_total": (
+                    self.compatibility_rejections_total
+                ),
             }
 
 
@@ -421,9 +460,14 @@ def maintain_lease(
             return
 
 
-def claim_one(api: Middleware) -> dict[str, Any] | None:
+def claim_one(
+    api: Middleware, allowed_model_profiles: frozenset[str] | None = None
+) -> dict[str, Any] | None:
+    body: dict[str, object] = {"worker_id": WORKER_ID}
+    if allowed_model_profiles is not None:
+        body["allowed_model_profiles"] = sorted(allowed_model_profiles)
     status, response = api.request(
-        "POST", "/internal/api/v1/ai/worker/jobs/claim", {"worker_id": WORKER_ID}
+        "POST", "/internal/api/v1/ai/worker/jobs/claim", body
     )
     if status == 503:
         raise WorkerError("claims disabled")
@@ -568,14 +612,42 @@ def configured_concurrency() -> int:
     return min(value, HARD_SAFETY_CAP)
 
 
-def registration_concurrency(api: Middleware) -> int:
+def worker_configuration(
+    api: Middleware,
+) -> tuple[int, dict[str, str], dict[str, frozenset[str]]]:
     status, document = api.request("GET", "/internal/api/v1/ai/worker/config", {})
     if status != 200:
         raise WorkerError("worker configuration unavailable")
     value = document.get("registration_max_concurrency")
     if not isinstance(value, int) or value < 1:
         raise WorkerError("registration concurrency unavailable")
-    return value
+    raw_classes = document.get("model_runtime_classes")
+    raw_compatibility = document.get("runtime_class_compatibility")
+    if not isinstance(raw_classes, dict) or not isinstance(raw_compatibility, dict):
+        raise WorkerError("runtime compatibility policy unavailable")
+    classes: dict[str, str] = {}
+    compatibility: dict[str, frozenset[str]] = {}
+    if not all(
+        isinstance(key, str) and isinstance(item, str)
+        for key, item in raw_classes.items()
+    ):
+        raise WorkerError("runtime compatibility policy invalid")
+    classes.update(raw_classes)
+    for runtime_class, compatible_classes in raw_compatibility.items():
+        if not isinstance(runtime_class, str) or not isinstance(
+            compatible_classes, list
+        ):
+            raise WorkerError("runtime compatibility policy invalid")
+        if not all(isinstance(item, str) for item in compatible_classes):
+            raise WorkerError("runtime compatibility policy invalid")
+        compatibility[runtime_class] = frozenset(compatible_classes)
+    if not classes or not compatibility:
+        raise WorkerError("runtime compatibility policy invalid")
+    return value, classes, compatibility
+
+
+def registration_concurrency(api: Middleware) -> int:
+    return worker_configuration(api)[0]
 
 
 class BoundedWorkerRuntime:
@@ -591,11 +663,15 @@ class BoundedWorkerRuntime:
             thread_name_prefix="qwen-job",
         )
         self._active: set[concurrent.futures.Future[str]] = set()
+        self._active_profiles: dict[concurrent.futures.Future[str], str] = {}
+        self._profile_runtime_classes: dict[str, str] = {}
+        self._runtime_class_compatibility: dict[str, frozenset[str]] = {}
 
     def effective_limit(self) -> int:
-        effective = min(
-            self.local_limit, registration_concurrency(self.api), HARD_SAFETY_CAP
-        )
+        registration_limit, classes, compatibility = worker_configuration(self.api)
+        self._profile_runtime_classes = classes
+        self._runtime_class_compatibility = compatibility
+        effective = min(self.local_limit, registration_limit, HARD_SAFETY_CAP)
         self.metrics.update_limit(effective)
         return effective
 
@@ -604,6 +680,7 @@ class BoundedWorkerRuntime:
         for future in tuple(self._active):
             if future.done():
                 self._active.remove(future)
+                self._active_profiles.pop(future, None)
                 completed.append(future.result())
         return completed
 
@@ -613,9 +690,51 @@ class BoundedWorkerRuntime:
             return "stopping"
         if len(self._active) >= self.effective_limit():
             return "capacity"
-        job = claim_one(self.api)
+        allowed_profiles: frozenset[str] | None = None
+        if self._active_profiles:
+            active_profiles = set(self._active_profiles.values())
+            if len(active_profiles) != 1:
+                return "capacity"
+            active_profile = active_profiles.pop()
+            active_class = self._profile_runtime_classes.get(active_profile)
+            compatible_classes = self._runtime_class_compatibility.get(
+                active_class or "", frozenset()
+            )
+            allowed_profiles = frozenset(
+                profile
+                for profile, runtime_class in self._profile_runtime_classes.items()
+                if runtime_class in compatible_classes
+            )
+            if not allowed_profiles:
+                self.metrics.compatibility_rejected()
+                return "capacity"
+        job = claim_one(self.api, allowed_profiles)
         if job is None:
             return "empty"
+        claimed_profile = job.get("model_profile")
+        if allowed_profiles is not None and claimed_profile not in allowed_profiles:
+            mutation = {
+                "worker_id": WORKER_ID,
+                "fencing_token": int(job["fencing_token"]),
+            }
+            status, _ = self.api.request(
+                "POST",
+                f"/internal/api/v1/ai/worker/jobs/{job['id']}/release",
+                mutation,
+            )
+            self.metrics.admission_rejected(mismatch=True)
+            print(
+                json.dumps(
+                    {
+                        "event": "worker_profile_admission_mismatch",
+                        "lease_release_status": "released"
+                        if status == 200
+                        else "failed",
+                    },
+                    sort_keys=True,
+                )
+            )
+            return "profile-mismatch" if status == 200 else "lease-lost"
         if self.shutdown_requested.is_set():
             mutation = {
                 "worker_id": WORKER_ID,
@@ -628,7 +747,9 @@ class BoundedWorkerRuntime:
             )
             return "stopping" if status == 200 else "lease-lost"
         started = time.monotonic()
-        self.metrics.claimed()
+        profile = str(claimed_profile or "")
+        profile_class = self._profile_runtime_classes.get(profile, "unknown")
+        self.metrics.claimed(profile_class)
 
         def execute_slot() -> str:
             try:
@@ -639,9 +760,11 @@ class BoundedWorkerRuntime:
                     metrics=self.metrics,
                 )
             finally:
-                self.metrics.finished(time.monotonic() - started)
+                self.metrics.finished(time.monotonic() - started, profile_class)
 
-        self._active.add(self._executor.submit(execute_slot))
+        future = self._executor.submit(execute_slot)
+        self._active.add(future)
+        self._active_profiles[future] = profile
         return "claimed"
 
     def shutdown(self, timeout_seconds: float = 40) -> None:

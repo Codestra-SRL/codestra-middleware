@@ -69,6 +69,9 @@ class StrictModel(BaseModel):
 
 class LeaseRequest(StrictModel):
     worker_id: str = Field(min_length=3, max_length=128)
+    allowed_model_profiles: list[str] | None = Field(
+        default=None, min_length=1, max_length=7
+    )
 
 
 class LeaseMutation(StrictModel):
@@ -343,11 +346,14 @@ async def claim_job(
             organization_id=principal.tenant_id,
             workspace_id=principal.workspace_id,
             service_id=principal.service_id,
+            allowed_model_profiles=body.allowed_model_profiles,
         )
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except OverflowError as exc:
         raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"job": item}
 
 
@@ -716,7 +722,14 @@ async def worker_config(
         "lease_seconds": settings.ai_job_lease_seconds,
         "max_output_bytes": settings.ai_job_max_output_bytes,
         "registration_max_concurrency": registration_max,
-        "hard_safety_cap": 2,
+        "hard_safety_cap": ai_jobs.WORKER_HARD_SAFETY_CAP,
+        "model_runtime_classes": ai_jobs.MODEL_RUNTIME_CLASSES,
+        "runtime_class_compatibility": {
+            runtime_class: sorted(compatible_classes)
+            for runtime_class, compatible_classes in (
+                ai_jobs.RUNTIME_CLASS_COMPATIBILITY.items()
+            )
+        },
         "approved_profiles": [
             "fast-chat",
             "quality-chat",

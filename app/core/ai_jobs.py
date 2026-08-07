@@ -24,6 +24,53 @@ SAFE_ERROR_DETAIL_FIELDS = frozenset(
     }
 )
 
+WORKER_HARD_SAFETY_CAP = 2
+MODEL_RUNTIME_CLASSES = {
+    "fast-chat": "chat-light",
+    "crm-analysis": "chat-light",
+    "coding-default": "coding-fallback",
+    "quality-chat": "single-admission",
+    "coding-large": "single-admission",
+    "voice-summary": "single-admission",
+    "embedding-default": "unavailable",
+}
+RUNTIME_CLASS_COMPATIBILITY = {
+    "chat-light": frozenset({"chat-light"}),
+    "coding-fallback": frozenset({"coding-fallback"}),
+    "single-admission": frozenset(),
+    "unavailable": frozenset(),
+}
+
+
+def compatible_profiles(active_profiles: list[str | None]) -> frozenset[str]:
+    """Return the server-authoritative profiles permitted beside active leases."""
+    if not active_profiles:
+        return frozenset(MODEL_RUNTIME_CLASSES)
+    active_classes = {
+        MODEL_RUNTIME_CLASSES.get(profile or "") for profile in active_profiles
+    }
+    if None in active_classes or len(active_classes) != 1:
+        return frozenset()
+    active_class = next(iter(active_classes))
+    if active_class is None:
+        return frozenset()
+    compatible_classes = RUNTIME_CLASS_COMPATIBILITY.get(active_class, frozenset())
+    return frozenset(
+        profile
+        for profile, runtime_class in MODEL_RUNTIME_CLASSES.items()
+        if runtime_class in compatible_classes
+    )
+
+
+def effective_compatible_profiles(
+    active_profiles: list[str | None], requested_profiles: list[str] | None
+) -> frozenset[str]:
+    """Intersect the server policy with an optional client restriction."""
+    server_allowed = compatible_profiles(active_profiles)
+    if requested_profiles is None:
+        return server_allowed
+    return server_allowed & frozenset(requested_profiles)
+
 
 def fingerprint(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
@@ -228,7 +275,14 @@ async def claim(
     organization_id: UUID | None = None,
     workspace_id: UUID | None = None,
     service_id: str | None = None,
+    allowed_model_profiles: list[str] | None = None,
 ) -> dict[str, Any] | None:
+    if allowed_model_profiles is not None:
+        if not allowed_model_profiles or not set(allowed_model_profiles).issubset(
+            MODEL_RUNTIME_CLASSES
+        ):
+            raise ValueError("invalid_model_profile_filter")
+    active_profiles: list[str | None] = []
     if service_id is not None:
         registration = (
             (
@@ -246,18 +300,56 @@ async def claim(
         )
         if registration is None:
             raise PermissionError("worker_not_enabled")
-        active = (
-            await db.execute(
-                text("""
-        SELECT count(*) FROM ai_generation_jobs
+        active_result = await db.execute(
+            text("""
+        SELECT model_profile FROM ai_generation_jobs
         WHERE state IN ('leased','cancel_requested') AND lease_owner=:worker
           AND lease_expires_at > now()
+          AND (CAST(:org AS uuid) IS NULL OR organization_id=:org)
+          AND (CAST(:workspace AS uuid) IS NULL OR workspace_id=:workspace)
+        ORDER BY created_at,id
     """),
-                {"worker": worker_id},
-            )
-        ).scalar_one()
-        if active >= registration["max_concurrency"]:
+            {
+                "worker": worker_id,
+                "org": organization_id,
+                "workspace": workspace_id,
+            },
+        )
+        active_profiles = list(active_result.scalars())
+        effective_limit = min(registration["max_concurrency"], WORKER_HARD_SAFETY_CAP)
+        if len(active_profiles) >= effective_limit:
             raise OverflowError("worker_concurrency_limit")
+    effective_allowed_profiles = effective_compatible_profiles(
+        active_profiles, allowed_model_profiles
+    )
+    if not effective_allowed_profiles:
+        await audit(
+            db,
+            "job.claim.admission_rejected",
+            correlation_id,
+            worker_id,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            details={
+                "active_model_profiles": sorted(
+                    profile or "unknown" for profile in active_profiles
+                ),
+                "effective_allowed_profile_count": 0,
+                "profile_filter_applied": allowed_model_profiles is not None,
+                "concurrency_slot": len(active_profiles) + 1,
+                "worker_id": worker_id,
+            },
+        )
+        await db.commit()
+        return None
+    # Legacy/internal callers predate model profiles and may claim NULL-profile
+    # jobs. Authenticated workers always provide service_id, so only they are
+    # constrained by the runtime-admission profile set.
+    profile_filter = (
+        sorted(effective_allowed_profiles)
+        if service_id is not None or allowed_model_profiles is not None
+        else None
+    )
     row = (
         (
             await db.execute(
@@ -268,6 +360,7 @@ async def claim(
             AND (model_profile IS NULL OR model_profile IN
               ('fast-chat','quality-chat','coding-default','coding-large',
                'crm-analysis','voice-summary','embedding-default'))
+            AND (CAST(:profiles AS text[]) IS NULL OR model_profile = ANY(:profiles))
             AND (CAST(:org AS uuid) IS NULL OR organization_id=:org)
             AND (CAST(:workspace AS uuid) IS NULL OR workspace_id=:workspace)
             AND cancel_requested_at IS NULL
@@ -285,6 +378,7 @@ async def claim(
                     "lease_seconds": lease_seconds,
                     "org": organization_id,
                     "workspace": workspace_id,
+                    "profiles": profile_filter,
                 },
             )
         )
@@ -319,6 +413,17 @@ async def claim(
         details={
             "attempt": row["attempt_count"],
             "fencing_token": row["fencing_token"],
+            "claimed_model_profile": row["model_profile"],
+            "active_model_profiles": sorted(
+                profile or "unknown" for profile in active_profiles
+            ),
+            "effective_compatibility_class": MODEL_RUNTIME_CLASSES.get(
+                row["model_profile"], "unknown"
+            ),
+            "profile_filter_applied": allowed_model_profiles is not None,
+            "effective_allowed_profile_count": len(effective_allowed_profiles),
+            "concurrency_slot": len(active_profiles) + 1,
+            "worker_id": worker_id,
         },
     )
     await db.commit()
