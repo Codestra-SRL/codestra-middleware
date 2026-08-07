@@ -250,7 +250,8 @@ async def claim(
             await db.execute(
                 text("""
         SELECT count(*) FROM ai_generation_jobs
-        WHERE state='leased' AND lease_owner=:worker AND lease_expires_at > now()
+        WHERE state IN ('leased','cancel_requested') AND lease_owner=:worker
+          AND lease_expires_at > now()
     """),
                 {"worker": worker_id},
             )
@@ -351,12 +352,14 @@ async def assert_lease(
     *,
     organization_id: UUID | None = None,
     workspace_id: UUID | None = None,
+    allow_cancel_requested: bool = False,
 ) -> dict[str, Any]:
     row = (
         (
             await db.execute(
                 text("""
-        SELECT * FROM ai_generation_jobs WHERE id=:job AND state='leased'
+        SELECT * FROM ai_generation_jobs WHERE id=:job
+          AND (state='leased' OR (:allow_cancel_requested AND state='cancel_requested'))
           AND lease_owner=:worker AND fencing_token=:token AND lease_expires_at > now()
           AND (CAST(:org AS uuid) IS NULL OR organization_id=:org)
           AND (CAST(:workspace AS uuid) IS NULL OR workspace_id=:workspace)
@@ -368,6 +371,7 @@ async def assert_lease(
                     "token": fencing_token,
                     "org": organization_id,
                     "workspace": workspace_id,
+                    "allow_cancel_requested": allow_cancel_requested,
                 },
             )
         )
@@ -399,6 +403,7 @@ async def heartbeat(
         fencing_token,
         organization_id=organization_id,
         workspace_id=workspace_id,
+        allow_cancel_requested=True,
     )
     expires = datetime.now(timezone.utc)
     row = (
@@ -508,6 +513,7 @@ async def finish(
         fencing_token,
         organization_id=organization_id,
         workspace_id=workspace_id,
+        allow_cancel_requested=True,
     )
     if row["cancel_requested_at"] is not None:
         state = "cancelled"
@@ -666,9 +672,40 @@ async def worker_cancel(
     workspace_id: UUID,
     correlation_id: str,
 ) -> dict[str, object]:
-    row = await assert_lease(db, job_id, worker_id, fencing_token)
-    if row["organization_id"] != organization_id or row["workspace_id"] != workspace_id:
-        raise PermissionError("tenant_mismatch")
+    try:
+        row = await assert_lease(
+            db,
+            job_id,
+            worker_id,
+            fencing_token,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            allow_cancel_requested=True,
+        )
+    except PermissionError:
+        already_cancelled = (
+            await db.execute(
+                text("""
+          SELECT 1 FROM ai_generation_jobs j
+          WHERE j.id=:job AND j.organization_id=:org AND j.workspace_id=:workspace
+            AND j.state='cancelled' AND j.fencing_token=:token
+            AND EXISTS (
+              SELECT 1 FROM ai_job_attempts a
+              WHERE a.job_id=j.id AND a.fencing_token=:token AND a.worker_id=:worker
+            )
+        """),
+                {
+                    "job": job_id,
+                    "org": organization_id,
+                    "workspace": workspace_id,
+                    "token": fencing_token,
+                    "worker": worker_id,
+                },
+            )
+        ).scalar_one_or_none()
+        if already_cancelled:
+            return {"cancel_requested": True, "state": "cancelled"}
+        raise
     requested = row["cancel_requested_at"] is not None
     if requested:
         await db.execute(
@@ -676,6 +713,11 @@ async def worker_cancel(
           lease_owner=NULL,lease_expires_at=NULL,completed_at=now(),updated_at=now()
           WHERE id=:job"""),
             {"job": job_id},
+        )
+        await db.execute(
+            text("""UPDATE ai_job_attempts SET state='cancelled',finished_at=now()
+          WHERE job_id=:job AND fencing_token=:token AND worker_id=:worker"""),
+            {"job": job_id, "token": fencing_token, "worker": worker_id},
         )
         await audit(
             db,
@@ -783,6 +825,39 @@ async def recover_expired(
     organization_id: UUID | None = None,
     workspace_id: UUID | None = None,
 ) -> dict[str, int]:
+    cancelled_rows = (
+        (
+            await db.execute(
+                text("""
+        UPDATE ai_generation_jobs SET state='cancelled',lease_owner=NULL,
+          lease_expires_at=NULL,completed_at=now(),updated_at=now()
+        WHERE state='cancel_requested' AND lease_expires_at <= now()
+          AND (CAST(:org AS uuid) IS NULL OR organization_id=:org)
+          AND (CAST(:workspace AS uuid) IS NULL OR workspace_id=:workspace)
+        RETURNING id,organization_id,workspace_id,fencing_token,correlation_id
+    """),
+                {"org": organization_id, "workspace": workspace_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    for row in cancelled_rows:
+        await db.execute(
+            text("""UPDATE ai_job_attempts SET state='cancelled',finished_at=now()
+          WHERE job_id=:job AND fencing_token=:token"""),
+            {"job": row["id"], "token": row["fencing_token"]},
+        )
+        await audit(
+            db,
+            "job.cancelled",
+            row["correlation_id"] or "lease-recovery",
+            "lease-recovery",
+            organization_id=row["organization_id"],
+            workspace_id=row["workspace_id"],
+            job_id=row["id"],
+            details={"reason": "cancel_lease_expired"},
+        )
     retried_result = await db.execute(
         text("""
         UPDATE ai_generation_jobs SET state='retry_wait',lease_owner=NULL,lease_expires_at=NULL,

@@ -598,6 +598,7 @@ async def cancellation_check(
             body.fencing_token,
             organization_id=principal.tenant_id,
             workspace_id=principal.workspace_id,
+            allow_cancel_requested=True,
         )
     except PermissionError as exc:
         raise HTTPException(409, str(exc)) from exc
