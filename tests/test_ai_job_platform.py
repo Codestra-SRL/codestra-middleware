@@ -7,7 +7,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import httpx
@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -30,6 +31,28 @@ from app.core import ai_jobs
 from app.core.config import settings
 
 SECRET = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+
+def test_browser_capabilities_resolve_to_governed_profiles():
+    assert ai_jobs.resolve_browser_model_profile("chat") == "fast-chat"
+    assert ai_jobs.resolve_browser_model_profile("coding") == "coding-default"
+    assert ai_console.MessageRequest(content="safe default").task_type == "chat"
+    with pytest.raises(ValueError, match="unsupported_browser_capability"):
+        ai_jobs.resolve_browser_model_profile("coding-large")
+    with pytest.raises(ValidationError):
+        ai_console.MessageRequest(
+            content="attempted escalation",
+            task_type="chat",
+            model_profile="coding-large",
+        )
+
+
+def test_browser_coding_policy_is_role_and_project_bound():
+    source = (Path(__file__).resolve().parents[1] / "app/api/v1/ai_console.py").read_text()
+    assert '{"codestra_ai_developer", "codestra_admin"}' in source
+    assert "coding role required" in source
+    assert "project is not approved" in source
+    assert 'extra="forbid"' in source
 
 
 def test_worker_contract_has_one_canonical_auth_and_no_memory_replay_store():
@@ -315,6 +338,7 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     settings.ai_worker_source_cidrs = "10.40.0.4/32"
     settings.ai_worker_trusted_proxy_cidr = "10.250.241.2/32"
     settings.ai_worker_certificate_serial = "12289"
+    settings.ai_job_project_allowlist = "codestra-ai-console"
     settings.ai_worker_service_id = "qwen-ai-01"
     settings.ai_worker_hmac_key_id = "qwen-ai-01-hmac-20260804-01"
     settings.ai_worker_spiffe_id = "spiffe://codestra.internal/service/qwen-ai-01"
@@ -478,6 +502,33 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
             max_attempts=2,
         )
         assert replay["job_id"] == job["job_id"] and replay["idempotent_replay"]
+        profile = (
+            await db.execute(
+                text("SELECT model_profile FROM ai_generation_jobs WHERE id=:id"),
+                {"id": job["job_id"]},
+            )
+        ).scalar_one()
+        assert profile == "fast-chat"
+        with pytest.raises(ValueError, match="unsupported_browser_capability"):
+            await ai_jobs.create_message_job(
+                db,
+                conversation_id=conversation["conversation_id"],
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                user_id="synthetic-user",
+                content="unknown capability",
+                task_type="arbitrary-profile",
+                project_key=None,
+                idempotency_key="fixture-key-unknown",
+                correlation_id="corr-unknown",
+                max_attempts=2,
+            )
+        null_profiles = (
+            await db.execute(
+                text("SELECT count(*) FROM ai_generation_jobs WHERE model_profile IS NULL")
+            )
+        ).scalar_one()
+        assert null_profiles == 0
         claimed = await ai_jobs.claim(db, "synthetic-worker", 30, "corr-claim")
         assert claimed and claimed["id"] == job["job_id"]
         job_id = claimed["id"]
@@ -567,14 +618,17 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
 
     app = FastAPI()
     app.include_router(ai_console.router)
-    tenant_state = {"organization_id": organization_id}
+    tenant_state = {
+        "organization_id": organization_id,
+        "roles": frozenset({"codestra_ai_user"}),
+    }
 
     def browser_tenant():
         return ai_console.Tenant(
             tenant_state["organization_id"],
             workspace_id,
             "synthetic-user",
-            frozenset({"codestra_ai_user"}),
+            tenant_state["roles"],
         )
 
     async def isolated_session():
@@ -593,6 +647,60 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
         "X-User-ID": "synthetic-user",
         "X-Correlation-ID": "corr-cancel",
     }
+    message_path = f"/api/v1/ai/conversations/{conversation['conversation_id']}/messages"
+    arbitrary = await client.post(
+        message_path,
+        headers={**base_headers, "Idempotency-Key": "browser-arbitrary-profile"},
+        json={"content": "attempt", "task_type": "chat", "model_profile": "coding-large"},
+    )
+    assert arbitrary.status_code == 422
+    coding_without_role = await client.post(
+        message_path,
+        headers={**base_headers, "Idempotency-Key": "browser-coding-role-denied"},
+        json={"content": "attempt", "task_type": "coding", "project_key": "codestra-ai-console"},
+    )
+    assert coding_without_role.status_code == 403
+    tenant_state["roles"] = frozenset({"codestra_ai_user", "codestra_ai_developer"})
+    coding_bad_project = await client.post(
+        message_path,
+        headers={**base_headers, "Idempotency-Key": "browser-project-denied"},
+        json={"content": "attempt", "task_type": "coding", "project_key": "not-approved"},
+    )
+    assert coding_bad_project.status_code == 403
+    coding = await client.post(
+        message_path,
+        headers={**base_headers, "Idempotency-Key": "browser-coding-approved"},
+        json={"content": "approved coding", "task_type": "coding", "project_key": "codestra-ai-console"},
+    )
+    assert coding.status_code == 202
+    default_chat = await client.post(
+        message_path,
+        headers={**base_headers, "Idempotency-Key": "browser-chat-default"},
+        json={"content": "approved chat"},
+    )
+    assert default_chat.status_code == 202
+    async with session_factory() as profile_db:
+        profiles = dict(
+            (
+                await profile_db.execute(
+                    text(
+                        "SELECT id,model_profile FROM ai_generation_jobs "
+                        "WHERE id IN (:coding,:chat)"
+                    ),
+                    {
+                        "coding": coding.json()["job_id"],
+                        "chat": default_chat.json()["job_id"],
+                    },
+                )
+            ).all()
+        )
+    assert profiles[UUID(coding.json()["job_id"])] == "coding-default"
+    assert profiles[UUID(default_chat.json()["job_id"])] == "fast-chat"
+    for queued in (coding.json()["job_id"], default_chat.json()["job_id"]):
+        queued_cancel = await client.post(
+            f"/api/v1/ai/jobs/{queued}/cancel", headers=base_headers
+        )
+        assert queued_cancel.status_code == 202
     cancel = await client.post(
         f"/api/v1/ai/jobs/{third['job_id']}/cancel", headers=base_headers
     )

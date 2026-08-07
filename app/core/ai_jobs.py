@@ -34,6 +34,21 @@ MODEL_RUNTIME_CLASSES = {
     "voice-summary": "single-admission",
     "embedding-default": "unavailable",
 }
+
+BROWSER_CAPABILITY_PROFILES = {
+    "chat": "fast-chat",
+    "coding": "coding-default",
+}
+
+
+def resolve_browser_model_profile(task_type: str) -> str:
+    """Resolve an unprivileged browser capability to a governed worker profile."""
+    model_profile = BROWSER_CAPABILITY_PROFILES.get(task_type)
+    if model_profile is None or model_profile not in MODEL_RUNTIME_CLASSES:
+        raise ValueError("unsupported_browser_capability")
+    return model_profile
+
+
 RUNTIME_CLASS_COMPATIBILITY = {
     "chat-light": frozenset({"chat-light"}),
     "coding-fallback": frozenset({"coding-fallback"}),
@@ -158,6 +173,7 @@ async def create_message_job(
     correlation_id: str,
     max_attempts: int,
 ) -> dict[str, Any]:
+    model_profile = resolve_browser_model_profile(task_type)
     await db.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
         {"key": (f"ai-job:{organization_id}:{workspace_id}:{idempotency_key}")},
@@ -229,9 +245,10 @@ async def create_message_job(
         text("""
         INSERT INTO ai_generation_jobs
           (id, conversation_id, request_message_id, organization_id, workspace_id,
-           requested_by, task_type, project_key, idempotency_key, request_sha256, max_attempts)
+           requested_by, task_type, model_profile, project_key, idempotency_key,
+           request_sha256, max_attempts)
         VALUES (:id, :conversation, :message, :org, :workspace, :user, :task,
-                :project, :key, :hash, :max_attempts)
+                :model_profile, :project, :key, :hash, :max_attempts)
     """),
         {
             "id": job_id,
@@ -241,6 +258,7 @@ async def create_message_job(
             "workspace": workspace_id,
             "user": user_id,
             "task": task_type,
+            "model_profile": model_profile,
             "project": project_key,
             "key": idempotency_key,
             "hash": request_hash,
@@ -255,7 +273,7 @@ async def create_message_job(
         organization_id=organization_id,
         workspace_id=workspace_id,
         job_id=job_id,
-        details={"task_type": task_type},
+        details={"task_type": task_type, "model_profile": model_profile},
     )
     await db.commit()
     return {

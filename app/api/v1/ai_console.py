@@ -124,6 +124,8 @@ async def create_message(conversation_id: UUID, body: MessageRequest,
     except LookupError as exc:
         raise HTTPException(404, "conversation not found") from exc
     except ValueError as exc:
+        if str(exc) == "unsupported_browser_capability":
+            raise HTTPException(422, "unsupported AI capability") from exc
         raise HTTPException(409, "idempotency conflict") from exc
 
 
