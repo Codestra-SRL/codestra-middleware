@@ -134,6 +134,65 @@ async def test_stream_error_event_is_fail_closed() -> None:
             _ = [event async for event in provider.stream(request())]
 
 
+@pytest.mark.asyncio
+async def test_pre_chunk_stream_error_preserves_only_sanitized_diagnostics() -> None:
+    def handler(_value: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text=(
+                'data: {"type":"response.created","response":{"id":"ignored"}}\n\n'
+                'data: {"type":"error","error":{"code":"model_not_found",'
+                '"message":"must not be retained","param":"model"}}\n\n'
+            ),
+            headers={"x-request-id": "req_safe-123"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenAIResponsesProvider(
+            api_key="test-only-key",
+            timeout_seconds=10,
+            max_retries=0,
+            client=client,
+        )
+        with pytest.raises(AIProviderError) as caught:
+            _ = [event async for event in provider.stream(request())]
+
+    assert caught.value.code == "provider_model_not_found"
+    assert caught.value.safe_details() == {
+        "component": "openai-responses",
+        "http_status": 200,
+        "provider_error_code": "model_not_found",
+        "provider_request_id": "req_safe-123",
+    }
+    assert "message" not in repr(caught.value.safe_details())
+
+
+@pytest.mark.asyncio
+async def test_stream_error_rejects_untrusted_diagnostic_values() -> None:
+    def handler(_value: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text='data: {"type":"error","code":"bad code with secret"}\n\n',
+            headers={"x-request-id": "unsafe request id"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenAIResponsesProvider(
+            api_key="test-only-key",
+            timeout_seconds=10,
+            max_retries=0,
+            client=client,
+        )
+        with pytest.raises(AIProviderError) as caught:
+            _ = [event async for event in provider.stream(request())]
+
+    assert caught.value.code == "provider_stream_error"
+    assert caught.value.safe_details() == {
+        "component": "openai-responses",
+        "http_status": 200,
+    }
+
+
 @pytest.mark.parametrize(
     ("status", "code", "retryable"),
     [
