@@ -73,7 +73,7 @@
             {"name":"X-Codestra-Timestamp","value":"={{$json.timestamp}}"},
             {"name":"X-Codestra-Nonce","value":"={{$json.nonce}}"},
             {"name":"X-Codestra-Body-SHA256","value":"=sha256:{{$json.body_hash}}"},
-            {"name":"X-Codestra-Signature","value":"=sha256:{{$json.signature}}"}
+            {"name":"X-Codestra-Signature","value":"=sha256={{$json.signature}}"}
           ]},
           "sendBody": true,
           "contentType": "raw",
