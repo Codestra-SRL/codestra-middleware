@@ -106,12 +106,12 @@ the synthetic result worker was removed. `LIVE_WRITES_ENABLED`,
 ## Validation
 
 ```text
-TESTS=899 passed; 0 skipped (fresh PostgreSQL database at migration head 0035)
-FOCUSED_RUNTIME_TESTS=33 passed; 1 PostgreSQL test skipped in the no-DB run,
-then 4 passed with the disposable PostgreSQL database
+TESTS=879 passed; 20 skipped (final exact-SHA no-DB run)
+FOCUSED_RUNTIME_TESTS=30 passed with the disposable PostgreSQL database
 RUFF=PASS
 MYPY=PASS (153 source files)
-BANDIT=PASS (zero findings after remediation)
+BANDIT=PASS for the governed integration modules; the repository-wide scan has
+six inherited findings in unrelated modules (four MEDIUM, two LOW, zero HIGH)
 PIP_AUDIT=PASS (no known vulnerabilities)
 TRIVY=PASS (candidate image: zero HIGH/CRITICAL vulnerabilities or secrets)
 GITLEAKS=PASS
