@@ -100,6 +100,20 @@ class Settings(BaseSettings):
     ai_default_max_running_per_tenant: int = 5
     ai_daily_token_quota: int = 100000
     ai_global_emergency_limit: int = 0
+    openai_provider_enabled: bool = False
+    openai_worker_service_id: str = "openai-responses-provider"
+    openai_worker_id: str = "codestra-openai-01"
+    openai_api_key_file: str = ""
+    openai_safety_salt_file: str = ""
+    openai_chat_model: str = "gpt-5.6-terra"
+    openai_coding_model: str = "gpt-5.6-sol"
+    openai_chat_reasoning_effort: str = "low"
+    openai_coding_reasoning_effort: str = "medium"
+    openai_request_timeout_seconds: float = 120.0
+    openai_max_retries: int = 2
+    openai_daily_user_token_limit: int = 100000
+    openai_daily_project_token_limit: int = 250000
+    openai_max_estimated_cost_micro_usd: int = 300000
     controller_approval_signing_key_file: str = ""
     controller_workspace_allowlist: str = (
         "/opt/codestra/middleware,/opt/codestra/worktrees"
@@ -344,6 +358,35 @@ class Settings(BaseSettings):
     @property
     def litellm_api_key(self) -> str:
         return self._optional_secret(self.litellm_api_key_file, "LiteLLM API key")
+
+    @property
+    def openai_api_key(self) -> str:
+        return self._protected_secret(self.openai_api_key_file, "OpenAI API key")
+
+    @property
+    def openai_safety_salt(self) -> bytes:
+        value = self._protected_secret(
+            self.openai_safety_salt_file, "OpenAI safety identifier salt"
+        ).encode()
+        if len(value) < 32:
+            raise ValueError("OpenAI safety identifier salt is too short")
+        return value
+
+    @staticmethod
+    def _protected_secret(filename: str, label: str) -> str:
+        path = Path(filename)
+        if (
+            not filename
+            or not path.is_absolute()
+            or path.is_symlink()
+            or not path.is_file()
+            or path.stat().st_mode & 0o077
+        ):
+            raise ValueError(f"{label} secret file is unavailable or unsafe")
+        value = path.read_text().strip()
+        if not value:
+            raise ValueError(f"{label} secret file is empty")
+        return value
 
     @property
     def postiz_api_key(self) -> str:

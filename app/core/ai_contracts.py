@@ -107,7 +107,7 @@ class AIResult(StrictModel):
     status: Literal["SUCCEEDED", "FAILED_RETRYABLE", "FAILED_FINAL", "CANCELLED"]
     result_schema_version: Literal["1.0"]
     model_used: str = Field(min_length=1, max_length=128)
-    provider_used: Literal["litellm", "ollama", "mock"]
+    provider_used: Literal["litellm", "ollama", "openai", "mock"]
     started_at: datetime
     completed_at: datetime
     latency_ms: int = Field(ge=0)
