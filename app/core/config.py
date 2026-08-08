@@ -175,6 +175,10 @@ class Settings(BaseSettings):
     odoo_service_credential_reference: str = ""
     odoo_service_private_key_file: str = ""
     odoo_result_delivery_enabled: bool = False
+    odoo_read_enabled: bool = False
+    odoo_sync_worker_enabled: bool = False
+    odoo_staging_writes_enabled: bool = False
+    odoo_production_writes_enabled: bool = False
     email_dispatch_enabled: bool = False
     sms_dispatch_enabled: bool = False
     allow_live_email: bool = False
@@ -294,6 +298,7 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.postiz_publish_enabled,
+            self.odoo_production_writes_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
