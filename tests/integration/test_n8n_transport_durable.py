@@ -213,6 +213,8 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
             )
             assert result_delivery is not None
             monkeypatch.setattr(settings, "odoo_result_delivery_enabled", True)
+            monkeypatch.setattr(settings, "odoo_staging_writes_enabled", True)
+            monkeypatch.setattr(settings, "environment", "staging")
 
             def odoo_callback(request):
                 submitted = json.loads(request.content)
@@ -220,18 +222,9 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
                     "schema_version": "1.0",
                     "persisted": True,
                     "idempotency_status": "NEW",
-                    "result_inbox_id": "90000001",
                     "result_public_id": submitted["result_public_id"],
-                    "originating_outbox_public_id": submitted[
-                        "originating_outbox_public_id"
-                    ],
-                    "integration_status": "COMPLETED",
-                    "trace_id": "trace-90000001",
-                    "received_at": datetime.now(UTC).isoformat(),
+                    "correlation_id": submitted["correlation_id"],
                 }
-                response_body["response_hash"] = (
-                    f"sha256:{canonical_hash(response_body)}"
-                )
                 return httpx.Response(201, json=response_body)
 
             class SyntheticServiceClient:
@@ -263,7 +256,7 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
                 )
             finally:
                 await callback_client.aclose()
-            assert callback["result_inbox_id"] == "90000001"
+            assert callback["result_public_id"] == str(result_delivery.result_public_id)
             await session.refresh(result_delivery)
             assert result_delivery.status == "DELIVERED"
         await engine.dispose()
