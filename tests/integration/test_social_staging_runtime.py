@@ -10,12 +10,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.social.domain import (
     Capability,
+    JobType,
     NormalizedEvent,
     ProviderName,
     ProviderResult,
     SocialPostStatus,
 )
 from app.social.providers import SocialProviderAdapter, SocialProviderRegistry
+from app.social.production import ProductionCanaryPolicy
 from app.social.sql_repository import SqlSocialRepository
 from app.social.queue import RedisSocialQueue
 from app.workers.social import process_claimed_job
@@ -43,6 +45,10 @@ class CountingPostlyAdapter(SocialProviderAdapter):
     async def create_post(self, post, account_refs, correlation_id):
         self.calls += 1
         return ProviderResult(f"staging-{post.id}", SocialPostStatus.DRAFT)
+
+    async def publish_post(self, post, correlation_id):
+        self.calls += 1
+        return ProviderResult(f"production-{post.id}", SocialPostStatus.PUBLISHED)
 
 
 async def seed_account(session, tenant_id: UUID) -> UUID:
@@ -289,6 +295,205 @@ def test_redis_loss_preserves_and_recovers_canonical_job():
             await queue.enqueue(*recovered)
             assert await redis.llen(queue.queue_key) == 1
         await redis.aclose()
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_production_dry_run_persists_audit_without_publish_job_or_provider_call():
+    async def scenario() -> None:
+        from app.core.config import settings
+
+        engine = create_async_engine(DATABASE_URL)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        tenant_id = uuid4()
+        campaign_id = uuid4()
+        correlation_id = f"production-dry-run-{uuid4()}"
+        adapter = CountingPostlyAdapter()
+        async with factory() as session:
+            await session.execute(
+                text("""INSERT INTO social_campaigns(id,tenant_id,name,status,metadata)
+                VALUES (:id,:tenant,'synthetic canary','DRAFT','{}'::jsonb)"""),
+                {"id": campaign_id, "tenant": tenant_id},
+            )
+            account_id = await seed_account(session, tenant_id)
+            await session.execute(
+                text("""UPDATE social_accounts SET metadata=
+                '{"classification":"PRODUCTION_APPROVED_CANARY"}'::jsonb WHERE id=:account"""),
+                {"account": account_id},
+            )
+            await session.commit()
+            repository = SqlSocialRepository(session)
+            post_id, create_job_id, _ = await repository.create_post_intent(
+                tenant_id=tenant_id,
+                provider=ProviderName.POSTLY,
+                account_ids=(account_id,),
+                content={"text": "approved low-risk informational content"},
+                campaign_id=campaign_id,
+                publish_at=None,
+                metadata={},
+                idempotency_key=f"dry-run-create-{uuid4()}",
+                correlation_id=correlation_id,
+                request_id="production-dry-run",
+            )
+            post = await repository.get_post(post_id)
+            context = await repository.production_publish_context(
+                post, content_approved=True
+            )
+            inventory = await repository.list_accounts(account_id)
+            assert inventory[0]["classification"] == "PRODUCTION_APPROVED_CANARY"
+            assert "provider_account_id" not in inventory[0]
+            assert "metadata" not in inventory[0]
+            policy = ProductionCanaryPolicy(
+                settings.model_copy(
+                    update={
+                        "social_production_mode": True,
+                        "social_integration_enabled": True,
+                        "social_publish_enabled": True,
+                        "social_production_canary_enabled": True,
+                        "social_sql_repository_enabled": True,
+                        "social_worker_enabled": True,
+                        "social_production_backup_gate_verified": True,
+                        "social_production_rollback_gate_verified": True,
+                        "social_production_webhook_gate_verified": True,
+                        "social_production_monitoring_gate_verified": True,
+                        "social_production_canary_account_ids": str(account_id),
+                        "social_production_canary_tenant_ids": str(tenant_id),
+                        "social_production_canary_campaign_ids": str(campaign_id),
+                    }
+                )
+            )
+            policy.validate(context)
+            await repository.audit_production_dry_run(
+                post,
+                context,
+                correlation_id=correlation_id,
+                request_id="production-dry-run",
+                idempotency_key="dry-run-publish-key",
+            )
+            assert (
+                await session.scalar(
+                    text("""SELECT count(*) FROM social_publish_jobs
+                    WHERE social_post_id=:post AND job_type='SOCIAL_POST_PUBLISH'"""),
+                    {"post": post_id},
+                )
+                == 0
+            )
+            assert (
+                await session.scalar(
+                    text("""SELECT count(*) FROM social_audit_events
+                    WHERE social_post_id=:post AND action='PRODUCTION_DRY_RUN_VALIDATED'"""),
+                    {"post": post_id},
+                )
+                == 1
+            )
+            assert adapter.calls == 0
+            assert create_job_id is not None
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_production_canary_idempotency_calls_one_mock_provider(monkeypatch):
+    from app.core.config import settings
+
+    async def scenario() -> None:
+        engine = create_async_engine(DATABASE_URL)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        tenant_id = uuid4()
+        async with factory() as session:
+            account_id = await seed_account(session, tenant_id)
+            await session.execute(
+                text("""UPDATE social_accounts SET metadata=
+                '{"classification":"PRODUCTION_APPROVED_CANARY"}'::jsonb WHERE id=:account"""),
+                {"account": account_id},
+            )
+            await session.commit()
+            repository = SqlSocialRepository(session)
+            post_id, create_job_id, _ = await repository.create_post_intent(
+                tenant_id=tenant_id,
+                provider=ProviderName.POSTLY,
+                account_ids=(account_id,),
+                content={"text": "human-approved synthetic canary"},
+                campaign_id=None,
+                publish_at=None,
+                metadata={},
+                idempotency_key=f"production-create-{uuid4()}",
+                correlation_id="production-idempotency",
+                request_id="production-idempotency",
+            )
+            await session.execute(
+                text("UPDATE social_publish_jobs SET state='completed' WHERE id=:job"),
+                {"job": create_job_id},
+            )
+            await session.commit()
+            post = await repository.get_post(post_id)
+            context = await repository.production_publish_context(
+                post, content_approved=True
+            )
+            key = f"production-publish-{uuid4()}"
+            first = await repository.enqueue_command(
+                post=post,
+                action=JobType.PUBLISH,
+                idempotency_key=key,
+                correlation_id="production-idempotency",
+                request_id="production-idempotency",
+                production_context=context,
+            )
+            second = await repository.enqueue_command(
+                post=post,
+                action=JobType.PUBLISH,
+                idempotency_key=key,
+                correlation_id="production-idempotency",
+                request_id="production-idempotency",
+                production_context=context,
+            )
+            assert first[0] == second[0]
+            assert first[1] is True and second[1] is False
+
+        for name, value in {
+            "social_production_mode": True,
+            "social_integration_enabled": True,
+            "social_publish_enabled": True,
+            "postiz_publish_enabled": True,
+            "postiz_delivery_enabled": True,
+            "social_production_canary_enabled": True,
+            "social_sql_repository_enabled": True,
+            "social_worker_enabled": True,
+            "social_production_backup_gate_verified": True,
+            "social_production_rollback_gate_verified": True,
+            "social_production_webhook_gate_verified": True,
+            "social_production_monitoring_gate_verified": True,
+            "social_production_canary_account_ids": str(account_id),
+        }.items():
+            monkeypatch.setattr(settings, name, value)
+        adapter = CountingPostlyAdapter()
+        registry = SocialProviderRegistry()
+        registry.register(adapter)
+        async with factory() as session:
+            jobs = await SqlSocialRepository(session).claim_jobs(
+                worker_id="postly-social-01", limit=100, lease_seconds=60
+            )
+            own_job = next(item for item in jobs if UUID(str(item["id"])) == first[0])
+            assert await process_claimed_job(session, registry, own_job) == "completed"
+            assert adapter.calls == 1
+            assert (
+                await session.scalar(
+                    text("""SELECT count(*) FROM social_publish_jobs
+                    WHERE social_post_id=:post AND job_type='SOCIAL_POST_PUBLISH'"""),
+                    {"post": post_id},
+                )
+                == 1
+            )
+            assert (
+                await session.scalar(
+                    text("""SELECT count(*) FROM social_audit_events
+                    WHERE social_post_id=:post AND action='POST_PUBLISHED'
+                      AND account_id=:account"""),
+                    {"post": post_id, "account": account_id},
+                )
+                == 1
+            )
         await engine.dispose()
 
     asyncio.run(scenario())

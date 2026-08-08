@@ -18,6 +18,7 @@ from app.social.domain import (
     SocialPostStatus,
 )
 from app.social.providers import SocialError
+from app.social.production import ProductionPublishContext
 
 
 ZERO_UUID = UUID(int=0)
@@ -208,6 +209,26 @@ class SqlSocialRepository:
             updated_at=row["updated_at"],
         )
 
+    async def list_accounts(
+        self, account_id: UUID | None = None
+    ) -> list[dict[str, Any]]:
+        where = "WHERE id=:account_id" if account_id is not None else ""
+        rows = (
+            (
+                await self.session.execute(
+                    text(f"""SELECT id,tenant_id,provider,network,external_profile_name,
+                external_profile_id,connection_state,capabilities,
+                COALESCE(metadata->>'classification','UNKNOWN') classification,last_sync_at,
+                created_at,updated_at FROM social_accounts
+                {where} ORDER BY created_at,id"""),
+                    {"account_id": account_id} if account_id is not None else {},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return [dict(row) for row in rows]
+
     async def update_post(
         self,
         post_id: UUID,
@@ -296,6 +317,75 @@ class SqlSocialRepository:
             )
         return [str(row["provider_account_id"]) for row in rows]
 
+    async def production_publish_context(
+        self, post: SocialPost, *, content_approved: bool
+    ) -> ProductionPublishContext:
+        rows = (
+            (
+                await self.session.execute(
+                    text("""SELECT a.id,a.provider,a.connection_state,a.metadata
+                FROM social_accounts a JOIN social_post_accounts p ON p.social_account_id=a.id
+                WHERE p.social_post_id=:post ORDER BY a.id"""),
+                    {"post": post.id},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        if len(rows) != 1:
+            raise SocialError(
+                "SOCIAL_PRODUCTION_SINGLE_ACCOUNT_REQUIRED",
+                "Production canary requires exactly one account",
+                status_code=403,
+            )
+        row = rows[0]
+        if ProviderName(row["provider"]) is not post.provider:
+            raise SocialError(
+                "SOCIAL_PROVIDER_OWNERSHIP_MISMATCH",
+                "Post and account providers do not match",
+                status_code=409,
+            )
+        return ProductionPublishContext(
+            tenant_id=post.tenant_id,
+            campaign_id=post.campaign_id,
+            account_id=UUID(str(row["id"])),
+            provider=post.provider,
+            classification=str(dict(row["metadata"]).get("classification", "UNKNOWN")),
+            connection_state=str(row["connection_state"]),
+            content_approved=content_approved,
+        )
+
+    async def audit_production_dry_run(
+        self,
+        post: SocialPost,
+        context: ProductionPublishContext,
+        *,
+        correlation_id: str,
+        request_id: str,
+        idempotency_key: str,
+    ) -> None:
+        await self.session.execute(
+            text("""INSERT INTO social_audit_events
+            (id,tenant_id,actor_type,actor_id,action,social_post_id,campaign_id,provider,
+             account_id,correlation_id,request_id,idempotency_key_hash,result,metadata)
+            VALUES (:id,:tenant,'machine','codestra-social-api','PRODUCTION_DRY_RUN_VALIDATED',
+             :post,:campaign,:provider,:account,:correlation,:request,:key_hash,'PASS',
+             CAST(:metadata AS jsonb))"""),
+            {
+                "id": uuid4(),
+                "tenant": post.tenant_id,
+                "post": post.id,
+                "campaign": post.campaign_id,
+                "provider": post.provider.value,
+                "account": context.account_id,
+                "correlation": correlation_id,
+                "request": request_id,
+                "key_hash": hashlib.sha256(idempotency_key.encode()).hexdigest(),
+                "metadata": json.dumps({"dry_run": True}),
+            },
+        )
+        await self.session.commit()
+
     async def enqueue_command(
         self,
         *,
@@ -304,6 +394,7 @@ class SqlSocialRepository:
         idempotency_key: str,
         correlation_id: str,
         request_id: str,
+        production_context: ProductionPublishContext | None = None,
     ) -> tuple[UUID, bool]:
         job_id = uuid4()
         key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
@@ -352,8 +443,10 @@ class SqlSocialRepository:
             return UUID(str(existing["job_id"])), False
         await self.session.execute(
             text("""INSERT INTO social_publish_jobs
-            (id,tenant_id,social_post_id,provider,job_type,state,correlation_id,request_id,idempotency_key)
-            VALUES (:id,:tenant,:post,:provider,:job_type,'queued',:correlation,:request,:key)"""),
+            (id,tenant_id,social_post_id,provider,job_type,state,correlation_id,request_id,idempotency_key,
+             production_canary,production_account_id,content_approved_at)
+            VALUES (:id,:tenant,:post,:provider,:job_type,'queued',:correlation,:request,:key,
+             :production_canary,:production_account,CASE WHEN :content_approved THEN now() END)"""),
             {
                 "id": job_id,
                 "tenant": post.tenant_id,
@@ -363,6 +456,13 @@ class SqlSocialRepository:
                 "correlation": correlation_id,
                 "request": request_id,
                 "key": key_hash,
+                "production_canary": production_context is not None,
+                "production_account": production_context.account_id
+                if production_context
+                else None,
+                "content_approved": bool(
+                    production_context and production_context.content_approved
+                ),
             },
         )
         await self._audit(
@@ -376,6 +476,7 @@ class SqlSocialRepository:
             job_id,
             key_hash,
             "QUEUED",
+            production_context.account_id if production_context else None,
         )
         await self.session.execute(
             text("""INSERT INTO outbox_event(id,topic,payload,correlation_id,status,attempts)
@@ -522,6 +623,29 @@ class SqlSocialRepository:
                 VALUES (:id,:event,'n8n','queued',0) ON CONFLICT DO NOTHING"""),
                 {"id": uuid4(), "event": integration_id},
             )
+        if job.get("production_canary"):
+            await self.session.execute(
+                text("""INSERT INTO social_audit_events
+                (id,tenant_id,actor_type,actor_id,action,social_post_id,provider,account_id,
+                 correlation_id,request_id,job_id,result,metadata)
+                VALUES (:id,:tenant,'machine','postly-social-01','POST_PUBLISHED',:post,
+                 :provider,:account,:correlation,:request,:job,'PUBLISHED',CAST(:metadata AS jsonb))"""),
+                {
+                    "id": uuid4(),
+                    "tenant": job["tenant_id"],
+                    "post": job["social_post_id"],
+                    "provider": job["provider"],
+                    "account": job["production_account_id"],
+                    "correlation": job["correlation_id"],
+                    "request": job["request_id"],
+                    "job": job["id"],
+                    "metadata": json.dumps(
+                        {"provider_post_id": provider_post_id}
+                        if provider_post_id
+                        else {}
+                    ),
+                },
+            )
         await self.session.commit()
         return event_id
 
@@ -534,7 +658,7 @@ class SqlSocialRepository:
         delay_seconds: float,
     ) -> str:
         attempts = int(job["attempt_count"]) + 1
-        unknown = error.code == "SOCIAL_PROVIDER_UNKNOWN_RESULT"
+        unknown = error.unknown_result or error.code == "SOCIAL_PROVIDER_UNKNOWN_RESULT"
         dead = unknown or not error.retryable or attempts >= max_attempts
         state = "dead_letter" if dead else "retry"
         certainty = "UNKNOWN_AFTER_SEND" if unknown else "FAILED_BEFORE_SEND"
@@ -577,6 +701,26 @@ class SqlSocialRepository:
                 "summary": error.safe_message[:512],
             },
         )
+        if job.get("production_canary"):
+            await self.session.execute(
+                text("""INSERT INTO social_audit_events
+                (id,tenant_id,actor_type,actor_id,action,social_post_id,provider,account_id,
+                 correlation_id,request_id,job_id,result,error_code,metadata)
+                VALUES (:id,:tenant,'machine','postly-social-01','POST_FAILED',:post,
+                 :provider,:account,:correlation,:request,:job,:result,:error,'{}'::jsonb)"""),
+                {
+                    "id": uuid4(),
+                    "tenant": job["tenant_id"],
+                    "post": job["social_post_id"],
+                    "provider": job["provider"],
+                    "account": job["production_account_id"],
+                    "correlation": job["correlation_id"],
+                    "request": job["request_id"],
+                    "job": job["id"],
+                    "result": state.upper(),
+                    "error": error.code,
+                },
+            )
         await self.session.commit()
         return state
 
@@ -679,12 +823,13 @@ class SqlSocialRepository:
         job_id: UUID,
         key_hash: str,
         result: str,
+        account_id: UUID | None = None,
     ) -> None:
         await self.session.execute(
             text("""INSERT INTO social_audit_events
-            (id,tenant_id,actor_type,actor_id,action,social_post_id,campaign_id,provider,correlation_id,
+            (id,tenant_id,actor_type,actor_id,action,social_post_id,campaign_id,provider,account_id,correlation_id,
              request_id,job_id,idempotency_key_hash,result,metadata)
-            VALUES (:id,:tenant,'machine','codestra-social-api',:action,:post,:campaign,:provider,:correlation,
+            VALUES (:id,:tenant,'machine','codestra-social-api',:action,:post,:campaign,:provider,:account,:correlation,
              :request,:job,:key_hash,:result,'{}'::jsonb)"""),
             {
                 "id": uuid4(),
@@ -693,6 +838,7 @@ class SqlSocialRepository:
                 "post": post_id,
                 "campaign": campaign_id,
                 "provider": provider.value,
+                "account": account_id,
                 "correlation": correlation_id,
                 "request": request_id,
                 "job": job_id,

@@ -288,8 +288,20 @@ class Settings(BaseSettings):
     social_worker_lease_seconds: int = 60
     social_worker_poll_seconds: float = 1.0
     social_job_max_attempts: int = 5
+    social_production_mode: bool = False
+    social_production_canary_enabled: bool = False
+    social_production_canary_account_ids: str = ""
+    social_production_canary_tenant_ids: str = ""
+    social_production_canary_campaign_ids: str = ""
+    social_production_backup_gate_verified: bool = False
+    social_production_rollback_gate_verified: bool = False
+    social_production_webhook_gate_verified: bool = False
+    social_production_monitoring_gate_verified: bool = False
+    social_automatic_provider_failover_enabled: bool = False
+    social_automatic_dual_publish_enabled: bool = False
     social_webhook_ttl_seconds: int = 300
     postly_webhook_secret: str = ""
+    postly_webhook_secret_file: str = ""
     hootsuite_enabled: bool = False
     hootsuite_client_id_file: str = ""
     hootsuite_client_secret_file: str = ""
@@ -342,12 +354,52 @@ class Settings(BaseSettings):
             self.telephony_command_worker_enabled,
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
-            self.postiz_publish_enabled,
-            self.social_publish_enabled,
             self.social_odoo_write_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
+        social_publish_switches = (
+            self.social_publish_enabled,
+            self.postiz_publish_enabled,
+        )
+        if any(social_publish_switches):
+            if not all(social_publish_switches):
+                raise ValueError("social and provider publish switches must agree")
+            if not all(
+                (
+                    self.social_production_mode,
+                    self.social_integration_enabled,
+                    self.social_production_canary_enabled,
+                    self.social_production_backup_gate_verified,
+                    self.social_production_rollback_gate_verified,
+                    self.social_production_webhook_gate_verified,
+                    self.social_production_monitoring_gate_verified,
+                    self.social_sql_repository_enabled,
+                    self.social_worker_enabled,
+                    self.postiz_delivery_enabled,
+                    self.social_production_canary_account_ids.strip(),
+                )
+            ):
+                raise ValueError(
+                    "production social publishing requires every canary gate"
+                )
+            if not all(
+                (
+                    self.postiz_internal_base_url.strip(),
+                    self.postiz_api_key_file.strip(),
+                    self.postly_webhook_secret_file.strip(),
+                )
+            ):
+                raise ValueError("production Postly secrets and endpoint are required")
+            self.postiz_api_key
+            self.postly_webhook_verification_secret
+        if (
+            self.social_automatic_provider_failover_enabled
+            or self.social_automatic_dual_publish_enabled
+        ):
+            raise ValueError(
+                "automatic provider failover and dual publishing are forbidden"
+            )
         if any(broad_event_switches):
             if not all(broad_event_switches):
                 raise ValueError("broad-event activation requires every canonical gate")
@@ -497,14 +549,17 @@ class Settings(BaseSettings):
     def postiz_api_key(self) -> str:
         if not self.postiz_api_key_file:
             return ""
-        path = Path(self.postiz_api_key_file)
-        if not path.is_absolute() or not path.is_file():
-            raise ValueError("Postiz API key file is unavailable")
-        value = path.read_text().strip()
-        if not value:
-            raise ValueError("Postiz API key file is empty")
+        return self._protected_secret(self.postiz_api_key_file, "Postiz API key")
 
-        return value
+    @property
+    def postly_webhook_verification_secret(self) -> str:
+        if self.postly_webhook_secret_file:
+            return self._protected_secret(
+                self.postly_webhook_secret_file, "Postly webhook"
+            )
+        if self.social_production_mode:
+            return ""
+        return self.postly_webhook_secret
 
     def load_registry_snapshot_key(self) -> bytes:
         path = Path(self.registry_snapshot_signing_key_file)
