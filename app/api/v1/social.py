@@ -12,8 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_session
+from app.integrations.hootsuite.exceptions import HootsuiteError
+from app.integrations.hootsuite.oauth import HootsuiteOAuth, TokenFileStore
 from app.social.adapters import HootsuiteProviderAdapter, PostlyProviderAdapter
 from app.social.domain import Capability, JobType
+from app.social.hootsuite_oauth_state import HootsuiteOAuthStateRepository
 from app.social.providers import SocialError, SocialProviderRegistry
 from app.social.service import SocialPublishingService
 from app.social.sql_repository import SqlSocialRepository
@@ -70,6 +73,32 @@ def _error(exc: SocialError) -> HTTPException:
     return HTTPException(
         exc.status_code,
         {"code": exc.code, "message": exc.safe_message, "retryable": exc.retryable},
+    )
+
+
+def _hootsuite_oauth_error(exc: HootsuiteError | ValueError) -> HTTPException:
+    code = getattr(exc, "code", "not_configured")
+    status = 400 if code == "authentication" else 503
+    public_code = (
+        "SOCIAL_PROVIDER_AUTH_FAILED"
+        if code == "authentication"
+        else "SOCIAL_PROVIDER_NOT_CONFIGURED"
+    )
+    return HTTPException(
+        status,
+        {
+            "code": public_code,
+            "message": "Hootsuite OAuth could not complete safely",
+        },
+    )
+
+
+def _hootsuite_oauth() -> HootsuiteOAuth:
+    return HootsuiteOAuth(
+        settings.hootsuite_client_id,
+        settings.hootsuite_client_secret,
+        settings.hootsuite_redirect_uri,
+        settings.hootsuite_oauth_state_secret,
     )
 
 
@@ -130,6 +159,44 @@ async def provider(
         return result
     except SocialError as exc:
         raise _error(exc) from exc
+
+
+@router.get("/oauth/hootsuite/authorize")
+async def hootsuite_authorize(
+    tenant_reference: str,
+    session: AsyncSession = Depends(get_session),
+    x_codestra_permissions: str | None = Header(None),
+) -> dict[str, str]:
+    """Issue a durable, single-use Hootsuite authorization request."""
+    _require("social.admin", x_codestra_permissions)
+    try:
+        authorization_url = await _hootsuite_oauth().persistent_authorization_url(
+            tenant_reference,
+            HootsuiteOAuthStateRepository(session),
+        )
+        return {"authorization_url": authorization_url}
+    except (HootsuiteError, ValueError) as exc:
+        raise _hootsuite_oauth_error(exc) from exc
+
+
+@router.get("/oauth/hootsuite/callback")
+async def hootsuite_callback(
+    code: str,
+    state: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Consume OAuth state atomically, exchange the code, and store tokens privately."""
+    try:
+        oauth = _hootsuite_oauth()
+        tenant_reference = await oauth.verify_persistent_state(
+            state,
+            HootsuiteOAuthStateRepository(session),
+        )
+        token = await oauth.exchange_code(code)
+        TokenFileStore(settings.hootsuite_token_file).save(token)
+        return {"status": "connected", "tenant_reference": tenant_reference}
+    except (HootsuiteError, ValueError) as exc:
+        raise _hootsuite_oauth_error(exc) from exc
 
 
 @router.get("/accounts")

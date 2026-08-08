@@ -9,7 +9,7 @@ replay is rejected across workers and restarts.
 Required files are `HOOTSUITE_CLIENT_ID_FILE`, `HOOTSUITE_CLIENT_SECRET_FILE`, `HOOTSUITE_OAUTH_STATE_SECRET_FILE`, and `HOOTSUITE_TOKEN_FILE`. No approved developer app or credentials were present during Phase 3; real OAuth remains blocked.
 
 The expected callback is
-`https://middleware.codestra.co/api/v1/social/oauth/hootsuite/callback`. It is a
-planned staging registration target, not an active endpoint in Phase 3A. Activation
-requires approved credentials, a runtime state secret, the PostgreSQL state ledger,
-and a separately controlled staging deployment.
+`https://middleware.codestra.co/api/v1/social/oauth/hootsuite/callback`. The route is
+implemented and fails closed when credentials, state persistence, or token storage
+are unavailable. External activation still requires approved credentials and a
+separately controlled staging deployment.

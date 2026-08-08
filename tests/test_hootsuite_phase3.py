@@ -82,6 +82,35 @@ def test_oauth_state_is_bound_and_tampering_fails(monkeypatch):
         oauth._verify_signature(state + "tampered", max_age_seconds=600)
 
 
+def test_hootsuite_oauth_routes_are_exposed_without_provider_secrets():
+    from app.main import app
+
+    paths = app.openapi()["paths"]
+    assert "/api/v1/social/oauth/hootsuite/authorize" in paths
+    assert "/api/v1/social/oauth/hootsuite/callback" in paths
+    callback = paths["/api/v1/social/oauth/hootsuite/callback"]["get"]
+    parameters = {item["name"]: item for item in callback["parameters"]}
+    assert parameters["code"]["required"] is True
+    assert parameters["state"]["required"] is True
+
+
+def test_oauth_state_database_failure_fails_closed():
+    class FailingRepository:
+        async def persist(self, **kwargs):
+            raise RuntimeError("synthetic database failure")
+
+        async def consume(self, **kwargs):
+            return False
+
+    oauth = HootsuiteOAuth(
+        "client", "secret", "https://callback.invalid", "state-secret"
+    )
+    with pytest.raises(RuntimeError, match="synthetic database failure"):
+        asyncio.run(
+            oauth.persistent_authorization_url("tenant-a", FailingRepository())
+        )
+
+
 def test_oauth_exchange_and_refresh_use_basic_auth():
     calls = []
 
