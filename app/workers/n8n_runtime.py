@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
@@ -77,7 +78,20 @@ async def dispatch_one(
     if registry is None or execution.tenant_id not in registry.tenant_scope:
         await _fail(session, execution, "REGISTRY_DENIED", False)
         return False
-    if not settings.n8n_runtime_base_url.startswith("https://"):
+    target = urlsplit(settings.n8n_runtime_base_url)
+    approved_staging_hosts = {"n8n-webhook-staging", "n8n-runtime-test-double"}
+    target_is_allowed = (target.scheme == "https" and bool(target.hostname)) or (
+        settings.n8n_runtime_environment == "staging"
+        and target.scheme == "http"
+        and target.hostname in approved_staging_hosts
+    )
+    if (
+        not target_is_allowed
+        or target.username
+        or target.password
+        or target.query
+        or target.fragment
+    ):
         await _fail(session, execution, "TARGET_NOT_PRIVATE_HTTPS", False)
         return False
     url = settings.n8n_runtime_base_url.rstrip("/") + registry.webhook_path
