@@ -128,6 +128,7 @@ services:
       - provisioning_private
       - odoo_module_staging
       - codestra_internal_integration
+      - n8n_staging_control
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
@@ -139,6 +140,7 @@ services:
       - /etc/codestra/secrets/middleware-runtime/quarantine-reviewer-key:/run/secrets/quarantine-reviewer-key:ro
       - /etc/codestra/secrets/internal-n8n/middleware-client-secret:/run/secrets/middleware_n8n_client_secret:ro
       - /etc/codestra/secrets/internal-n8n/odoo-results-client-secret:/run/secrets/odoo_results_client_secret:ro
+      - /etc/codestra/secrets/internal-n8n/runtime-hmac:/run/secrets/n8n_runtime_hmac:ro
       - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
     environment:
       <<: *safe-flags
@@ -165,6 +167,8 @@ services:
       ODOO_RESULTS_AUDIENCE: codestra-odoo
       ODOO_RESULTS_SCOPE: odoo.integration.results.write
       ODOO_RESULTS_CA_FILE: /run/secrets/internal_integration_ca
+      N8N_RUNTIME_ENABLED: "true"
+      N8N_RUNTIME_HMAC_SECRET_FILE: /run/secrets/n8n_runtime_hmac
 
   middleware-policy-engine:
     <<: *runtime
@@ -196,6 +200,22 @@ services:
       QUEUE_NAME: middleware.notification.v1
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-notification-worker-database-url:/run/secrets/database_url:ro
+
+  middleware-n8n-runtime-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.n8n_runtime_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-n8n-runtime-worker
+      N8N_RUNTIME_ENABLED: "true"
+      N8N_RUNTIME_BASE_URL: http://webhook:5678
+      N8N_RUNTIME_HMAC_SECRET_FILE: /run/secrets/n8n_runtime_hmac
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/internal-n8n/runtime-hmac:/run/secrets/n8n_runtime_hmac:ro
+    networks:
+      - middleware_backend
+      - n8n_staging_control
 
   middleware-reconciliation-worker:
     <<: *worker
@@ -323,6 +343,9 @@ networks:
   codestra_internal_integration:
     external: true
     name: codestra-internal-integration
+  n8n_staging_control:
+    external: true
+    name: codestra-n8n-middleware-staging-control
 
 secrets:
   redis_url:

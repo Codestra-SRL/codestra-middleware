@@ -111,7 +111,11 @@ async def dispatch_one(
         await _fail(session, execution, "REGISTRY_DENIED", False)
         return False
     target = urlsplit(settings.n8n_runtime_base_url)
-    approved_staging_hosts = {"n8n-webhook-staging", "n8n-runtime-test-double"}
+    approved_staging_hosts = {
+        "webhook",
+        "n8n-webhook-staging",
+        "n8n-runtime-test-double",
+    }
     target_is_allowed = (target.scheme == "https" and bool(target.hostname)) or (
         settings.n8n_runtime_environment == "staging"
         and target.scheme == "http"

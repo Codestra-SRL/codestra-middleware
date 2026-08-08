@@ -24,6 +24,9 @@ from app.core.runtime_redis import (
     runtime_key,
 )
 from app.workers.n8n_runtime import recover_stale_dispatches
+from app.entrypoints.runtime import add_api_runtime
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def dispatch_payload(**overrides):
@@ -178,3 +181,17 @@ async def test_stale_dispatch_recovery_uses_bounded_lease():
     session.commit.assert_awaited_once()
     with pytest.raises(ValueError):
         await recover_stale_dispatches(session, 1)
+
+
+def test_result_callback_is_not_blocked_by_generic_bearer_guard(monkeypatch):
+    app = FastAPI()
+
+    @app.post("/api/v1/n8n-runtime/results")
+    async def callback():
+        return {"reached": True}
+
+    monkeypatch.setattr(settings, "middleware_secret", "fixture-bearer-secret")
+    add_api_runtime(app, "test-service")
+    response = TestClient(app).post("/api/v1/n8n-runtime/results")
+    assert response.status_code == 200
+    assert response.json() == {"reached": True}
