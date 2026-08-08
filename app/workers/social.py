@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.social.adapters import HootsuiteProviderAdapter, PostlyProviderAdapter
 from app.social.domain import JobType, ProviderName
 from app.social.providers import SocialError, SocialProviderRegistry
+from app.social.production import ProductionCanaryPolicy, require_provider_health
 from app.social.queue import RedisSocialQueue, retry_delay
 from app.social.sql_repository import SqlSocialRepository
 from app.social import metrics
@@ -53,6 +54,29 @@ async def process_claimed_job(
                     "Social publishing is disabled",
                     status_code=403,
                 )
+            if settings.social_production_mode:
+                if not job.get("production_canary"):
+                    raise SocialError(
+                        "SOCIAL_PRODUCTION_CANARY_REQUIRED",
+                        "Production publish job is not a canary",
+                        status_code=403,
+                    )
+                production_context = await repository.production_publish_context(
+                    post, content_approved=job.get("content_approved_at") is not None
+                )
+                metrics.production_account_connected.labels(
+                    post.provider.value, "other"
+                ).set(1 if production_context.connection_state == "connected" else 0)
+                if str(production_context.account_id) != str(
+                    job.get("production_account_id")
+                ):
+                    raise SocialError(
+                        "SOCIAL_PRODUCTION_ACCOUNT_CHANGED",
+                        "Production account ownership changed after validation",
+                        status_code=409,
+                    )
+                ProductionCanaryPolicy(settings).validate(production_context)
+                require_provider_health(await adapter.health_check())
             result = await adapter.publish_post(post, job["correlation_id"])
         elif action is JobType.SCHEDULE:
             result = await adapter.schedule_post(post, job["correlation_id"])
@@ -71,6 +95,10 @@ async def process_claimed_job(
         metrics.provider_requests.labels(post.provider.value, "success").inc()
         if action is JobType.PUBLISH:
             metrics.publish_success.labels(post.provider.value, "other").inc()
+            if job.get("production_canary"):
+                metrics.production_publish_success.labels(
+                    post.provider.value, "other"
+                ).inc()
             metrics.publish_duration.labels(post.provider.value, "other").observe(
                 time.monotonic() - started
             )
@@ -82,6 +110,12 @@ async def process_claimed_job(
             metrics.publish_failures.labels(
                 post.provider.value, "other", exc.code
             ).inc()
+            if job.get("production_canary"):
+                metrics.production_publish_failures.labels(
+                    post.provider.value, "other", exc.code
+                ).inc()
+            if exc.unknown_result:
+                metrics.unknown_result.labels(post.provider.value).inc()
         if exc.code == "SOCIAL_PROVIDER_RATE_LIMITED":
             metrics.provider_rate_limits.labels(post.provider.value).inc()
         return await repository.fail_job(

@@ -219,7 +219,7 @@ class PostlyProviderAdapter(SocialProviderAdapter):
         return {"provider_media_id": str(raw.get("id", "")), "status": "UPLOADED"}
 
     async def verify_webhook(self, body: bytes, headers: Mapping[str, str]) -> None:
-        secret = settings.postly_webhook_secret
+        secret = settings.postly_webhook_verification_secret
         if not secret:
             raise SocialError(
                 "SOCIAL_PROVIDER_NOT_CONFIGURED",
