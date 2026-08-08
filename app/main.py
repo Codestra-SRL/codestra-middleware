@@ -1,6 +1,6 @@
 import re
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
@@ -24,6 +24,8 @@ from app.api.v1.recordings import router as recordings_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.internal.ai_jobs import router as internal_ai_jobs_router
 from app.api.v1.ai_console import router as ai_console_router
+from app.api.v1.tts import router as tts_router
+from app.api.v1.tts import validate_readiness as validate_tts_readiness
 from app.api.v1.ai_commands import router as ai_commands_router
 from app.api.v1.webphone import router as webphone_router
 from app.api.v1.integrations import router as integrations_router
@@ -52,6 +54,7 @@ app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(internal_ai_jobs_router)
 app.include_router(ai_console_router)
+app.include_router(tts_router)
 app.include_router(ai_commands_router)
 app.include_router(orders_router)
 app.include_router(ai_router)
@@ -81,17 +84,19 @@ AI_CONSOLE_SELF_AUTHENTICATED_PATHS = (
     ("POST", re.compile(r"^/api/v1/ai/conversations$")),
     (
         "POST",
-        re.compile(
-            r"^/api/v1/ai/conversations/[0-9a-fA-F-]{36}/messages$"
-        ),
+        re.compile(r"^/api/v1/ai/conversations/[0-9a-fA-F-]{36}/messages$"),
     ),
     ("GET", re.compile(r"^/api/v1/ai/jobs/[0-9a-fA-F-]{36}/stream$")),
     ("POST", re.compile(r"^/api/v1/ai/jobs/[0-9a-fA-F-]{36}/cancel$")),
     ("POST", re.compile(r"^/api/v1/ai/commands$")),
     ("GET", re.compile(r"^/api/v1/ai/commands/[0-9a-fA-F-]{36}$")),
     ("GET", re.compile(r"^/api/v1/ai/commands/[0-9a-fA-F-]{36}/result$")),
-    ("POST", re.compile(r"^/api/v1/ai/commands/[0-9a-fA-F-]{36}/(?:cancel|approve|reject)$")),
+    (
+        "POST",
+        re.compile(r"^/api/v1/ai/commands/[0-9a-fA-F-]{36}/(?:cancel|approve|reject)$"),
+    ),
     ("GET", re.compile(r"^/api/v1/ai/(?:capabilities|usage)$")),
+    ("POST", re.compile(r"^/api/v1/ai/tts/stream$")),
 )
 N8N_TRANSITION_PATH = re.compile(
     r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
@@ -158,6 +163,13 @@ async def readyz() -> dict[str, str] | JSONResponse:
         return JSONResponse(
             {"status": "not-ready", "authorization": "offline"}, status_code=503
         )
+    if settings.elevenlabs_provider_enabled:
+        try:
+            validate_tts_readiness()
+        except HTTPException:
+            return JSONResponse(
+                {"status": "not-ready", "tts": "unavailable"}, status_code=503
+            )
     return {"status": "ready", "integration": "outbox-only", "authorization": "online"}
 
 
