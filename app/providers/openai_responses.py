@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator
 
 import httpx
@@ -19,6 +20,19 @@ STATUS_ERROR_CODES = {
     404: "provider_model_not_found",
     429: "provider_rate_limited",
 }
+SAFE_PROVIDER_VALUE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+STREAM_ERROR_CODES = {
+    "invalid_api_key": "provider_authentication_failed",
+    "model_not_found": "provider_model_not_found",
+    "insufficient_quota": "provider_quota_exceeded",
+    "rate_limit_exceeded": "provider_rate_limited",
+}
+
+
+def _safe_provider_value(value: object) -> str | None:
+    if isinstance(value, str) and SAFE_PROVIDER_VALUE.fullmatch(value):
+        return value
+    return None
 
 
 class OpenAIResponsesProvider:
@@ -82,6 +96,7 @@ class OpenAIResponsesProvider:
                     "stream": True,
                 },
             ) as response:
+                request_id = _safe_provider_value(response.headers.get("x-request-id"))
                 if response.status_code >= 400:
                     code = STATUS_ERROR_CODES.get(response.status_code)
                     if code is None:
@@ -93,6 +108,8 @@ class OpenAIResponsesProvider:
                     raise AIProviderError(
                         code,
                         retryable=response.status_code in TRANSIENT_STATUS,
+                        http_status=response.status_code,
+                        request_id=request_id,
                     )
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
@@ -121,7 +138,21 @@ class OpenAIResponsesProvider:
                     elif event_type in {"response.failed", "response.incomplete"}:
                         raise AIProviderError("provider_generation_failed")
                     elif event_type == "error":
-                        raise AIProviderError("provider_stream_error")
+                        error = event.get("error")
+                        raw_code = event.get("code")
+                        if isinstance(error, dict):
+                            raw_code = error.get("code", raw_code)
+                        provider_code = _safe_provider_value(raw_code)
+                        code = STREAM_ERROR_CODES.get(
+                            provider_code or "", "provider_stream_error"
+                        )
+                        raise AIProviderError(
+                            code,
+                            retryable=provider_code == "rate_limit_exceeded",
+                            http_status=response.status_code,
+                            provider_error_code=provider_code,
+                            request_id=request_id,
+                        )
         except httpx.TimeoutException as exc:
             raise AIProviderError("provider_timeout", retryable=True) from exc
         except httpx.TransportError as exc:

@@ -309,7 +309,7 @@ async def cycle(
                 error_code=exc.code,
                 retryable=exc.retryable,
                 correlation_id="openai-provider-cycle",
-                safe_error_details={"component": "openai-responses"},
+                safe_error_details=exc.safe_details(),
             )
         except Exception:
             logger.error("OpenAI job failed code=provider_worker_error")

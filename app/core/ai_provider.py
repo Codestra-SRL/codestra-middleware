@@ -18,10 +18,32 @@ REDACTIONS = (
 
 
 class AIProviderError(RuntimeError):
-    def __init__(self, code: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        retryable: bool = False,
+        http_status: int | None = None,
+        provider_error_code: str | None = None,
+        request_id: str | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.retryable = retryable
+        self.http_status = http_status
+        self.provider_error_code = provider_error_code
+        self.request_id = request_id
+
+    def safe_details(self) -> dict[str, str | int]:
+        """Return bounded provider metadata without messages or request content."""
+        details: dict[str, str | int] = {"component": "openai-responses"}
+        if self.http_status is not None:
+            details["http_status"] = self.http_status
+        if self.provider_error_code is not None:
+            details["provider_error_code"] = self.provider_error_code
+        if self.request_id is not None:
+            details["provider_request_id"] = self.request_id
+        return details
 
 
 @dataclass(frozen=True, slots=True)
