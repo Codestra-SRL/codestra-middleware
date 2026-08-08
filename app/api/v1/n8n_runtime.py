@@ -23,12 +23,14 @@ from app.core.n8n_runtime import (
     verify_fresh,
     verify_runtime,
 )
+from app.adapters.odoo.results import approved_runtime_binding
 from app.db.models import (
     AuditEvent,
     N8nRuntimeExecution,
     N8nRuntimeNonce,
     N8nRuntimeResult,
     N8nWorkflowRegistry,
+    OdooResultDelivery,
 )
 from app.db.session import get_session
 from app.metrics import N8N_DISPATCH, N8N_RESULT, N8N_RESULT_FAILURE
@@ -248,18 +250,42 @@ async def result_callback(
         ExecutionStatus.DEAD_LETTER,
     }:
         execution.completed_at = datetime.now(UTC)
-    db.add(
-        N8nRuntimeResult(
-            result_id=uuid4(),
-            execution_id=execution.execution_id,
-            tenant_id=execution.tenant_id,
-            workflow_code=execution.workflow_code,
-            result_hash=result_hash,
-            status=mapped,
-            result_json=body.model_dump(mode="json"),
-            occurred_at=body.occurred_at,
-        )
+    runtime_result = N8nRuntimeResult(
+        result_id=uuid4(),
+        execution_id=execution.execution_id,
+        tenant_id=execution.tenant_id,
+        workflow_code=execution.workflow_code,
+        result_hash=result_hash,
+        status=mapped,
+        result_json=body.model_dump(mode="json"),
+        occurred_at=body.occurred_at,
     )
+    db.add(runtime_result)
+    synthetic_binding = approved_runtime_binding(execution, runtime_result)
+    if mapped == ExecutionStatus.COMPLETED and synthetic_binding is not None:
+        db.add(
+            OdooResultDelivery(
+                runtime_result_id=runtime_result.result_id,
+                originating_outbox_public_id=synthetic_binding[
+                    "originating_outbox_public_id"
+                ],
+                request_hash=result_hash,
+                status="PENDING",
+            )
+        )
+        db.add(
+            AuditEvent(
+                action="n8n.runtime.odoo_result_queued",
+                subject=str(runtime_result.result_id),
+                correlation_id=execution.correlation_id,
+                decision="allowlisted_synthetic",
+                redacted_payload={
+                    "tenant_id": execution.tenant_id,
+                    "workflow_code": execution.workflow_code,
+                    "result_hash": result_hash,
+                },
+            )
+        )
     db.add(
         AuditEvent(
             action="n8n.runtime.result",

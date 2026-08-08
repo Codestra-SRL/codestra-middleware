@@ -621,10 +621,16 @@ class OdooResultDelivery(Base):
     result_delivery_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    acknowledgement_id: Mapped[UUID] = mapped_column(
+    acknowledgement_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("n8n_acknowledgement.acknowledgement_id"),
-        nullable=False,
+        nullable=True,
+        unique=True,
+    )
+    runtime_result_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("n8n_runtime_result.result_id", ondelete="RESTRICT"),
+        nullable=True,
         unique=True,
     )
     result_public_id: Mapped[UUID] = mapped_column(

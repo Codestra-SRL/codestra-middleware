@@ -1,6 +1,10 @@
 """Durable Odoo result delivery worker."""
 
-from app.adapters.odoo.results import claim_result_delivery, deliver_result
+from app.adapters.odoo.results import (
+    claim_result_delivery,
+    deliver_result,
+    recover_stale_result_deliveries,
+)
 from app.db.session import SessionFactory
 from app.entrypoints.runtime import run_worker
 
@@ -10,6 +14,7 @@ QUEUE = "odoo-results"
 
 async def cycle() -> dict[str, object]:
     async with SessionFactory() as session:
+        await recover_stale_result_deliveries(session)
         item = await claim_result_delivery(session)
         if item is None:
             return {"claimed": 0}

@@ -222,16 +222,8 @@ def test_durable_registration_acknowledgement_and_odoo_result(monkeypatch):
                     "idempotency_status": "NEW",
                     "result_inbox_id": "90000001",
                     "result_public_id": submitted["result_public_id"],
-                    "originating_outbox_public_id": submitted[
-                        "originating_outbox_public_id"
-                    ],
-                    "integration_status": "COMPLETED",
-                    "trace_id": "trace-90000001",
-                    "received_at": datetime.now(UTC).isoformat(),
+                    "correlation_id": submitted["correlation_id"],
                 }
-                response_body["response_hash"] = (
-                    f"sha256:{canonical_hash(response_body)}"
-                )
                 return httpx.Response(201, json=response_body)
 
             class SyntheticServiceClient:

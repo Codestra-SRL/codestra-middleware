@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import UTC, datetime
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -11,7 +11,7 @@ from app.core.endpoint_registry import (
     ResolutionRequest,
     ResolvedEndpoint,
 )
-from app.core.token_manager import TokenManager
+from app.core.token_manager import ClientSecretTokenManager, TokenManager
 
 
 def canonical_json(value: Any) -> bytes:
@@ -22,7 +22,7 @@ class CommonServiceClient:
     def __init__(
         self,
         resolver: RegistryResolver,
-        token_manager: TokenManager,
+        token_manager: TokenManager | ClientSecretTokenManager,
         *,
         token_endpoint_key: ResolutionRequest,
         transport: httpx.AsyncBaseTransport | None = None,
@@ -96,7 +96,7 @@ class CommonServiceClient:
             "X-Codestra-Request-ID": request_id,
             "X-Codestra-Correlation-ID": correlation_id,
             "X-Codestra-Causation-ID": causation_id,
-            "X-Codestra-Timestamp": datetime.now(UTC).isoformat(),
+            "X-Codestra-Timestamp": str(int(time.time())),
             "X-Codestra-Nonce": str(uuid4()),
             "X-Codestra-Body-SHA256": hashlib.sha256(body).hexdigest(),
             "traceparent": traceparent,

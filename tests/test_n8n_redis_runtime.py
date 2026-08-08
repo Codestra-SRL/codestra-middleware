@@ -6,6 +6,8 @@ import pytest
 from redis.exceptions import ConnectionError
 
 from app.core.config import settings
+from app.adapters.odoo.results import approved_runtime_binding, _runtime_result_body
+from app.db.models import N8nRuntimeExecution, N8nRuntimeResult, OdooResultDelivery
 from app.core.n8n_runtime import (
     DispatchRequest,
     ResultContract,
@@ -203,3 +205,123 @@ def test_result_callback_is_not_blocked_by_generic_bearer_guard(monkeypatch):
     response = TestClient(app).post("/api/v1/n8n-runtime/results")
     assert response.status_code == 200
     assert response.json() == {"reached": True}
+
+
+def synthetic_execution(**overrides):
+    values = {
+        "execution_id": "11111111-1111-1111-1111-111111111111",
+        "tenant_id": "TEST_SYN_TENANT",
+        "event_id": "TEST_SYN_EVENT_001",
+        "event_type": "test.synthetic.requested",
+        "source_event_id": "TEST_SYN_SOURCE_001",
+        "workflow_code": "TEST_SYN_ROUTER",
+        "workflow_version": "1",
+        "correlation_id": "TEST_SYN_CORRELATION_001",
+        "causation_id": "TEST_SYN_CAUSATION_001",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "idempotency_key_hash": "a" * 64,
+        "payload_hash": "b" * 64,
+        "payload_json": {
+            "synthetic": True,
+            "odoo_model": "res.users",
+            "odoo_record_id": 1,
+        },
+        "status": "COMPLETED",
+        "timeout_at": datetime.now(UTC),
+    }
+    values.update(overrides)
+    return N8nRuntimeExecution(**values)
+
+
+def test_synthetic_odoo_mapping_is_exact_and_fail_closed(monkeypatch):
+    monkeypatch.setattr(settings, "environment", "staging")
+    monkeypatch.setattr(settings, "test_syn_odoo_result_delivery_enabled", True)
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_event_type", "test.synthetic.requested"
+    )
+    monkeypatch.setattr(settings, "test_syn_odoo_event_id", "TEST_SYN_EVENT_001")
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_correlation_id", "TEST_SYN_CORRELATION_001"
+    )
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_organization_public_id", "ORG-TEST-SYN"
+    )
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_business_unit_public_id", "BU-TEST-SYN"
+    )
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_campaign_public_id", "CAMPAIGN-TEST-SYN"
+    )
+    monkeypatch.setattr(settings, "test_syn_odoo_outbox_public_id", "OUTBOX-TEST-SYN")
+    execution = synthetic_execution()
+    assert approved_runtime_binding(execution) == {
+        "organization_public_id": "ORG-TEST-SYN",
+        "business_unit_public_id": "BU-TEST-SYN",
+        "campaign_public_id": "CAMPAIGN-TEST-SYN",
+        "originating_outbox_public_id": "OUTBOX-TEST-SYN",
+    }
+    assert approved_runtime_binding(execution) is not None
+    for field, value in (
+        ("tenant_id", "OTHER_TENANT"),
+        ("workflow_code", "UNREGISTERED_WORKFLOW"),
+        ("event_type", "test.synthetic.unapproved"),
+    ):
+        assert approved_runtime_binding(synthetic_execution(**{field: value})) is None
+    monkeypatch.setattr(settings, "test_syn_odoo_result_delivery_enabled", False)
+    assert approved_runtime_binding(execution) is None
+
+
+def test_synthetic_odoo_payload_is_middleware_owned(monkeypatch):
+    monkeypatch.setattr(settings, "environment", "staging")
+    monkeypatch.setattr(settings, "test_syn_odoo_result_delivery_enabled", True)
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_event_type", "test.synthetic.requested"
+    )
+    monkeypatch.setattr(settings, "test_syn_odoo_event_id", "TEST_SYN_EVENT_001")
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_correlation_id", "TEST_SYN_CORRELATION_001"
+    )
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_organization_public_id", "ORG-TEST-SYN"
+    )
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_business_unit_public_id", "BU-TEST-SYN"
+    )
+    monkeypatch.setattr(
+        settings, "test_syn_odoo_campaign_public_id", "CAMPAIGN-TEST-SYN"
+    )
+    monkeypatch.setattr(settings, "test_syn_odoo_outbox_public_id", "OUTBOX-TEST-SYN")
+    execution = synthetic_execution()
+    runtime_result = N8nRuntimeResult(
+        result_id="22222222-2222-2222-2222-222222222222",
+        execution_id=execution.execution_id,
+        tenant_id=execution.tenant_id,
+        workflow_code=execution.workflow_code,
+        result_hash="c" * 64,
+        status="COMPLETED",
+        result_json={
+            "schema_version": "codestra.n8n.result.v1",
+            "status": "completed",
+            "result": {"synthetic": True, "event_id": execution.event_id},
+        },
+        occurred_at=datetime.now(UTC),
+        persisted_at=datetime.now(UTC),
+    )
+    delivery = OdooResultDelivery(
+        result_delivery_id="33333333-3333-3333-3333-333333333333",
+        runtime_result_id=runtime_result.result_id,
+        result_public_id="44444444-4444-4444-4444-444444444444",
+        originating_outbox_public_id="OUTBOX-TEST-SYN",
+        request_hash="d" * 64,
+        status="PENDING",
+    )
+    binding = approved_runtime_binding(execution, runtime_result)
+    assert binding is not None
+    body = _runtime_result_body(delivery, runtime_result, execution, binding)
+    assert body["result_classification"] == "TEST_SYN_RUNTIME_COMPLETED"
+    assert body["payload"] == {"summary": "TEST_SYN governed runtime completed"}
+    assert "odoo_model" not in body
+    assert "odoo_record_id" not in body
+
+    runtime_result.result_json["result"]["odoo_model"] = "res.users"
+    assert approved_runtime_binding(execution, runtime_result) is None
