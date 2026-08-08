@@ -21,12 +21,14 @@ class SocialError(Exception):
         *,
         retryable: bool = False,
         status_code: int = 400,
+        unknown_result: bool = False,
     ):
         super().__init__(message)
         self.code = code
         self.safe_message = message
         self.retryable = retryable
         self.status_code = status_code
+        self.unknown_result = unknown_result
 
 
 class SocialProviderAdapter(ABC):

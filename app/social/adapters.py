@@ -62,6 +62,7 @@ def map_postiz_error(exc: PostizError) -> SocialError:
         "authentication": ("SOCIAL_PROVIDER_AUTH_FAILED", 502),
         "rate_limit": ("SOCIAL_PROVIDER_RATE_LIMITED", 503),
         "temporary": ("SOCIAL_PROVIDER_UNAVAILABLE", 503),
+        "unknown_result": ("SOCIAL_PROVIDER_UNKNOWN_RESULT", 503),
     }
     code, status = mappings.get(exc.code, ("SOCIAL_PUBLISH_FAILED", 502))
     return SocialError(
@@ -69,6 +70,7 @@ def map_postiz_error(exc: PostizError) -> SocialError:
         "Social provider request failed",
         retryable=exc.retryable,
         status_code=status,
+        unknown_result=exc.unknown_result,
     )
 
 

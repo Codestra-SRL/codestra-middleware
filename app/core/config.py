@@ -243,6 +243,13 @@ class Settings(BaseSettings):
     social_odoo_sync_enabled: bool = False
     social_odoo_write_enabled: bool = False
     social_analytics_sync_enabled: bool = False
+    social_sql_repository_enabled: bool = False
+    social_worker_enabled: bool = False
+    social_worker_id: str = "postly-social-01"
+    social_worker_concurrency: int = 1
+    social_worker_lease_seconds: int = 60
+    social_worker_poll_seconds: float = 1.0
+    social_job_max_attempts: int = 5
     social_webhook_ttl_seconds: int = 300
     postly_webhook_secret: str = ""
     hootsuite_enabled: bool = False
@@ -266,6 +273,10 @@ class Settings(BaseSettings):
     lead_automation_hmac_secret: str = ""
 
     def validate_safety(self) -> None:
+        if self.social_worker_concurrency != 1:
+            raise ValueError(
+                "social worker concurrency must remain 1 in controlled staging"
+            )
         broad_event_switches = (
             self.send_events,
             self.broad_event_delivery_enabled,

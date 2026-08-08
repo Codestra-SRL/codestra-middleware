@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.db.session import get_session
 from app.social.adapters import HootsuiteProviderAdapter, PostlyProviderAdapter
 from app.social.domain import Capability, JobType
 from app.social.providers import SocialError, SocialProviderRegistry
 from app.social.service import SocialPublishingService
+from app.social.sql_repository import SqlSocialRepository
+from app.social import metrics
 
 
 class StrictModel(BaseModel):
@@ -178,12 +184,46 @@ async def create_post(
     body: CreateSocialPost,
     request: Request,
     response: Response,
+    session: AsyncSession = Depends(get_session),
     idempotency_key: str = Header(min_length=1, max_length=255),
     x_codestra_permissions: str | None = Header(None),
 ) -> dict[str, Any]:
     _require("social.write", x_codestra_permissions)
     correlation_id, request_id = _ids(request)
     try:
+        if settings.social_sql_repository_enabled:
+            if not settings.social_integration_enabled:
+                raise SocialError(
+                    "SOCIAL_PROVIDER_DISABLED",
+                    "Social integration is disabled",
+                    status_code=503,
+                )
+            provider_name = service.resolve_provider()
+            registry.require(provider_name, Capability.POST_CREATE)
+            repository = SqlSocialRepository(session)
+            post_id, job_id, created = await repository.create_post_intent(
+                tenant_id=body.tenant_id,
+                provider=provider_name,
+                account_ids=tuple(body.accounts),
+                content=body.content.model_dump(mode="json"),
+                campaign_id=body.campaign_id,
+                publish_at=body.schedule.publish_at if body.schedule else None,
+                metadata=body.metadata,
+                idempotency_key=idempotency_key,
+                correlation_id=correlation_id,
+                request_id=request_id,
+                post_id=body.id,
+            )
+            post = await repository.get_post(post_id)
+            metrics.publish_requests.labels(
+                provider_name.value, "other", "queued"
+            ).inc()
+            response.headers["X-Correlation-ID"] = correlation_id
+            return {
+                "post": _post(post),
+                "job_id": job_id,
+                "idempotent_replay": not created,
+            }
         post, job, created = await service.create_post(
             tenant_id=body.tenant_id,
             account_ids=tuple(body.accounts),
@@ -204,12 +244,16 @@ async def create_post(
 
 @router.get("/posts/{post_id}")
 async def get_post(
-    post_id: UUID, x_codestra_permissions: str | None = Header(None)
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    x_codestra_permissions: str | None = Header(None),
 ) -> dict[str, Any]:
     _require("social.read", x_codestra_permissions)
     try:
+        if settings.social_sql_repository_enabled:
+            return _post(await SqlSocialRepository(session).get_post(post_id))
         return _post(service.repository.posts[post_id])
-    except KeyError as exc:
+    except (KeyError, SocialError) as exc:
         raise HTTPException(
             404,
             {"code": "SOCIAL_POST_NOT_FOUND", "message": "Social post was not found"},
@@ -220,9 +264,27 @@ async def get_post(
 async def update_post(
     post_id: UUID,
     body: UpdateSocialPost,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
     x_codestra_permissions: str | None = Header(None),
 ) -> dict[str, Any]:
     _require("social.write", x_codestra_permissions)
+    if settings.social_sql_repository_enabled:
+        correlation_id, request_id = _ids(request)
+        try:
+            return _post(
+                await SqlSocialRepository(session).update_post(
+                    post_id,
+                    content=body.content.model_dump(mode="json")
+                    if body.content is not None
+                    else None,
+                    metadata=body.metadata,
+                    correlation_id=correlation_id,
+                    request_id=request_id,
+                )
+            )
+        except SocialError as exc:
+            raise _error(exc) from exc
     try:
         post = service.repository.posts[post_id]
     except KeyError as exc:
@@ -307,10 +369,46 @@ async def _command(
     idempotency_key: str,
     permission: str,
     supplied: str | None,
+    session: AsyncSession,
 ) -> dict[str, Any]:
     _require(permission, supplied)
     correlation_id, request_id = _ids(request)
     try:
+        if settings.social_sql_repository_enabled:
+            if not settings.social_integration_enabled:
+                raise SocialError(
+                    "SOCIAL_PROVIDER_DISABLED",
+                    "Social integration is disabled",
+                    status_code=503,
+                )
+            repository = SqlSocialRepository(session)
+            post = await repository.get_post(post_id)
+            capability = {
+                JobType.PUBLISH: Capability.POST_PUBLISH,
+                JobType.SCHEDULE: Capability.POST_SCHEDULE,
+                JobType.CANCEL: Capability.POST_CANCEL,
+                JobType.DELETE: Capability.POST_DELETE,
+            }[action]
+            registry.require(post.provider, capability)
+            if action is JobType.PUBLISH and not settings.social_publish_enabled:
+                raise SocialError(
+                    "SOCIAL_PROVIDER_DISABLED",
+                    "Social publishing is disabled",
+                    status_code=403,
+                )
+            job_id, created = await repository.enqueue_command(
+                post=post,
+                action=action,
+                idempotency_key=idempotency_key,
+                correlation_id=correlation_id,
+                request_id=request_id,
+            )
+            return {
+                "post_id": post_id,
+                "job_id": job_id,
+                "status": "QUEUED",
+                "idempotent_replay": not created,
+            }
         job, created = await service.command(
             post_id, action, idempotency_key, correlation_id, request_id
         )
@@ -328,6 +426,7 @@ async def _command(
 async def schedule(
     post_id: UUID,
     request: Request,
+    session: AsyncSession = Depends(get_session),
     idempotency_key: str = Header(min_length=1, max_length=255),
     x_codestra_permissions: str | None = Header(None),
 ) -> dict[str, Any]:
@@ -338,6 +437,7 @@ async def schedule(
         idempotency_key,
         "social.schedule",
         x_codestra_permissions,
+        session,
     )
 
 
@@ -345,6 +445,7 @@ async def schedule(
 async def publish(
     post_id: UUID,
     request: Request,
+    session: AsyncSession = Depends(get_session),
     idempotency_key: str = Header(min_length=1, max_length=255),
     x_codestra_permissions: str | None = Header(None),
 ) -> dict[str, Any]:
@@ -355,6 +456,7 @@ async def publish(
         idempotency_key,
         "social.publish",
         x_codestra_permissions,
+        session,
     )
 
 
@@ -362,6 +464,7 @@ async def publish(
 async def cancel(
     post_id: UUID,
     request: Request,
+    session: AsyncSession = Depends(get_session),
     idempotency_key: str = Header(min_length=1, max_length=255),
     x_codestra_permissions: str | None = Header(None),
 ) -> dict[str, Any]:
@@ -372,6 +475,7 @@ async def cancel(
         idempotency_key,
         "social.cancel",
         x_codestra_permissions,
+        session,
     )
 
 
@@ -379,6 +483,7 @@ async def cancel(
 async def delete(
     post_id: UUID,
     request: Request,
+    session: AsyncSession = Depends(get_session),
     idempotency_key: str = Header(min_length=1, max_length=255),
     x_codestra_permissions: str | None = Header(None),
 ) -> dict[str, Any]:
@@ -389,16 +494,22 @@ async def delete(
         idempotency_key,
         "social.delete",
         x_codestra_permissions,
+        session,
     )
 
 
 @router.post("/webhooks/{provider}", status_code=202)
-async def webhook(provider: str, request: Request) -> dict[str, Any]:
+async def webhook(
+    provider: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
     body = await request.body()
     correlation_id, _ = _ids(request)
     try:
         adapter = registry.require(provider, capability=Capability.WEBHOOK_EVENTS)
         await adapter.verify_webhook(body, request.headers)
+        metrics.webhooks_received.labels(provider, "verified").inc()
         payload = json.loads(body)
         event_id = str(payload.get("id", ""))
         if not event_id:
@@ -407,10 +518,25 @@ async def webhook(provider: str, request: Request) -> dict[str, Any]:
                 "Webhook event ID is required",
                 status_code=422,
             )
-        if event_id in service.repository.webhook_ids:
+        if (
+            not settings.social_sql_repository_enabled
+            and event_id in service.repository.webhook_ids
+        ):
             return {"accepted": True, "duplicate": True}
         event = await adapter.normalize_webhook(payload, correlation_id)
-        service.repository.webhook_ids.add(event_id)
+        if settings.social_sql_repository_enabled:
+            created = await SqlSocialRepository(session).persist_webhook(
+                provider=event.provider,
+                provider_event_id=event_id,
+                payload_hash=hashlib.sha256(body).hexdigest(),
+                correlation_id=correlation_id,
+                event=event,
+                safe_payload=event.payload,
+            )
+            if not created:
+                return {"accepted": True, "duplicate": True}
+        else:
+            service.repository.webhook_ids.add(event_id)
         return {
             "accepted": True,
             "duplicate": False,
@@ -420,7 +546,9 @@ async def webhook(provider: str, request: Request) -> dict[str, Any]:
         }
     except (SocialError, json.JSONDecodeError) as exc:
         if isinstance(exc, SocialError):
+            metrics.webhooks_rejected.labels(provider, exc.code).inc()
             raise _error(exc) from exc
+        metrics.webhooks_rejected.labels(provider, "malformed_json").inc()
         raise HTTPException(
             422,
             {"code": "SOCIAL_WEBHOOK_INVALID", "message": "Webhook payload is invalid"},
