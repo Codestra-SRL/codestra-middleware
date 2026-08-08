@@ -367,15 +367,16 @@ class Settings(BaseSettings):
 
     @property
     def openai_safety_salt(self) -> bytes:
-        value = self._protected_secret(
+        path = self._protected_secret_path(
             self.openai_safety_salt_file, "OpenAI safety identifier salt"
-        ).encode()
+        )
+        value = path.read_bytes()
         if len(value) < 32:
             raise ValueError("OpenAI safety identifier salt is too short")
         return value
 
     @staticmethod
-    def _protected_secret(filename: str, label: str) -> str:
+    def _protected_secret_path(filename: str, label: str) -> Path:
         path = Path(filename)
         if (
             not filename
@@ -385,6 +386,11 @@ class Settings(BaseSettings):
             or path.stat().st_mode & 0o077
         ):
             raise ValueError(f"{label} secret file is unavailable or unsafe")
+        return path
+
+    @classmethod
+    def _protected_secret(cls, filename: str, label: str) -> str:
+        path = cls._protected_secret_path(filename, label)
         value = path.read_text().strip()
         if not value:
             raise ValueError(f"{label} secret file is empty")

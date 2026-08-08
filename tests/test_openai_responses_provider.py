@@ -31,6 +31,7 @@ async def test_responses_stream_is_store_false_and_incremental() -> None:
         return httpx.Response(
             200,
             text=(
+                'data: {"type":"response.created","response":{"id":"synthetic"}}\n\n'
                 'data: {"type":"response.output_text.delta","delta":"Codestra "}\n\n'
                 'data: {"type":"response.output_text.delta","delta":"AI"}\n\n'
                 'data: {"type":"response.completed","response":{"usage":'
@@ -115,6 +116,52 @@ async def test_stream_failure_event_is_fail_closed() -> None:
         )
         with pytest.raises(AIProviderError, match="provider_generation_failed"):
             _ = [event async for event in provider.stream(request())]
+
+
+@pytest.mark.asyncio
+async def test_stream_error_event_is_fail_closed() -> None:
+    def handler(_value: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text='data: {"type":"error"}\n\n')
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenAIResponsesProvider(
+            api_key="test-only-key",
+            timeout_seconds=10,
+            max_retries=0,
+            client=client,
+        )
+        with pytest.raises(AIProviderError, match="provider_stream_error"):
+            _ = [event async for event in provider.stream(request())]
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "retryable"),
+    [
+        (400, "provider_bad_request", False),
+        (401, "provider_authentication_failed", False),
+        (403, "provider_permission_denied", False),
+        (404, "provider_model_not_found", False),
+        (429, "provider_rate_limited", True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_http_errors_map_to_governed_codes(
+    status: int, code: str, retryable: bool
+) -> None:
+    def handler(_value: httpx.Request) -> httpx.Response:
+        return httpx.Response(status)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenAIResponsesProvider(
+            api_key="test-only-key",
+            timeout_seconds=10,
+            max_retries=0,
+            client=client,
+        )
+        with pytest.raises(AIProviderError) as caught:
+            _ = [event async for event in provider.stream(request())]
+    assert caught.value.code == code
+    assert caught.value.retryable is retryable
 
 
 @pytest.mark.asyncio

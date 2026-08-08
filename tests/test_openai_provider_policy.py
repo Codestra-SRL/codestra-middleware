@@ -15,7 +15,9 @@ def test_models_reasoning_and_cost_are_explicit_configuration(monkeypatch) -> No
     monkeypatch.setattr(openai_jobs.settings, "openai_chat_model", "gpt-5.6-terra")
     monkeypatch.setattr(openai_jobs.settings, "openai_coding_model", "gpt-5.6-sol")
     monkeypatch.setattr(openai_jobs.settings, "openai_chat_reasoning_effort", "low")
-    monkeypatch.setattr(openai_jobs.settings, "openai_coding_reasoning_effort", "medium")
+    monkeypatch.setattr(
+        openai_jobs.settings, "openai_coding_reasoning_effort", "medium"
+    )
 
     class Command:
         class Type:
@@ -48,6 +50,17 @@ def test_openai_secrets_require_root_style_permissions(tmp_path: Path) -> None:
     key.chmod(0o644)
     with pytest.raises(ValueError, match="unsafe"):
         _ = configured.openai_api_key
+
+
+def test_openai_safety_salt_accepts_binary_entropy_without_text_decoding(
+    tmp_path: Path,
+) -> None:
+    salt = tmp_path / "binary-safety-salt"
+    binary_entropy = bytes(range(32))
+    salt.write_bytes(binary_entropy)
+    salt.chmod(0o400)
+    configured = Settings(openai_safety_salt_file=str(salt))
+    assert configured.openai_safety_salt == binary_entropy
 
 
 def test_provider_worker_is_disabled_by_default_and_has_no_tools() -> None:
