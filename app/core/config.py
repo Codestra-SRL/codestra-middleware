@@ -234,6 +234,21 @@ class Settings(BaseSettings):
     postiz_publish_enabled: bool = False
     postiz_media_upload_enabled: bool = False
     postiz_analytics_enabled: bool = False
+    social_integration_enabled: bool = False
+    social_publish_enabled: bool = False
+    social_provider: str = "disabled"
+    social_provider_mode: str = "single"
+    social_provider_migration_mode: str = "disabled"
+    social_n8n_events_enabled: bool = False
+    social_odoo_sync_enabled: bool = False
+    social_odoo_write_enabled: bool = False
+    social_analytics_sync_enabled: bool = False
+    social_webhook_ttl_seconds: int = 300
+    postly_webhook_secret: str = ""
+    hootsuite_enabled: bool = False
+    hootsuite_client_id_file: str = ""
+    hootsuite_client_secret_file: str = ""
+    hootsuite_redirect_uri: str = ""
     pjsip_provisioning_enabled: bool = False
     webphone_session_issuer_enabled: bool = False
     telephony_reconciliation_enabled: bool = False
@@ -279,6 +294,8 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.postiz_publish_enabled,
+            self.social_publish_enabled,
+            self.social_odoo_write_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
