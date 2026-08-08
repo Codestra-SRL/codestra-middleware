@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -116,6 +117,20 @@ class Settings(BaseSettings):
     openai_daily_user_token_limit: int = 100000
     openai_daily_project_token_limit: int = 250000
     openai_max_estimated_cost_micro_usd: int = 300000
+    elevenlabs_provider_enabled: bool = False
+    elevenlabs_base_url: str = "https://api.elevenlabs.io"
+    elevenlabs_api_key_file: str = "/run/secrets/elevenlabs-api-key"
+    elevenlabs_model_id: str = "eleven_flash_v2_5"
+    elevenlabs_canary_voice_id: str = ""
+    elevenlabs_browser_output_format: str = "mp3_44100_128"
+    elevenlabs_telephony_output_format: str = "ulaw_8000"
+    elevenlabs_max_text_characters: int = 1000
+    elevenlabs_max_concurrency: int = 1
+    elevenlabs_connect_timeout_seconds: float = 10.0
+    elevenlabs_read_timeout_seconds: float = 60.0
+    elevenlabs_total_timeout_seconds: float = 90.0
+    elevenlabs_max_retries: int = 2
+    elevenlabs_request_logging_mode: str = "standard"
     controller_approval_signing_key_file: str = ""
     controller_workspace_allowlist: str = (
         "/opt/codestra/middleware,/opt/codestra/worktrees"
@@ -375,6 +390,37 @@ class Settings(BaseSettings):
             raise ValueError("OpenAI safety identifier salt is too short")
         return value
 
+    @property
+    def elevenlabs_api_key(self) -> str:
+        """Load an ASCII API key without ever including it in an error."""
+        if self.elevenlabs_api_key_file != "/run/secrets/elevenlabs-api-key":
+            raise ValueError("ElevenLabs API key path is not approved")
+        return self._protected_text_secret(
+            self.elevenlabs_api_key_file, "ElevenLabs API key"
+        )
+
+    @classmethod
+    def _protected_text_secret(cls, filename: str, label: str) -> str:
+        path = cls._protected_secret_path(filename, label)
+        metadata = path.stat()
+        if (
+            metadata.st_uid != os.geteuid()
+            or metadata.st_gid != os.getegid()
+            or metadata.st_mode & 0o777 != 0o400
+        ):
+            raise ValueError(f"{label} secret file metadata is unsafe")
+        value = path.read_bytes()
+        if value.endswith(b"\r\n"):
+            value = value[:-2]
+        elif value.endswith((b"\r", b"\n")):
+            value = value[:-1]
+        if not value or b"\x00" in value or any(byte in b" \t\r\n" for byte in value):
+            raise ValueError("ElevenLabs API key is malformed")
+        try:
+            return value.decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise ValueError("ElevenLabs API key is malformed") from exc
+
     @staticmethod
     def _protected_secret_path(filename: str, label: str) -> Path:
         path = Path(filename)
@@ -423,6 +469,80 @@ class Settings(BaseSettings):
     def validate_openai_worker_max_concurrency(cls, value: int) -> int:
         if value != 1:
             raise ValueError("OpenAI worker concurrency must equal one")
+        return value
+
+    @field_validator("elevenlabs_base_url")
+    @classmethod
+    def validate_elevenlabs_base_url(cls, value: str) -> str:
+        if value != "https://api.elevenlabs.io":
+            raise ValueError("ElevenLabs base URL must be the approved HTTPS host")
+        return value
+
+    @field_validator("elevenlabs_model_id")
+    @classmethod
+    def validate_elevenlabs_model_id(cls, value: str) -> str:
+        if value != "eleven_flash_v2_5":
+            raise ValueError("ElevenLabs model is not approved")
+        return value
+
+    @field_validator("elevenlabs_canary_voice_id")
+    @classmethod
+    def validate_elevenlabs_canary_voice_id(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[A-Za-z0-9]{1,64}", value):
+            raise ValueError("ElevenLabs voice identifier is invalid")
+        return value
+
+    @field_validator("elevenlabs_browser_output_format")
+    @classmethod
+    def validate_elevenlabs_browser_output_format(cls, value: str) -> str:
+        if value != "mp3_44100_128":
+            raise ValueError("ElevenLabs browser output format is not approved")
+        return value
+
+    @field_validator("elevenlabs_telephony_output_format")
+    @classmethod
+    def validate_elevenlabs_telephony_output_format(cls, value: str) -> str:
+        if value != "ulaw_8000":
+            raise ValueError("ElevenLabs telephony output format is not approved")
+        return value
+
+    @field_validator("elevenlabs_max_concurrency")
+    @classmethod
+    def validate_elevenlabs_max_concurrency(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("ElevenLabs concurrency must equal one")
+        return value
+
+    @field_validator("elevenlabs_max_text_characters")
+    @classmethod
+    def validate_elevenlabs_max_text_characters(cls, value: int) -> int:
+        if value != 1000:
+            raise ValueError("ElevenLabs text limit must equal 1000")
+        return value
+
+    @field_validator(
+        "elevenlabs_connect_timeout_seconds",
+        "elevenlabs_read_timeout_seconds",
+        "elevenlabs_total_timeout_seconds",
+    )
+    @classmethod
+    def validate_elevenlabs_timeout(cls, value: float) -> float:
+        if value <= 0 or value > 120:
+            raise ValueError("ElevenLabs timeout is invalid")
+        return value
+
+    @field_validator("elevenlabs_max_retries")
+    @classmethod
+    def validate_elevenlabs_max_retries(cls, value: int) -> int:
+        if value not in range(0, 3):
+            raise ValueError("ElevenLabs retry count is invalid")
+        return value
+
+    @field_validator("elevenlabs_request_logging_mode")
+    @classmethod
+    def validate_elevenlabs_logging_mode(cls, value: str) -> str:
+        if value not in {"standard", "zero_retention"}:
+            raise ValueError("ElevenLabs request logging mode is invalid")
         return value
 
     @field_validator("vicidial_authorization_url", "vicidial_edge_url")
