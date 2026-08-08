@@ -143,6 +143,7 @@ async def test_temporary_odoo_failure_retries_then_delivers_once(monkeypatch):
     assert accepted["idempotency_status"] == "NEW"
     assert delivery.status == "DELIVERED"
     assert delivery.attempts == 1
+    assert delivery.last_error_class is None
     assert delivery.odoo_result_inbox_id == str(PUBLIC_ID)
 
 

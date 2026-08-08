@@ -187,6 +187,9 @@ async def deliver_result(
         raise OdooResultError("Odoo response binding mismatch")
     result.status = "DELIVERED"
     result.delivered_at = datetime.now(UTC)
+    result.reserved_at = None
+    result.next_attempt_at = None
+    result.last_error_class = None
     result.odoo_result_inbox_id = str(
         accepted.get("result_inbox_id", accepted["result_public_id"])
     )

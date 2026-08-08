@@ -10,10 +10,19 @@
 5. Apply migration, deploy the exact image to staging only, and verify health.
 6. Run dispatch, signed callback, ten-request duplicate, replay, restart, and
    concurrency tests at 1/5/10/25.
-7. Confirm one logical execution/result and zero direct Odoo/VICIdial/outreach
-   writes. A separate governed result-to-Odoo mapping is required for an
-   Odoo-bound canary.
-8. Observe n8n/Redis metrics and retain the PostgreSQL/audit identifiers.
+7. For an Odoo-bound canary, enable `TEST_SYN_ODOO_RESULT_DELIVERY_ENABLED`
+   only on the API and result worker and configure every exact binding:
+   tenant, workflow/version, event type/ID, correlation ID, organization,
+   business unit, campaign, and originating Odoo outbox ID. Keep
+   `ODOO_RESULT_DELIVERY_ENABLED`, `ODOO_WRITE_ENABLED`, and
+   `LIVE_WRITES_ENABLED` false. The worker emits only the fixed synthetic
+   result-inbox payload; n8n cannot supply a model, record ID, or field name.
+8. Confirm one logical Odoo inbox result, a 200 idempotent replay, retained
+   delivery during a bounded Odoo outage, and successful delivery after worker
+   restart.
+9. Disable the workflow and registry row, stop/remove the synthetic result
+   worker, and confirm all unrestricted write flags remain false.
+10. Observe n8n/Redis metrics and retain the PostgreSQL/audit identifiers.
 
 Workflow inventory at discovery: 236 total, 0 active, 236 inactive. Without a
 signed governance inventory, inactive workflows remain `UNKNOWN` except

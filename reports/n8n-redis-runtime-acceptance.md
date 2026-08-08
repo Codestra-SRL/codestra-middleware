@@ -1,8 +1,9 @@
 # n8n and Redis runtime staging acceptance
 
 Captured on Middleware Server A (`65.109.65.169`) using synthetic-only data.
-Production writes, Odoo mutations, VICIdial database access, outreach, and paid
-AI/provider calls remained disabled.
+Production Odoo writes, VICIdial database access, outreach, and paid AI/provider
+calls remained disabled. One explicitly bound Odoo staging result-inbox record
+was created for the governed canary and deduplicated on replay.
 
 ## Runtime inventory
 
@@ -48,7 +49,15 @@ MIDDLEWARE_RESTART=PASS (bounded callback retry; no lost result)
 N8N_RESTART=PASS (queued execution recovered; one result)
 REDIS_RESTART=PASS (healthy PONG; durable n8n count unchanged)
 REAL_N8N_RESTART=PASS (main, webhook, and two workers healthy)
-ODOO_WRITE_COUNT=0
+ODOO_BOUND_CANARY=PASS
+MIDDLEWARE_GOVERNED_ODOO_MAPPING=PASS
+ODOO_SYNTHETIC_RECORD_COUNT=1
+ODOO_DUPLICATE_RECORD_COUNT=0
+ODOO_IDEMPOTENCY=PASS (201 NEW, then 200 DUPLICATE)
+ODOO_RETRY_RECOVERY=PASS (transport failure retained; restart delivered once)
+CORRELATION_TRACE=PASS (TEST_SYN_CORRELATION_20260808)
+N8N_DIRECT_ODOO_ACCESS=DISABLED
+N8N_DIRECT_ODOO_CREDENTIALS=NONE
 VICIDIAL_WRITE_COUNT=0
 OUTREACH_EVENT_COUNT=0
 ```
@@ -82,22 +91,31 @@ SAFE_STAGING_CONCURRENCY=25
 
 The synthetic workflow uses n8n's encrypted Crypto credential store; the HMAC
 secret is projected separately to middleware from a root-owned server file.
-The Odoo-bound canary remains outside this branch's certified evidence because
-the governed n8n result is intentionally retained in middleware PostgreSQL and
-no approved synthetic result-to-Odoo mapping was activated.
+The Odoo mapping is middleware-owned and requires the exact staging tenant,
+workflow/version, event type/ID, correlation ID, organization, business unit,
+campaign, and originating Odoo outbox ID. n8n cannot select an Odoo model,
+record ID, field, or destination. The result first persists in middleware
+PostgreSQL, then the result worker obtains a short-lived service JWT and calls
+the allowlisted Odoo results endpoint. Odoo's immutable result inbox enforces
+logical exactly-once delivery.
+
+After certification the n8n workflow and registry mapping were disabled and
+the synthetic result worker was removed. `LIVE_WRITES_ENABLED`,
+`ODOO_WRITE_ENABLED`, and `VICIDIAL_WRITE_ENABLED` remained false.
 
 ## Validation
 
 ```text
-TESTS=873 passed; 20 skipped
-FOCUSED_RUNTIME_TESTS=26 passed
+TESTS=899 passed; 0 skipped (fresh PostgreSQL database at migration head 0035)
+FOCUSED_RUNTIME_TESTS=33 passed; 1 PostgreSQL test skipped in the no-DB run,
+then 4 passed with the disposable PostgreSQL database
 RUFF=PASS
-MYPY=PASS (151 source files)
+MYPY=PASS (153 source files)
 BANDIT=PASS (zero findings after remediation)
 PIP_AUDIT=PASS (no known vulnerabilities)
 TRIVY=PASS (candidate image: zero HIGH/CRITICAL vulnerabilities or secrets)
 GITLEAKS=PASS
-MIGRATION=PASS (0033 -> 0034 -> 0033 -> 0034)
+MIGRATION=PASS (current staging 0034 -> 0035; clean database -> 0035)
 OPENAPI=PASS (178 paths; 81 schemas)
 ```
 
@@ -107,6 +125,5 @@ OPENAPI=PASS (178 paths; 81 schemas)
   governance inventory classification; none was deleted or activated. The one
   governed `TEST_SYN` workflow was activated only for the canary and returned
   to inactive afterward.
-- External gate: a governance-approved synthetic result-to-Odoo mapping is
-  required before the Odoo-bound canary can run without enabling arbitrary
-  n8n-to-Odoo writes.
+- Odoo-bound gate: closed by the mission-authorized, exact `TEST_SYN` mapping;
+  the mapping is disabled after the canary and cannot authorize general writes.
