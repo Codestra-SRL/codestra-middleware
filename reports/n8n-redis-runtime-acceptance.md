@@ -89,7 +89,7 @@ no approved synthetic result-to-Odoo mapping was activated.
 ## Validation
 
 ```text
-TESTS=868 passed; 20 skipped
+TESTS=873 passed; 20 skipped
 FOCUSED_RUNTIME_TESTS=26 passed
 RUFF=PASS
 MYPY=PASS (151 source files)
