@@ -201,8 +201,20 @@ services:
       <<: *safe-flags
       SERVICE_NAME: middleware-sync-worker
       QUEUE_NAME: middleware.sync.odoo.v1
+      ODOO_READ_ENABLED: "false"
+      ODOO_SYNC_WORKER_ENABLED: "false"
+      ODOO_RESULT_DELIVERY_ENABLED: "false"
+      ODOO_STAGING_WRITES_ENABLED: "false"
+      ODOO_PRODUCTION_WRITES_ENABLED: "false"
+      LIVE_WRITES_ENABLED: "false"
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-sync-worker-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/internal-n8n/odoo-results-client-secret:/run/secrets/odoo_results_client_secret:ro
+      - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
+    networks:
+      - middleware_backend
+      - identity_service
+      - codestra_internal_integration
 
   middleware-notification-worker:
     <<: *worker

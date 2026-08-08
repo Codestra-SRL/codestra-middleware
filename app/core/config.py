@@ -187,6 +187,10 @@ class Settings(BaseSettings):
     test_syn_odoo_business_unit_public_id: str = ""
     test_syn_odoo_campaign_public_id: str = ""
     test_syn_odoo_outbox_public_id: str = ""
+    odoo_read_enabled: bool = False
+    odoo_sync_worker_enabled: bool = False
+    odoo_staging_writes_enabled: bool = False
+    odoo_production_writes_enabled: bool = False
     email_dispatch_enabled: bool = False
     sms_dispatch_enabled: bool = False
     allow_live_email: bool = False
@@ -351,6 +355,7 @@ class Settings(BaseSettings):
             self.vicidial_lead_write_enabled,
             self.n8n_lead_delivery_enabled,
             self.postly_lead_delivery_enabled,
+            self.odoo_production_writes_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
