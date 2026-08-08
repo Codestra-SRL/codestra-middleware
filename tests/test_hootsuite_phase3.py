@@ -84,10 +84,13 @@ def test_oauth_state_is_bound_and_tampering_fails(monkeypatch):
 
 def test_hootsuite_oauth_routes_are_exposed_without_provider_secrets():
     from app.main import app
+    from app.entrypoints.integration_api import app as integration_app
 
     paths = app.openapi()["paths"]
-    assert "/api/v1/social/oauth/hootsuite/authorize" in paths
-    assert "/api/v1/social/oauth/hootsuite/callback" in paths
+    integration_paths = integration_app.openapi()["paths"]
+    for registered_paths in (paths, integration_paths):
+        assert "/api/v1/social/oauth/hootsuite/authorize" in registered_paths
+        assert "/api/v1/social/oauth/hootsuite/callback" in registered_paths
     callback = paths["/api/v1/social/oauth/hootsuite/callback"]["get"]
     parameters = {item["name"]: item for item in callback["parameters"]}
     assert parameters["code"]["required"] is True
