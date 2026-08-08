@@ -23,6 +23,7 @@ from app.core.runtime_redis import (
     TTL_SECONDS,
     runtime_key,
 )
+from app.workers.n8n_runtime import recover_stale_dispatches
 
 
 def dispatch_payload(**overrides):
@@ -167,3 +168,13 @@ async def test_redis_reservations_always_set_positive_expiry(monkeypatch):
     assert result.acquired and not result.degraded
     assert client.set.await_args.kwargs["ex"] == TTL_SECONDS[RedisKeyType.REPLAY]
     assert client.set.await_args.kwargs["nx"] is True
+
+
+@pytest.mark.asyncio
+async def test_stale_dispatch_recovery_uses_bounded_lease():
+    session = AsyncMock()
+    session.execute.return_value.rowcount = 1
+    assert await recover_stale_dispatches(session, 60) == 1
+    session.commit.assert_awaited_once()
+    with pytest.raises(ValueError):
+        await recover_stale_dispatches(session, 1)

@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -61,6 +61,31 @@ async def claim(session: AsyncSession, limit: int = 10) -> list[N8nRuntimeExecut
             row.updated_at = now
     await session.commit()
     return [row for row in rows if row.status == ExecutionStatus.DISPATCHING]
+
+
+async def recover_stale_dispatches(
+    session: AsyncSession, lease_seconds: int = 60
+) -> int:
+    """Return abandoned dispatch leases to retry without losing the durable job."""
+    if lease_seconds < 10 or lease_seconds > 600:
+        raise ValueError("dispatch lease is outside bounds")
+    now = datetime.now(UTC)
+    result = await session.execute(
+        update(N8nRuntimeExecution)
+        .where(
+            N8nRuntimeExecution.status == ExecutionStatus.DISPATCHING,
+            N8nRuntimeExecution.updated_at <= now - timedelta(seconds=lease_seconds),
+        )
+        .values(
+            status=ExecutionStatus.RETRY,
+            next_attempt_at=now,
+            failure_class="TRANSIENT",
+            last_error_code="STALE_DISPATCH_LEASE",
+            updated_at=now,
+        )
+    )
+    await session.commit()
+    return int(result.rowcount or 0)
 
 
 async def dispatch_one(
