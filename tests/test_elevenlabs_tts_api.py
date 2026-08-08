@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from typing import cast
 from uuid import uuid4
 from unittest.mock import AsyncMock
 
@@ -203,13 +204,18 @@ async def test_cancellation_closes_upstream_and_releases_capacity(monkeypatch) -
     monkeypatch.setattr(tts, "_provider", lambda: fake)
     principal = subject("codestra_ai_user")
     response = await tts.stream_speech(
-        tts.SpeechRequest(**payload()),
+        tts.SpeechRequest(
+            text="Synthetic TTS request.",
+            voice_profile="canary",
+            project_key="codestra-ai-console",
+            output_format="mp3_44100_128",
+        ),
         "synthetic-cancel-0001",
         "synthetic-correlation",
         principal,
         AsyncMock(),
     )
-    iterator = response.body_iterator
+    iterator = cast(tts.ClosableAsyncIterator, response.body_iterator)
     assert await anext(iterator) == b"first"
     await iterator.aclose()
     await asyncio.sleep(0)

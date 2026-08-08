@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 
 import httpx
 import pytest
@@ -34,15 +34,20 @@ def request() -> TTSRequest:
     )
 
 
-def provider(client: httpx.AsyncClient, **values: object) -> ElevenLabsTTSProvider:
+def provider(
+    client: httpx.AsyncClient,
+    *,
+    max_retries: int = 0,
+    request_logging_mode: str = "standard",
+) -> ElevenLabsTTSProvider:
     return ElevenLabsTTSProvider(
         api_key="synthetic-test-key",
         base_url="https://api.elevenlabs.io",
         connect_timeout=1,
         read_timeout=2,
         total_timeout=3,
-        max_retries=int(values.get("max_retries", 0)),
-        request_logging_mode=str(values.get("request_logging_mode", "standard")),
+        max_retries=max_retries,
+        request_logging_mode=request_logging_mode,
         client=client,
     )
 
@@ -127,7 +132,7 @@ async def test_never_retries_after_audio_is_emitted(monkeypatch) -> None:
         nonlocal calls
         calls += 1
 
-        async def broken() -> AsyncIterator[bytes]:
+        async def broken() -> AsyncGenerator[bytes, None]:
             yield b"partial"
             raise httpx.ReadError("synthetic transport failure")
 
@@ -195,7 +200,7 @@ async def test_private_telephony_format_is_provider_capable_but_not_api_exposed(
 
 
 class BrokenStream(httpx.AsyncByteStream):
-    def __init__(self, iterator: AsyncIterator[bytes]) -> None:
+    def __init__(self, iterator: AsyncGenerator[bytes, None]) -> None:
         self.iterator = iterator
 
     def __aiter__(self) -> AsyncIterator[bytes]:
