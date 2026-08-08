@@ -620,7 +620,7 @@ class SqlSocialRepository:
         if settings.social_n8n_events_enabled:
             await self.session.execute(
                 text("""INSERT INTO integration_delivery(id,event_id,target,status,attempts)
-                VALUES (:id,:event,'n8n','queued',0) ON CONFLICT DO NOTHING"""),
+                VALUES (:id,:event,'n8n','pending',0) ON CONFLICT DO NOTHING"""),
                 {"id": uuid4(), "event": integration_id},
             )
         if job.get("production_canary"):
@@ -805,7 +805,7 @@ class SqlSocialRepository:
             if settings.social_n8n_events_enabled:
                 await self.session.execute(
                     text("""INSERT INTO integration_delivery(id,event_id,target,status,attempts)
-                    VALUES (:id,:event,'n8n','queued',0) ON CONFLICT DO NOTHING"""),
+                    VALUES (:id,:event,'n8n','pending',0) ON CONFLICT DO NOTHING"""),
                     {"id": uuid4(), "event": integration_id},
                 )
         await self.session.commit()

@@ -69,6 +69,7 @@ def test_durable_idempotency_worker_and_event_outbox(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "postiz_delivery_enabled", True)
+    monkeypatch.setattr(settings, "social_n8n_events_enabled", True)
 
     async def scenario() -> None:
         engine = create_async_engine(DATABASE_URL)
@@ -155,6 +156,15 @@ def test_durable_idempotency_worker_and_event_outbox(monkeypatch):
                 {"correlation": correlation_id},
             )
             assert event_count == 1
+            delivery_status = await session.scalar(
+                text(
+                    """SELECT d.status FROM integration_delivery d
+                    JOIN integration_event e ON e.id=d.event_id
+                    WHERE e.correlation_id=:correlation AND d.target='n8n'"""
+                ),
+                {"correlation": correlation_id},
+            )
+            assert delivery_status == "pending"
         await engine.dispose()
 
     asyncio.run(scenario())
