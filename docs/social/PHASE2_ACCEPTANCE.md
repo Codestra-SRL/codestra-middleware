@@ -11,8 +11,15 @@
 - minimal Redis signal contract;
 - migration upgrade/downgrade/re-upgrade on disposable PostgreSQL.
 
-## External blockers
+## Phase 3A authentication certification
 
-The Postly peer is reachable at `10.40.0.3` over the private VLAN and its HTTPS listener responds, but the deployed Postiz runtime has no dedicated staging machine credential, no staging-safe account, and no signed outbound webhook contract. Consequently authenticated account discovery, real draft/schedule/cancel, webhook round-trip, n8n staging delivery, and controlled provider tests are not certified. Publishing remains blocked.
+The Postly peer is reachable at `10.40.0.3` over VLAN 4001. The existing
+organization API key is installed in the Middleware staging secret convention with
+mode `0400` and UID/GID 10001. A real private-route request returned `200`; invalid
+and missing credentials returned `401`. Middleware adapter health returned
+`AVAILABLE`, and authenticated account discovery returned a valid empty list.
 
-This phase must not be reported as fully certified until the peer credential and signed-webhook blockers are resolved and required exact-SHA CI for the Phase 2 PR passes.
+Postly authentication, health, private connectivity, and account-discovery protocol
+are certified. Controlled provider writes, schedule/cancel, and signed webhook
+round-trip remain blocked because there are zero staging-safe accounts and native
+outbound callbacks lack the required signature contract. Publishing remains off.
