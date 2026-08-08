@@ -4,7 +4,7 @@
 
 The Codestra Social Publishing Middleware is the provider-neutral control plane between Codestra clients and external social-publishing providers. Its purpose is to give Odoo, n8n, AI services, frontends, and internal clients one stable Codestra API while isolating Postly/Postiz, Hootsuite, and future provider details behind adapters.
 
-Phase 1 establishes the domain contracts, API surface, provider registry, Postly adapter, disabled Hootsuite adapter, database schema, Redis queue abstraction, event projections, security controls, tests, and migration rules. It does **not** deploy or enable production publishing. The current API uses an in-memory `SocialRepository`; migration `0033_social_publishing` defines the durable PostgreSQL schema, but SQL repository and standalone worker wiring remain planned for controlled staging. This distinction is important: the durable topology below is the required operational architecture, not a claim that Phase 1 has been activated.
+Phase 1 established the domain contracts, API surface, provider registry, Postly adapter, disabled Hootsuite adapter, database schema, Redis queue abstraction, event projections, security controls, tests, and migration rules. Phase 2 adds an opt-in `SqlSocialRepository`, persistent idempotency and lease migration, durable worker entrypoint, persistent webhook deduplication, and IntegrationEvent wiring. These components remain disabled by default and have not been deployed or authenticated against the remote Postly runtime; production publishing is not enabled.
 
 The architecture follows these principles:
 
@@ -66,7 +66,7 @@ flowchart LR
     P --> SN[Social network]
 ```
 
-The PostgreSQL-to-Redis-to-worker portion is the required durable runtime flow. Phase 1 currently provides its schema, `RedisSocialQueue`, retry primitives, and callable `process_job()` orchestration; the SQL-backed repository and independently running worker are not yet wired and must be completed and validated before activation.
+The PostgreSQL-to-Redis-to-worker portion is the required durable runtime flow. Phase 2 implements the SQL repository, lease-based worker, recovery scanner, Redis signal abstraction, and provider dispatch locally. Remote staging deployment and Postly validation remain blocked by server access and must pass before activation.
 
 ## 4. Codestra Social API
 
@@ -163,7 +163,7 @@ PostgreSQL is the authoritative source of truth for social intent, accounts, cam
 
 Redis is transport infrastructure, not canonical storage. `RedisSocialQueue` carries only `job_id` and `correlation_id` signals, with a separate dead-letter signal list. Loss or eviction of Redis data must not destroy accepted intent or publishing state. A production worker must be able to repopulate or recover work from PostgreSQL.
 
-Current implementation note: Phase 1 API handlers use an in-memory repository and campaign store for contract tests. The PostgreSQL repository, transactional outbox insertion, Redis enqueue after commit, lease/claim loop, and recovery scanner are planned staging work. Production activation is forbidden until these are wired and proven.
+Current implementation note: API handlers select `SqlSocialRepository` only when `SOCIAL_SQL_REPOSITORY_ENABLED=true`; otherwise the Phase 1 in-memory repository remains available for contract tests. Phase 2 implements transactional intent/outbox insertion, lease/claim processing, and recovery scanning. Source defaults remain off, Redis delivery/outage recovery still requires real staging validation, and production activation is forbidden.
 
 ## 11. Worker execution, idempotency, and failure handling
 
@@ -178,7 +178,7 @@ Current implementation note: Phase 1 API handlers use an in-memory repository an
 7. The adapter performs the provider operation.
 8. The worker stores the normalized result and emits a normalized event.
 
-Steps 3–8 describe the required Phase 2 runtime wiring. Phase 1 implements the models, schema, queue abstraction, adapter dispatch function, and test harness only.
+Steps 3–8 are implemented as disabled-by-default Phase 2 runtime code and verified with disposable PostgreSQL and provider mocks. They are not yet deployed to either staging server.
 
 ### Idempotency and duplicate-publish protection
 
@@ -216,7 +216,7 @@ Provider credentials, tokens, raw payloads, stack traces, and unapproved fields 
 
 Canonical events include account connection state, post lifecycle, comments, messages, and analytics changes. `n8n_projection()` produces a provider-neutral envelope containing event ID/type/version, occurrence time, correlation ID, tenant ID, source, owning provider, Codestra subject UUID, and a safe payload.
 
-Phase 1 provides this projection function but does not yet insert social events into the existing general `IntegrationEvent`/outbox delivery pipeline. Durable persistence and dispatch wiring are planned for Phase 2.
+Phase 2 persists normalized provider results and accepted webhooks into the existing `IntegrationEvent` tables. n8n delivery rows are created only when the disabled-by-default staging flag is enabled; real n8n delivery remains unvalidated because remote staging access is blocked.
 
 ## 14. n8n, Odoo, and AI boundaries
 
