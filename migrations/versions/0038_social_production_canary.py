@@ -1,13 +1,13 @@
 """Production canary execution evidence.
 
-Revision ID: 0035_social_production_canary
-Revises: 0034_social_staging
+Revision ID: 0038_social_production_canary
+Revises: 0037_social_staging
 """
 
 from alembic import op
 
-revision = "0035_social_production_canary"
-down_revision = "0034_social_staging"
+revision = "0038_social_production_canary"
+down_revision = "0037_social_staging"
 branch_labels = None
 depends_on = None
 
