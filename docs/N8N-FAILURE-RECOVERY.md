@@ -12,5 +12,9 @@ job. Middleware restart resumes `PENDING`/`RETRY`; n8n queue mode resumes from
 its PostgreSQL/Redis queue configuration. Exhausted jobs remain durable dead
 letters with hashes and safe failure codes.
 
+The synthetic callback retries five times at two-second intervals so a short
+middleware restart cannot lose the n8n result. Durable executions that remain
+`RUNNING` beyond their registry timeout are closed as `TIMED_OUT` by the worker.
+
 Circuit breakers for n8n, Odoo, AI providers, and VICIdial may use expiring
 Redis counters, but incident/audit evidence remains durable.
