@@ -93,6 +93,13 @@ async def dispatch_one(
     execution: N8nRuntimeExecution,
     client: httpx.AsyncClient,
 ) -> bool:
+    durable = await session.get(
+        N8nRuntimeExecution, execution.execution_id, with_for_update=True
+    )
+    if durable is None or durable.status != ExecutionStatus.DISPATCHING:
+        N8N_DISPATCH_FAILURE.labels(failure_class="LEASE_NOT_OWNED").inc()
+        return False
+    execution = durable
     registry = await session.scalar(
         select(N8nWorkflowRegistry).where(
             N8nWorkflowRegistry.workflow_code == execution.workflow_code,
