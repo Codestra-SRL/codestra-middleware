@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import random
+import secrets
 import time
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -153,7 +153,7 @@ def verify_fresh(timestamp: str, ttl_seconds: int = 300) -> None:
 def retry_delay(attempt: int, base: float = 1.0, cap: float = 60.0) -> float:
     if attempt < 1:
         raise ValueError("attempt must be positive")
-    return random.uniform(0, min(cap, base * (2 ** (attempt - 1))))
+    return secrets.SystemRandom().uniform(0, min(cap, base * (2 ** (attempt - 1))))
 
 
 def retryable(status_code: int | None, network_error: bool = False) -> bool:

@@ -17,7 +17,7 @@ class RedisKeyType(StrEnum):
     LOCK = "lock"
     REPLAY = "replay"
     RATE = "rate"
-    TOKEN = "token"
+    TOKEN = "token"  # nosec B105 - namespace label, never a credential value
     DEDUPE = "dedupe"
     EXECUTION = "execution"
     CIRCUIT = "circuit"
