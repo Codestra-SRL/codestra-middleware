@@ -259,7 +259,8 @@ async def test_cancellation_closes_upstream_and_releases_capacity(monkeypatch) -
         principal,
         AsyncMock(),
     )
-    iterator = cast(tts.ClosableAsyncIterator, response.body_iterator)
+    stream_response = cast(tts.StreamingResponse, response)
+    iterator = cast(tts.ClosableAsyncIterator, stream_response.body_iterator)
     assert await anext(iterator) == b"first"
     await iterator.aclose()
     await asyncio.sleep(0)

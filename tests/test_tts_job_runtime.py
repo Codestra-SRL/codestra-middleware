@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-from uuid import uuid4
+from typing import Any
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core import tts_jobs
@@ -23,37 +24,42 @@ async def test_durable_tts_claim_idempotency_recovery_and_isolation() -> None:
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     org, workspace, other_org = uuid4(), uuid4(), uuid4()
     digest = hashlib.sha256(b"synthetic request without content").hexdigest()
-    args = dict(
-        organization_id=org,
-        workspace_id=workspace,
-        requested_by="synthetic-user",
-        project_key="codestra-ai-console",
-        voice_alias="browser_preview",
-        model_alias="flash",
-        output_profile="browser_preview",
-        idempotency_key="synthetic-idempotency-key",
-        correlation_id="synthetic-correlation",
-        request_sha256=digest,
-        character_count=32,
-    )
+
+    async def submit(
+        db: AsyncSession,
+        *,
+        organization_id: UUID = org,
+        request_sha256: str = digest,
+    ) -> dict[str, Any]:
+        return await tts_jobs.submit(
+            db,
+            organization_id=organization_id,
+            workspace_id=workspace,
+            requested_by="synthetic-user",
+            project_key="codestra-ai-console",
+            voice_alias="browser_preview",
+            model_alias="flash",
+            output_profile="browser_preview",
+            idempotency_key="synthetic-idempotency-key",
+            correlation_id="synthetic-correlation",
+            request_sha256=request_sha256,
+            character_count=32,
+        )
+
     try:
         async with sessions() as db:
             await db.execute(text("TRUNCATE tts_generation_jobs"))
             await db.commit()
-            first = await tts_jobs.submit(db, **args)
-            replay = await tts_jobs.submit(db, **args)
+            first = await submit(db)
+            replay = await submit(db)
             assert (
                 first["id"] == replay["id"]
                 and first["created"]
                 and not replay["created"]
             )
             with pytest.raises(ValueError, match="tts_idempotency_conflict"):
-                await tts_jobs.submit(
-                    db,
-                    **{
-                        **args,
-                        "request_sha256": hashlib.sha256(b"different").hexdigest(),
-                    },
+                await submit(
+                    db, request_sha256=hashlib.sha256(b"different").hexdigest()
                 )
         async with sessions() as one, sessions() as two:
             claimed = await asyncio.gather(
@@ -91,9 +97,7 @@ async def test_durable_tts_claim_idempotency_recovery_and_isolation() -> None:
                 and state["chunk_count"] == 1
                 and state["audio_bytes"] == 128
             )
-            distinct = await tts_jobs.submit(
-                db, **{**args, "organization_id": other_org}
-            )
+            distinct = await submit(db, organization_id=other_org)
             assert distinct["id"] != first["id"]
             assert (
                 await tts_jobs.cancel(
