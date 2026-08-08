@@ -21,8 +21,8 @@ N8N_EXECUTION_MODE=queue
 N8N_WORKER_COUNT=2
 N8N_CONCURRENCY=10 total (5 per worker)
 WORKFLOWS_TOTAL=237
-WORKFLOWS_ACTIVE_APPROVED=1 (TEST_SYN Codestra Governed Runtime V1)
-WORKFLOWS_INACTIVE_APPROVED=0
+WORKFLOWS_ACTIVE_APPROVED=0 (post-canary safe state)
+WORKFLOWS_INACTIVE_APPROVED=1 (TEST_SYN Codestra Governed Runtime V1)
 WORKFLOWS_OBSOLETE=0
 WORKFLOWS_DUPLICATE=0
 WORKFLOWS_UNKNOWN=236
@@ -103,8 +103,10 @@ OPENAPI=PASS (178 paths; 81 schemas)
 
 ## Findings and external gates
 
-- Medium: all 236 staging workflows are inactive and lack a signed governance
-  inventory classification; none was deleted or activated.
+- Medium: 236 pre-existing staging workflows are inactive and lack a signed
+  governance inventory classification; none was deleted or activated. The one
+  governed `TEST_SYN` workflow was activated only for the canary and returned
+  to inactive afterward.
 - External gate: a governance-approved synthetic result-to-Odoo mapping is
   required before the Odoo-bound canary can run without enabling arbitrary
   n8n-to-Odoo writes.
