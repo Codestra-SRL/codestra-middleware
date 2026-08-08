@@ -198,7 +198,7 @@ async def create_post(
                     "Social integration is disabled",
                     status_code=503,
                 )
-            provider_name = service.resolve_provider()
+            provider_name = service.resolve_provider(account_ids=tuple(body.accounts))
             registry.require(provider_name, Capability.POST_CREATE)
             repository = SqlSocialRepository(session)
             post_id, job_id, created = await repository.create_post_intent(

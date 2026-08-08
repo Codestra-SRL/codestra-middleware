@@ -89,9 +89,34 @@ class SocialPublishingService:
                 status_code=503,
             )
 
-    def resolve_provider(self, post: SocialPost | None = None) -> ProviderName:
+    def resolve_provider(
+        self,
+        post: SocialPost | None = None,
+        account_ids: tuple[UUID, ...] = (),
+    ) -> ProviderName:
         if post is not None:
             return post.provider
+        if settings.social_provider_migration_mode == "canary" and account_ids:
+            try:
+                allowlist = {
+                    UUID(item.strip())
+                    for item in settings.hootsuite_canary_account_ids.split(",")
+                    if item.strip()
+                }
+            except ValueError as exc:
+                raise SocialError(
+                    "SOCIAL_PROVIDER_NOT_CONFIGURED",
+                    "Hootsuite canary allowlist is invalid",
+                    status_code=503,
+                ) from exc
+            if allowlist and all(item in allowlist for item in account_ids):
+                if not settings.hootsuite_enabled:
+                    raise SocialError(
+                        "SOCIAL_PROVIDER_DISABLED",
+                        "Hootsuite canary is disabled",
+                        status_code=503,
+                    )
+                return ProviderName.HOOTSUITE
         try:
             return ProviderName(settings.social_provider)
         except ValueError as exc:
@@ -122,7 +147,7 @@ class SocialPublishingService:
                 "Accounts and content text are required",
                 status_code=422,
             )
-        provider = self.resolve_provider()
+        provider = self.resolve_provider(account_ids=account_ids)
         self.registry.require(provider, Capability.POST_CREATE)
         post = SocialPost(
             tenant_id,

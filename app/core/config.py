@@ -256,6 +256,11 @@ class Settings(BaseSettings):
     hootsuite_client_id_file: str = ""
     hootsuite_client_secret_file: str = ""
     hootsuite_redirect_uri: str = ""
+    hootsuite_oauth_state_secret_file: str = ""
+    hootsuite_token_file: str = ""
+    hootsuite_base_url: str = "https://platform.hootsuite.com/v1"
+    hootsuite_timeout_seconds: float = 15.0
+    hootsuite_canary_account_ids: str = ""
     pjsip_provisioning_enabled: bool = False
     webphone_session_issuer_enabled: bool = False
     telephony_reconciliation_enabled: bool = False
@@ -277,6 +282,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "social worker concurrency must remain 1 in controlled staging"
             )
+        if self.social_provider_migration_mode not in {"disabled", "canary"}:
+            raise ValueError("unsupported social provider migration mode")
+        if self.social_provider_migration_mode == "canary" and (
+            not self.hootsuite_enabled or not self.hootsuite_canary_account_ids.strip()
+        ):
+            raise ValueError("Hootsuite canary requires enabled adapter and allowlist")
         broad_event_switches = (
             self.send_events,
             self.broad_event_delivery_enabled,
@@ -376,6 +387,18 @@ class Settings(BaseSettings):
     @property
     def qwen_base_url(self) -> str:
         return self._optional_secret(self.qwen_base_url_file, "Qwen base URL")
+
+    @property
+    def hootsuite_client_id(self) -> str:
+        return self._optional_secret(self.hootsuite_client_id_file, "Hootsuite client ID")
+
+    @property
+    def hootsuite_client_secret(self) -> str:
+        return self._optional_secret(self.hootsuite_client_secret_file, "Hootsuite client secret")
+
+    @property
+    def hootsuite_oauth_state_secret(self) -> str:
+        return self._optional_secret(self.hootsuite_oauth_state_secret_file, "Hootsuite OAuth state")
 
     @property
     def qwen_api_key(self) -> str:

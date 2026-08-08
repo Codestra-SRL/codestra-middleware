@@ -10,6 +10,8 @@ from uuid import UUID
 from app.core.config import settings
 from app.integrations.postiz.client import PostizClient
 from app.integrations.postiz.exceptions import PostizError
+from app.integrations.hootsuite.client import HootsuiteClient
+from app.integrations.hootsuite.exceptions import HootsuiteError
 from app.social.domain import (
     Capability,
     NormalizedEvent,
@@ -17,6 +19,7 @@ from app.social.domain import (
     ProviderResult,
     SocialPost,
     SocialPostStatus,
+    normalize_network,
 )
 from app.social.providers import SocialError, SocialProviderAdapter
 
@@ -289,17 +292,212 @@ class PostlyProviderAdapter(SocialProviderAdapter):
 class HootsuiteProviderAdapter(SocialProviderAdapter):
     name = ProviderName.HOOTSUITE
 
+    CAPABILITIES = frozenset(
+        {
+            Capability.POST_CREATE,
+            Capability.POST_DELETE,
+            Capability.POST_SCHEDULE,
+            Capability.POST_CANCEL,
+            Capability.POST_PUBLISH,
+            Capability.MEDIA_UPLOAD,
+            Capability.IMAGE_POST,
+            Capability.MULTI_IMAGE,
+            Capability.VIDEO_POST,
+        }
+    )
+
+    STATUS_MAP = {
+        "PENDING_APPROVAL": SocialPostStatus.REQUIRES_ACTION,
+        "REJECTED": SocialPostStatus.FAILED,
+        "SENT": SocialPostStatus.PUBLISHED,
+        "SCHEDULED": SocialPostStatus.SCHEDULED,
+        "SEND_FAILED_PERMANENTLY": SocialPostStatus.FAILED,
+    }
+
+    def __init__(self, client: HootsuiteClient | None = None) -> None:
+        self.client = client or HootsuiteClient()
+
+    @staticmethod
+    def _ensure_enabled() -> None:
+        if not settings.hootsuite_enabled:
+            raise SocialError(
+                "SOCIAL_PROVIDER_DISABLED", "Hootsuite is disabled", status_code=503
+            )
+
     def get_capabilities(self) -> frozenset[Capability]:
-        return frozenset()
+        return self.CAPABILITIES
+
+    @staticmethod
+    def _map_error(exc: HootsuiteError) -> SocialError:
+        mappings = {
+            "not_configured": ("SOCIAL_PROVIDER_NOT_CONFIGURED", 503),
+            "authentication": ("SOCIAL_PROVIDER_AUTH_FAILED", 502),
+            "rate_limit": ("SOCIAL_PROVIDER_RATE_LIMITED", 503),
+            "temporary": ("SOCIAL_PROVIDER_UNAVAILABLE", 503),
+            "unknown_result": ("SOCIAL_PROVIDER_UNKNOWN_RESULT", 503),
+            "not_found": ("SOCIAL_ACCOUNT_NOT_FOUND", 404),
+        }
+        code, status = mappings.get(exc.code, ("SOCIAL_PUBLISH_FAILED", 502))
+        return SocialError(
+            code,
+            "Social provider request failed",
+            retryable=exc.retryable,
+            status_code=status,
+            unknown_result=exc.unknown_result,
+        )
 
     async def health_check(self) -> dict[str, Any]:
         configured = bool(
-            settings.hootsuite_client_id_file and settings.hootsuite_client_secret_file
+            settings.hootsuite_client_id_file
+            and settings.hootsuite_client_secret_file
+            and settings.hootsuite_token_file
         )
+        if not configured:
+            return {
+                "provider": self.name,
+                "configured": False,
+                "enabled": False,
+                "reachable": None,
+                "status": "NOT_CONFIGURED",
+            }
+        if not settings.hootsuite_enabled:
+            return {
+                "provider": self.name,
+                "configured": True,
+                "enabled": False,
+                "reachable": None,
+                "status": "DISABLED",
+            }
+        try:
+            await self.client.profiles("social-health-check")
+        except HootsuiteError:
+            return {
+                "provider": self.name,
+                "configured": True,
+                "enabled": True,
+                "reachable": False,
+                "status": "UNAVAILABLE",
+            }
         return {
             "provider": self.name,
-            "configured": configured,
-            "enabled": False,
-            "reachable": None,
-            "status": "DISABLED" if configured else "NOT_CONFIGURED",
+            "configured": True,
+            "enabled": True,
+            "reachable": True,
+            "status": "AVAILABLE",
+        }
+
+    async def list_accounts(self) -> list[dict[str, Any]]:
+        self._ensure_enabled()
+        try:
+            raw = await self.client.profiles("social-account-sync")
+        except HootsuiteError as exc:
+            raise self._map_error(exc) from exc
+        items = raw.get("data", []) if isinstance(raw, dict) else []
+        return [
+            {
+                "provider_account_id": str(item.get("id") or ""),
+                "network": normalize_network(str(item.get("type") or "other")).value,
+                "external_profile_name": str(item.get("socialNetworkUsername") or ""),
+                "external_profile_id": str(item.get("socialNetworkId") or ""),
+                "connection_state": "authentication_required"
+                if bool(item.get("isReauthRequired"))
+                else "connected",
+            }
+            for item in items
+        ]
+
+    async def get_account(self, provider_account_id: str) -> dict[str, Any]:
+        self._ensure_enabled()
+        try:
+            raw = await self.client.profile(provider_account_id, "social-account-get")
+        except HootsuiteError as exc:
+            raise self._map_error(exc) from exc
+        item = raw.get("data", raw)
+        return {
+            "provider_account_id": str(item.get("id") or ""),
+            "network": normalize_network(str(item.get("type") or "other")).value,
+            "external_profile_name": str(item.get("socialNetworkUsername") or ""),
+            "external_profile_id": str(item.get("socialNetworkId") or ""),
+            "connection_state": "authentication_required"
+            if bool(item.get("isReauthRequired"))
+            else "connected",
+        }
+
+    @staticmethod
+    def _message(raw: Any, default: SocialPostStatus) -> ProviderResult:
+        items = raw.get("data", []) if isinstance(raw, dict) else []
+        item = items[0] if isinstance(items, list) and items else (items if isinstance(items, dict) else {})
+        provider_id = str(item.get("id") or "") or None
+        status = HootsuiteProviderAdapter.STATUS_MAP.get(str(item.get("state") or "").upper(), default)
+        return ProviderResult(provider_id, status, {"provider_request_id": item.get("requestId")})
+
+    async def create_post(
+        self, post: SocialPost, account_refs: list[str], correlation_id: str
+    ) -> ProviderResult:
+        self._ensure_enabled()
+        if not account_refs:
+            raise SocialError("SOCIAL_ACCOUNT_NOT_FOUND", "A Hootsuite profile is required", status_code=422)
+        payload: dict[str, Any] = {
+            "text": str(post.content.get("text") or ""),
+            "socialProfileIds": account_refs,
+        }
+        if post.publish_at:
+            payload["scheduledSendTime"] = post.publish_at.isoformat().replace("+00:00", "Z")
+        media = post.metadata.get("hootsuite_media_ids")
+        if media:
+            payload["media"] = [{"id": str(item)} for item in media]
+        try:
+            raw = await self.client.create_message(payload, correlation_id)
+        except HootsuiteError as exc:
+            raise self._map_error(exc) from exc
+        return self._message(raw, SocialPostStatus.SCHEDULED if post.publish_at else SocialPostStatus.PUBLISHING)
+
+    async def schedule_post(self, post: SocialPost, correlation_id: str) -> ProviderResult:
+        refs = [str(item) for item in post.metadata.get("provider_account_refs", [])]
+        return await self.create_post(post, refs, correlation_id)
+
+    async def publish_post(self, post: SocialPost, correlation_id: str) -> ProviderResult:
+        refs = [str(item) for item in post.metadata.get("provider_account_refs", [])]
+        return await self.create_post(post, refs, correlation_id)
+
+    async def get_post(self, provider_post_id: str) -> ProviderResult:
+        self._ensure_enabled()
+        try:
+            raw = await self.client.get_message(provider_post_id, "social-reconcile")
+        except HootsuiteError as exc:
+            raise self._map_error(exc) from exc
+        return self._message(raw, SocialPostStatus.UNKNOWN)
+
+    async def get_post_status(self, provider_post_id: str) -> ProviderResult:
+        return await self.get_post(provider_post_id)
+
+    async def cancel_post(self, post: SocialPost, correlation_id: str) -> ProviderResult:
+        self._ensure_enabled()
+        if not post.provider_post_id:
+            raise SocialError("SOCIAL_POST_NOT_SYNCHRONIZED", "Social post has no provider reference", status_code=409)
+        try:
+            await self.client.delete_message(post.provider_post_id, correlation_id)
+        except HootsuiteError as exc:
+            raise self._map_error(exc) from exc
+        return ProviderResult(post.provider_post_id, SocialPostStatus.CANCELLED)
+
+    async def delete_post(self, post: SocialPost, correlation_id: str) -> ProviderResult:
+        result = await self.cancel_post(post, correlation_id)
+        return ProviderResult(result.provider_post_id, SocialPostStatus.DELETED)
+
+    async def upload_media(self, media: Mapping[str, Any], correlation_id: str) -> dict[str, Any]:
+        self._ensure_enabled()
+        mime = str(media.get("content_type") or "")
+        size = int(media.get("size") or 0)
+        if not (mime.startswith("image/") or mime.startswith("video/")) or size <= 0:
+            raise SocialError("SOCIAL_MEDIA_INVALID", "Media type or size is invalid", status_code=422)
+        try:
+            raw = await self.client.create_media({"mimeType": mime, "sizeBytes": size}, correlation_id)
+        except HootsuiteError as exc:
+            raise self._map_error(exc) from exc
+        item = raw.get("data", raw)
+        return {
+            "provider_media_id": str(item.get("id") or ""),
+            "upload_url": str(item.get("uploadUrl") or ""),
+            "status": "UPLOAD_PENDING",
         }
