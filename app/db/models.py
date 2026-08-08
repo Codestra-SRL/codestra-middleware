@@ -496,6 +496,126 @@ class N8nAcknowledgement(Base):
     )
 
 
+class N8nWorkflowRegistry(Base):
+    __tablename__ = "n8n_workflow_registry"
+    registry_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workflow_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    n8n_workflow_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_types: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    tenant_scope: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=600)
+    retry_policy: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    result_contract: Mapped[str] = mapped_column(String(64), nullable=False)
+    owner: Mapped[str] = mapped_column(String(128), nullable=False)
+    webhook_path: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_code", "workflow_version", name="uq_n8n_registry_code_version"
+        ),
+        UniqueConstraint("n8n_workflow_id", name="uq_n8n_registry_workflow_id"),
+    )
+
+
+class N8nRuntimeExecution(Base):
+    __tablename__ = "n8n_runtime_execution"
+    execution_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    n8n_execution_id: Mapped[str | None] = mapped_column(String(128), unique=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    causation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    timeout_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    failure_class: Mapped[str | None] = mapped_column(String(64))
+    last_error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "event_type",
+            "source_event_id",
+            "workflow_version",
+            "idempotency_key_hash",
+            name="uq_n8n_runtime_idempotency",
+        ),
+        Index("ix_n8n_runtime_claim", "status", "next_attempt_at", "created_at"),
+        Index("ix_n8n_runtime_tenant_correlation", "tenant_id", "correlation_id"),
+    )
+
+
+class N8nRuntimeResult(Base):
+    __tablename__ = "n8n_runtime_result"
+    result_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    execution_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("n8n_runtime_execution.execution_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    workflow_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    result_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    persisted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "execution_id", "result_hash", name="uq_n8n_runtime_result_hash"
+        ),
+    )
+
+
+class N8nRuntimeNonce(Base):
+    __tablename__ = "n8n_runtime_nonce"
+    identity: Mapped[str] = mapped_column(String(128), primary_key=True)
+    nonce: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    body_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class OdooResultDelivery(Base):
     __tablename__ = "odoo_result_delivery"
     result_delivery_id: Mapped[UUID] = mapped_column(

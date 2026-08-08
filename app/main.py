@@ -15,6 +15,7 @@ from app.api.v1.mappings import router as mappings_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.n8n_target import router as n8n_target_router
 from app.api.v1.n8n_transport import router as n8n_transport_router
+from app.api.v1.n8n_runtime import router as n8n_runtime_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.publisher import router as publisher_router
@@ -50,6 +51,7 @@ app.include_router(publisher_router)
 app.include_router(webphone_router)
 app.include_router(n8n_staging_router)
 app.include_router(n8n_transport_router)
+app.include_router(n8n_runtime_router)
 app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(internal_ai_jobs_router)
@@ -75,6 +77,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v1/n8n/executions",
         "/api/v1/n8n/executions/register",
         "/api/v1/n8n/acknowledgements",
+        "/api/v1/n8n-runtime/results",
         "/api/v1/lead-automation/results",
         "/api/v1/registry/resolve",
     }

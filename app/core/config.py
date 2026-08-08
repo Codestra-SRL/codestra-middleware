@@ -192,6 +192,17 @@ class Settings(BaseSettings):
     outbox_lease_seconds: int = 60
     odoo_concurrency: int = 4
     n8n_concurrency: int = 8
+    n8n_runtime_enabled: bool = False
+    n8n_runtime_environment: str = "staging"
+    n8n_runtime_base_url: str = ""
+    n8n_runtime_hmac_secret_file: str = ""
+    n8n_runtime_dispatch_timeout_seconds: float = 10.0
+    n8n_runtime_workflow_timeout_seconds: int = 600
+    n8n_runtime_max_attempts: int = 5
+    redis_runtime_enabled: bool = False
+    redis_runtime_environment: str = "staging"
+    redis_runtime_prefix: str = "codestra"
+    redis_runtime_socket_timeout_seconds: float = 1.0
     recording_concurrency: int = 2
     retention_worker_enabled: bool = True
     retention_delete_enabled: bool = False
