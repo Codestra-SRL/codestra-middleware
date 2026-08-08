@@ -61,9 +61,28 @@ def payload(**values: object) -> dict[str, object]:
 
 
 @pytest.fixture(autouse=True)
-def reset_admission() -> None:
+def reset_admission(monkeypatch) -> None:
     tts.admission = tts.Admission()
     tts.provider_readiness_failure = None
+    job_id = uuid4()
+    monkeypatch.setattr(
+        tts.tts_jobs,
+        "submit",
+        AsyncMock(return_value={"id": job_id, "state": "queued", "created": True}),
+    )
+    monkeypatch.setattr(
+        tts.tts_jobs,
+        "claim_exact",
+        AsyncMock(return_value={"id": job_id, "fencing_token": 1}),
+    )
+    for name in (
+        "mark_provider_started",
+        "record_chunk",
+        "mark_ambiguous",
+        "mark_cancelled_streaming",
+    ):
+        monkeypatch.setattr(tts.tts_jobs, name, AsyncMock())
+    monkeypatch.setattr(tts.tts_jobs, "complete", AsyncMock(return_value=True))
 
 
 def configure(
@@ -162,6 +181,32 @@ def test_stream_prefetches_audio_and_uses_only_server_voice(monkeypatch) -> None
     assert not tts.admission.global_lock.locked()
 
 
+def test_durable_idempotent_replay_returns_original_without_provider(
+    monkeypatch,
+) -> None:
+    configure(monkeypatch)
+    original = uuid4()
+    monkeypatch.setattr(
+        tts.tts_jobs,
+        "submit",
+        AsyncMock(
+            return_value={"id": original, "state": "streaming", "created": False}
+        ),
+    )
+    provider = AsyncMock()
+    monkeypatch.setattr(tts, "_provider", provider)
+    response = client_for(subject("codestra_ai_user")).post(
+        "/api/v1/ai/tts/stream", json=payload(), headers=headers()
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "job_id": str(original),
+        "state": "streaming",
+        "idempotent_replay": True,
+    }
+    provider.assert_not_called()
+
+
 def test_zero_byte_and_partial_failure_never_become_false_success(monkeypatch) -> None:
     configure(monkeypatch)
     empty = FakeProvider([], failure="tts_empty_stream")
@@ -188,13 +233,12 @@ async def test_concurrency_one_and_idempotency_fencing() -> None:
         )
     assert getattr(occupied.value, "status_code", None) == 429
     tts.admission.release()
-    with pytest.raises(Exception) as replay:
-        await tts.admission.acquire(
-            subject=principal,
-            idempotency_key="tenant:key-one",
-            request_digest="digest-one",
-        )
-    assert getattr(replay.value, "status_code", None) == 409
+    await tts.admission.acquire(
+        subject=principal,
+        idempotency_key="tenant:key-one",
+        request_digest="digest-one",
+    )
+    tts.admission.release()
 
 
 @pytest.mark.asyncio

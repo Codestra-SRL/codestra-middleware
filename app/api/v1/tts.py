@@ -8,14 +8,15 @@ import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from typing import Annotated, Protocol, cast
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.ai_console import StrictModel, Tenant, tenant
-from app.core import ai_jobs
+from app.core import ai_jobs, tts_jobs
 from app.core.config import settings
 from app.core.tts_metrics import ACTIVE_STREAMS, AUDIO_BYTES, CHARACTERS
 from app.core.tts_metrics import CLIENT_CANCELLATIONS, FAILURES, REJECTED, REQUESTS
@@ -32,7 +33,6 @@ APPROVED_PROFILE = "canary"
 CONTENT_TYPES = {"mp3_44100_128": "audio/mpeg"}
 USER_REQUESTS_PER_MINUTE = 10
 TENANT_REQUESTS_PER_MINUTE = 20
-MAX_IDEMPOTENCY_RECORDS = 4096
 
 
 class ClosableAsyncIterator(Protocol):
@@ -56,21 +56,12 @@ class Admission:
         self.guard = asyncio.Lock()
         self.user_windows: dict[str, deque[float]] = defaultdict(deque)
         self.tenant_windows: dict[str, deque[float]] = defaultdict(deque)
-        self.idempotency: dict[str, str] = {}
 
     async def acquire(
         self, *, subject: Tenant, idempotency_key: str, request_digest: str
     ) -> None:
         now = time.monotonic()
         async with self.guard:
-            existing = self.idempotency.get(idempotency_key)
-            if existing is not None:
-                code = (
-                    "tts_idempotent_replay"
-                    if existing == request_digest
-                    else "tts_idempotency_conflict"
-                )
-                raise HTTPException(409, code)
             user_key = f"{subject.organization_id}:{subject.user_id}"
             tenant_key = str(subject.organization_id)
             self._check_window(
@@ -84,9 +75,6 @@ class Admission:
             await self.global_lock.acquire()
             self.user_windows[user_key].append(now)
             self.tenant_windows[tenant_key].append(now)
-            if len(self.idempotency) >= MAX_IDEMPOTENCY_RECORDS:
-                self.idempotency.pop(next(iter(self.idempotency)))
-            self.idempotency[idempotency_key] = request_digest
 
     @staticmethod
     def _check_window(window: deque[float], now: float, limit: int) -> None:
@@ -154,7 +142,44 @@ def _provider() -> ElevenLabsTTSProvider:
     )
 
 
-@router.post("/stream")
+@router.get("/jobs/{job_id}")
+async def job_status(
+    job_id: UUID,
+    subject: Tenant = Depends(tenant),
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    try:
+        return await tts_jobs.status(
+            db,
+            job_id,
+            subject.organization_id,
+            subject.workspace_id,
+            subject.user_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, "TTS_JOB_NOT_FOUND") from exc
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job(
+    job_id: UUID,
+    subject: Tenant = Depends(tenant),
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    try:
+        state = await tts_jobs.cancel(
+            db,
+            job_id,
+            subject.organization_id,
+            subject.workspace_id,
+            subject.user_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, "TTS_JOB_NOT_FOUND_OR_TERMINAL") from exc
+    return {"job_id": str(job_id), "state": state}
+
+
+@router.post("/stream", response_model=None)
 async def stream_speech(
     body: SpeechRequest,
     idempotency_key: Annotated[
@@ -165,7 +190,7 @@ async def stream_speech(
     ],
     subject: Tenant = Depends(tenant),
     db: AsyncSession = Depends(get_session),
-) -> StreamingResponse:
+) -> StreamingResponse | JSONResponse:
     validate_readiness()
     if "codestra_ai_user" not in subject.roles:
         REJECTED.labels("role").inc()
@@ -191,11 +216,56 @@ async def stream_speech(
         raise HTTPException(413, "TTS_TEXT_LIMIT_EXCEEDED")
 
     started = time.monotonic()
-    await admission.acquire(
-        subject=subject,
-        idempotency_key=f"{subject.organization_id}:{subject.user_id}:{idempotency_key}",
-        request_digest=_request_digest(subject, body),
-    )
+    digest = _request_digest(subject, body)
+    try:
+        durable = await tts_jobs.submit(
+            db,
+            organization_id=subject.organization_id,
+            workspace_id=subject.workspace_id,
+            requested_by=subject.user_id,
+            project_key=body.project_key,
+            voice_alias=body.voice_profile,
+            model_alias=settings.elevenlabs_model_id,
+            output_profile=body.output_format,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+            request_sha256=digest,
+            character_count=len(body.text),
+        )
+    except ValueError as exc:
+        raise HTTPException(409, "TTS_IDEMPOTENCY_CONFLICT") from exc
+    except Exception as exc:
+        raise HTTPException(503, "TTS_QUEUE_UNAVAILABLE") from exc
+    if not durable["created"]:
+        return JSONResponse(
+            {
+                "job_id": str(durable["id"]),
+                "state": durable["state"],
+                "idempotent_replay": True,
+            }
+        )
+    try:
+        await admission.acquire(
+            subject=subject,
+            idempotency_key=(
+                f"{subject.organization_id}:{subject.user_id}:{idempotency_key}"
+            ),
+            request_digest=digest,
+        )
+    except HTTPException:
+        await tts_jobs.cancel(
+            db,
+            durable["id"],
+            subject.organization_id,
+            subject.workspace_id,
+            subject.user_id,
+        )
+        raise
+    worker_id = "elevenlabs-inline-01"
+    claimed = await tts_jobs.claim_exact(db, durable["id"], worker_id, 60)
+    if claimed is None:
+        admission.release()
+        raise HTTPException(409, "TTS_JOB_NOT_CLAIMABLE")
     try:
         await ai_jobs.audit(
             db,
@@ -230,6 +300,9 @@ async def stream_speech(
             )
         ),
     )
+    await tts_jobs.mark_provider_started(
+        db, claimed["id"], worker_id, claimed["fencing_token"]
+    )
     try:
         first_chunk = await anext(iterator)
     except (StopAsyncIteration, TTSError) as exc:
@@ -237,6 +310,9 @@ async def stream_speech(
         await iterator.aclose()
         admission.release()
         code = exc.code if isinstance(exc, TTSError) else "tts_empty_stream"
+        await tts_jobs.mark_ambiguous(
+            db, claimed["id"], worker_id, claimed["fencing_token"], code
+        )
         if code in {
             "tts_authentication_failed",
             "tts_permission_denied",
@@ -247,6 +323,9 @@ async def stream_speech(
         FAILURES.labels(code).inc()
         status = 429 if code == "tts_rate_limited" else 503
         raise HTTPException(status, code) from exc
+    await tts_jobs.record_chunk(
+        db, claimed["id"], worker_id, claimed["fencing_token"], len(first_chunk)
+    )
     TIME_TO_FIRST_AUDIO.observe(time.monotonic() - started)
 
     async def audio() -> AsyncIterator[bytes]:
@@ -255,14 +334,31 @@ async def stream_speech(
             AUDIO_BYTES.inc(len(first_chunk))
             yield first_chunk
             async for chunk in iterator:
+                await tts_jobs.record_chunk(
+                    db,
+                    claimed["id"],
+                    worker_id,
+                    claimed["fencing_token"],
+                    len(chunk),
+                )
                 AUDIO_BYTES.inc(len(chunk))
                 yield chunk
+            if not await tts_jobs.complete(
+                db, claimed["id"], worker_id, claimed["fencing_token"]
+            ):
+                raise TTSError("tts_completion_fence_rejected")
             complete = True
             REQUESTS.labels("completed").inc()
         except asyncio.CancelledError:
+            await tts_jobs.mark_cancelled_streaming(
+                db, claimed["id"], worker_id, claimed["fencing_token"]
+            )
             CLIENT_CANCELLATIONS.inc()
             raise
         except TTSError as exc:
+            await tts_jobs.mark_ambiguous(
+                db, claimed["id"], worker_id, claimed["fencing_token"], exc.code
+            )
             FAILURES.labels(exc.code).inc()
             raise
         finally:
@@ -279,5 +375,6 @@ async def stream_speech(
         headers={
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
+            "X-Codestra-TTS-Job-ID": str(claimed["id"]),
         },
     )
