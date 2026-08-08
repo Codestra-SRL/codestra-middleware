@@ -322,7 +322,53 @@ def loopback_json(
     return result
 
 
-def execute(job: dict[str, Any]) -> dict[str, Any]:
+def loopback_sse(
+    url: str,
+    payload: dict[str, Any],
+    timeout: int,
+    bearer_file: Path,
+):
+    """Yield validated OpenAI-compatible SSE documents from a loopback endpoint."""
+    if not (url.startswith("http://127.0.0.1:") or url.startswith("http://[::1]:")):
+        raise WorkerError("non-loopback model endpoint rejected")
+    bearer = protected(bearer_file).read_text().strip()
+    if not bearer or "\n" in bearer or "\r" in bearer:
+        raise WorkerError("model credential is invalid")
+    request = urllib.request.Request(
+        url,
+        data=encode({**payload, "stream": True, "stream_options": {"include_usage": True}}),
+        headers={
+            "Accept": "text/event-stream",
+            "Authorization": f"Bearer {bearer}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            while True:
+                raw_line = response.readline(65_537)
+                if len(raw_line) > 65_536:
+                    raise WorkerError("model stream event exceeds bound")
+                if not raw_line:
+                    break
+                try:
+                    line = raw_line.decode("utf-8").strip()
+                except UnicodeDecodeError as exc:
+                    raise WorkerError("model stream is not valid UTF-8") from exc
+                if not line or line.startswith(":") or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    return
+                document = json.loads(data)
+                if not isinstance(document, dict):
+                    raise WorkerError("model stream schema is invalid")
+                yield document
+    except (OSError, json.JSONDecodeError) as exc:
+        raise WorkerError("loopback model stream unavailable") from exc
+
+
+def execute_stream(job: dict[str, Any], emit: Any) -> dict[str, Any]:
     command_type = job.get("command_type")
     payload = job.get("command_payload")
     profile = job.get("model_profile")
@@ -362,7 +408,10 @@ def execute(job: dict[str, Any]) -> dict[str, Any]:
         output = {"proposal": raw.get("response", "")}
     else:
         prompt = json.dumps(payload.get("input", {}), sort_keys=True)
-        raw = loopback_json(
+        pieces: list[str] = []
+        token_usage: dict[str, int] = {}
+        first_token_at: float | None = None
+        for event in loopback_sse(
             "http://127.0.0.1:4000/v1/chat/completions",
             {
                 "model": model,
@@ -371,14 +420,35 @@ def execute(job: dict[str, Any]) -> dict[str, Any]:
             },
             timeout,
             BASE / "litellm.key",
-        )
-        choices = raw.get("choices") or []
-        output = {
-            "proposal": choices[0].get("message", {}).get("content", "")
-            if choices
-            else ""
-        }
+        ):
+            usage = event.get("usage")
+            if isinstance(usage, dict):
+                token_usage = {
+                    key: int(value)
+                    for key, value in usage.items()
+                    if key in {"prompt_tokens", "completion_tokens", "total_tokens"}
+                    and isinstance(value, int)
+                    and value >= 0
+                }
+            choices = event.get("choices") or []
+            delta = choices[0].get("delta", {}).get("content", "") if choices else ""
+            if isinstance(delta, str) and delta:
+                if first_token_at is None:
+                    first_token_at = time.time()
+                pieces.append(delta)
+                emit(delta)
+        output = {"proposal": "".join(pieces)}
     completed = time.time()
+    resource_usage: dict[str, int | float] = {}
+    if provider == "litellm":
+        resource_usage["generation_seconds"] = completed - started
+        if first_token_at is not None:
+            resource_usage["time_to_first_token_seconds"] = first_token_at - started
+        completion_tokens = token_usage.get("completion_tokens")
+        if completion_tokens is not None and completed > (first_token_at or started):
+            resource_usage["tokens_per_second"] = completion_tokens / (
+                completed - (first_token_at or started)
+            )
     return {
         "command_id": job["id"],
         "job_id": job["id"],
@@ -389,8 +459,8 @@ def execute(job: dict[str, Any]) -> dict[str, Any]:
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
         "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(completed)),
         "latency_ms": int((completed - started) * 1000),
-        "token_usage": {},
-        "resource_usage": {},
+        "token_usage": token_usage if provider == "litellm" else {},
+        "resource_usage": resource_usage,
         "output": output,
         "structured_artifacts": [],
         "warnings": [],
@@ -401,14 +471,32 @@ def execute(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def execute(job: dict[str, Any]) -> dict[str, Any]:
+    """Backward-compatible final-only execution helper."""
+    return execute_stream(job, lambda _delta: None)
+
+
 def _execute_child(job: dict[str, Any], sender: Any) -> None:
     """Run inference out of process so lease loss can stop the active request."""
     try:
-        sender.send((True, execute(job)))
+        result = execute_stream(job, lambda delta: sender.send(("chunk", delta)))
+        sender.send(("result", result))
     except Exception:  # The parent deliberately receives no provider detail.
-        sender.send((False, None))
+        sender.send(("error", None))
     finally:
         sender.close()
+
+
+def _receive_available(receiver: Any) -> list[tuple[str, Any]]:
+    messages: list[tuple[str, Any]] = []
+    while receiver.poll():
+        try:
+            message = receiver.recv()
+        except EOFError:
+            break
+        if isinstance(message, tuple) and len(message) == 2:
+            messages.append(message)
+    return messages
 
 
 def maintain_lease(
@@ -418,25 +506,31 @@ def maintain_lease(
     stop_heartbeat: threading.Event,
     cancellation_requested: threading.Event,
     lease_lost: threading.Event,
-    interval_seconds: float = 20,
+    interval_seconds: float = 1,
     metrics: WorkerMetrics | None = None,
 ) -> None:
     """Renew the lease and fail closed on any unverified heartbeat state."""
+    next_heartbeat = 0.0
     while not stop_heartbeat.wait(interval_seconds):
-        try:
-            status, _ = api.request(
-                "POST", f"/internal/api/v1/ai/worker/jobs/{job_id}/heartbeat", mutation
-            )
-        except WorkerError:
-            if metrics is not None:
-                metrics.heartbeat_failed()
-            lease_lost.set()
-            return
-        if status != 200:
-            if metrics is not None:
-                metrics.heartbeat_failed()
-            lease_lost.set()
-            return
+        now = time.monotonic()
+        if now >= next_heartbeat:
+            try:
+                status, _ = api.request(
+                    "POST",
+                    f"/internal/api/v1/ai/worker/jobs/{job_id}/heartbeat",
+                    mutation,
+                )
+            except WorkerError:
+                if metrics is not None:
+                    metrics.heartbeat_failed()
+                lease_lost.set()
+                return
+            if status != 200:
+                if metrics is not None:
+                    metrics.heartbeat_failed()
+                lease_lost.set()
+                return
+            next_heartbeat = now + 20
         try:
             status, document = api.request(
                 "POST",
@@ -503,7 +597,7 @@ def run_claimed_job(
             stop_heartbeat,
             cancellation_requested,
             lease_lost,
-            20,
+            1,
             metrics,
         ),
         daemon=True,
@@ -524,12 +618,30 @@ def run_claimed_job(
     sender.close()
     heartbeat.start()
     try:
+        sequence = 0
+        result: dict[str, Any] | None = None
+        execution_failed = False
         while inference.is_alive() and not (
             cancellation_requested.is_set()
             or lease_lost.is_set()
             or (shutdown_requested is not None and shutdown_requested.is_set())
         ):
-            inference.join(timeout=0.1)
+            for message_type, value in _receive_available(receiver):
+                if message_type == "chunk" and isinstance(value, str) and value:
+                    status, document = api.request(
+                        "POST",
+                        f"/internal/api/v1/ai/worker/jobs/{job_id}/chunks",
+                        {**mutation, "sequence": sequence, "content": value},
+                    )
+                    if status != 200 or document.get("duplicate") is True:
+                        lease_lost.set()
+                        break
+                    sequence += 1
+                elif message_type == "result" and isinstance(value, dict):
+                    result = value
+                elif message_type == "error":
+                    execution_failed = True
+            inference.join(timeout=0.05)
         if (
             cancellation_requested.is_set()
             or lease_lost.is_set()
@@ -552,10 +664,21 @@ def run_claimed_job(
             if status != 200 or document.get("state") != "cancelled":
                 return "lease-lost"
             return "cancelled"
-        if inference.exitcode != 0 or not receiver.poll():
-            raise WorkerError("model execution failed")
-        succeeded, result = receiver.recv()
-        if not succeeded or not isinstance(result, dict):
+        for message_type, value in _receive_available(receiver):
+            if message_type == "chunk" and isinstance(value, str) and value:
+                status, document = api.request(
+                    "POST",
+                    f"/internal/api/v1/ai/worker/jobs/{job_id}/chunks",
+                    {**mutation, "sequence": sequence, "content": value},
+                )
+                if status != 200 or document.get("duplicate") is True:
+                    raise WorkerError("chunk rejected")
+                sequence += 1
+            elif message_type == "result" and isinstance(value, dict):
+                result = value
+            elif message_type == "error":
+                execution_failed = True
+        if inference.exitcode != 0 or execution_failed or result is None:
             raise WorkerError("model execution failed")
         status, _ = api.request(
             "POST",

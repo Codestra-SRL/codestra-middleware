@@ -690,8 +690,31 @@ async def append_chunk(
         workspace_id=workspace_id,
     )
     size = len(content.encode())
+    if size > 65_536:
+        raise OverflowError("chunk_limit_exceeded")
     if row["output_bytes"] + size > max_output_bytes:
         raise OverflowError("output_limit_exceeded")
+    current = (
+        await db.execute(
+            text("SELECT sequence,content_sha256 FROM ai_job_chunks WHERE job_id=:job ORDER BY sequence DESC LIMIT 1"),
+            {"job": job_id},
+        )
+    ).mappings().first()
+    expected_sequence = 0 if current is None else int(current["sequence"]) + 1
+    digest = hashlib.sha256(content.encode()).hexdigest()
+    if sequence < expected_sequence:
+        existing = (
+            await db.execute(
+                text("SELECT content_sha256 FROM ai_job_chunks WHERE job_id=:job AND sequence=:sequence"),
+                {"job": job_id, "sequence": sequence},
+            )
+        ).mappings().first()
+        if existing is not None and existing["content_sha256"] == digest:
+            await db.commit()
+            return False
+        raise PermissionError("invalid_chunk_sequence")
+    if sequence != expected_sequence:
+        raise PermissionError("invalid_chunk_sequence")
     result = await db.execute(
         text("""
         INSERT INTO ai_job_chunks(id,job_id,organization_id,workspace_id,sequence,
@@ -707,7 +730,7 @@ async def append_chunk(
             "sequence": sequence,
             "token": fencing_token,
             "content": content,
-            "hash": hashlib.sha256(content.encode()).hexdigest(),
+            "hash": digest,
         },
     )
     inserted = int(getattr(result, "rowcount", 0)) == 1

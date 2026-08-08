@@ -607,6 +607,25 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
             "synthetic output",
             1024,
         )
+        with pytest.raises(PermissionError, match="invalid_chunk_sequence"):
+            await ai_jobs.append_chunk(
+                db,
+                job_id,
+                "synthetic-worker",
+                claimed["fencing_token"],
+                2,
+                "out of order",
+                1024,
+            )
+        assert await ai_jobs.append_chunk(
+            db,
+            job_id,
+            "synthetic-worker",
+            claimed["fencing_token"],
+            1,
+            " complete",
+            1024,
+        )
         assert (
             await ai_jobs.finish(
                 db,
@@ -869,7 +888,17 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     assert cancel.status_code == 202 and cancel.json()["cancel_requested"]
     stream = await client.get(f"/api/v1/ai/jobs/{job_id}/stream", headers=base_headers)
     assert stream.status_code == 200
-    assert "synthetic output" in stream.text and '"state": "completed"' in stream.text
+    assert "synthetic output" in stream.text and " complete" in stream.text
+    assert stream.text.count("event: final") == 1
+    assert stream.text.count("event: terminal") == 1
+    assert '"state": "completed"' in stream.text
+    resumed = await client.get(
+        f"/api/v1/ai/jobs/{job_id}/stream",
+        headers={**base_headers, "Last-Event-ID": "0"},
+    )
+    assert resumed.status_code == 200
+    assert "synthetic output" not in resumed.text
+    assert " complete" in resumed.text
     result_stream = await client.get(
         f"/api/v1/ai/jobs/{result_only['job_id']}/stream", headers=base_headers
     )

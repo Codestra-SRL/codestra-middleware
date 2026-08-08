@@ -170,12 +170,17 @@ async def create_message(
 @router.get("/jobs/{job_id}/stream")
 async def stream(
     job_id: UUID,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
     subject: Tenant = Depends(tenant),
     db: AsyncSession = Depends(get_session),
 ) -> StreamingResponse:
     async def events():
-        last = -1
-        emitted_content = False
+        try:
+            last = int(last_event_id) if last_event_id is not None else -1
+        except ValueError:
+            last = -1
+        emitted_content = last >= 0
+        announced_state: str | None = None
         for _ in range(1200):
             rows = (
                 (
@@ -224,6 +229,10 @@ async def stream(
                 yield 'event: error\ndata: {"code":"not_found"}\n\n'
                 return
             state = terminal["state"]
+            public_state = "started" if state in {"leased", "cancel_requested"} else state
+            if public_state in {"queued", "started"} and public_state != announced_state:
+                announced_state = public_state
+                yield f"event: {public_state}\ndata: {json.dumps({'state': public_state})}\n\n"
             if state in {"completed", "failed", "cancelled", "dead_letter"}:
                 output = terminal["output"] or {}
                 proposal = output.get("proposal") if isinstance(output, dict) else None
@@ -236,6 +245,11 @@ async def stream(
                         "id: result\nevent: chunk\ndata: "
                         f"{json.dumps({'content': proposal})}\n\n"
                     )
+                terminal_event = "failed" if state in {"failed", "dead_letter"} else state
+                if state == "completed":
+                    yield f"id: final\nevent: final\ndata: {json.dumps({'state': state})}\n\n"
+                else:
+                    yield f"id: {terminal_event}\nevent: {terminal_event}\ndata: {json.dumps({'state': state})}\n\n"
                 yield f"event: terminal\ndata: {json.dumps({'state': state})}\n\n"
                 return
             await asyncio.sleep(0.25)
