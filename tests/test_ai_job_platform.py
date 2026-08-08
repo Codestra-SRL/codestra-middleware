@@ -367,7 +367,9 @@ def certificates(tmp_path):
     "DATABASE_URL" not in os.environ, reason="disposable PostgreSQL required"
 )
 @pytest.mark.asyncio
-async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path):
+async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(
+    tmp_path, monkeypatch
+):
     organization_id, workspace_id = uuid4(), uuid4()
     other_organization = uuid4()
     engine = create_async_engine(os.environ["DATABASE_URL"], poolclass=NullPool)
@@ -751,6 +753,25 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(tmp_path)
     message_path = (
         f"/api/v1/ai/conversations/{conversation['conversation_id']}/messages"
     )
+    monkeypatch.setattr(ai_console.settings, "ai_submissions_enabled", False)
+    unavailable = await client.post(
+        message_path,
+        headers={**base_headers, "Idempotency-Key": "browser-unavailable-gate"},
+        json={"content": "must not be queued"},
+    )
+    assert unavailable.status_code == 503
+    assert unavailable.json() == {"detail": "AI_TEMPORARILY_UNAVAILABLE"}
+    async with session_factory() as gate_db:
+        queued = (
+            await gate_db.execute(
+                text(
+                    "SELECT count(*) FROM ai_generation_jobs WHERE idempotency_key=:key"
+                ),
+                {"key": "browser-unavailable-gate"},
+            )
+        ).scalar_one()
+        assert queued == 0
+    monkeypatch.setattr(ai_console.settings, "ai_submissions_enabled", True)
     arbitrary = await client.post(
         message_path,
         headers={**base_headers, "Idempotency-Key": "browser-arbitrary-profile"},

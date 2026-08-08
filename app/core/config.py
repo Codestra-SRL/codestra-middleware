@@ -94,6 +94,7 @@ class Settings(BaseSettings):
     ai_job_max_context_bytes: int = 131072
     ai_job_max_output_bytes: int = 1048576
     ai_job_project_allowlist: str = ""
+    ai_submissions_enabled: bool = False
     ai_orchestration_enabled: bool = False
     ai_worker_claims_enabled: bool = False
     ai_default_max_queued_per_tenant: int = 100

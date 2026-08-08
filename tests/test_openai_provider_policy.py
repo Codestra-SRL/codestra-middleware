@@ -52,6 +52,8 @@ def test_openai_secrets_require_root_style_permissions(tmp_path: Path) -> None:
 
 def test_provider_worker_is_disabled_by_default_and_has_no_tools() -> None:
     settings = Settings()
+    assert settings.ai_submissions_enabled is False
+    assert settings.ai_worker_claims_enabled is False
     assert settings.openai_provider_enabled is False
     source = Path("app/providers/openai_responses.py").read_text()
     assert '"store": False' in source
