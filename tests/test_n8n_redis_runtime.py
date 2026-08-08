@@ -6,7 +6,11 @@ import pytest
 from redis.exceptions import ConnectionError
 
 from app.core.config import settings
-from app.adapters.odoo.results import approved_runtime_binding, _runtime_result_body
+from app.adapters.odoo.results import (
+    _runtime_result_body,
+    approved_runtime_binding,
+    is_test_syn_odoo_execution,
+)
 from app.db.models import N8nRuntimeExecution, N8nRuntimeResult, OdooResultDelivery
 from app.core.n8n_runtime import (
     DispatchRequest,
@@ -254,6 +258,7 @@ def test_synthetic_odoo_mapping_is_exact_and_fail_closed(monkeypatch):
     )
     monkeypatch.setattr(settings, "test_syn_odoo_outbox_public_id", "OUTBOX-TEST-SYN")
     execution = synthetic_execution()
+    assert is_test_syn_odoo_execution(execution) is True
     assert approved_runtime_binding(execution) == {
         "organization_public_id": "ORG-TEST-SYN",
         "business_unit_public_id": "BU-TEST-SYN",
@@ -267,6 +272,9 @@ def test_synthetic_odoo_mapping_is_exact_and_fail_closed(monkeypatch):
         ("event_type", "test.synthetic.unapproved"),
     ):
         assert approved_runtime_binding(synthetic_execution(**{field: value})) is None
+        assert (
+            is_test_syn_odoo_execution(synthetic_execution(**{field: value})) is False
+        )
     monkeypatch.setattr(settings, "test_syn_odoo_result_delivery_enabled", False)
     assert approved_runtime_binding(execution) is None
 

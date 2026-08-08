@@ -23,7 +23,10 @@ from app.core.n8n_runtime import (
     verify_fresh,
     verify_runtime,
 )
-from app.adapters.odoo.results import approved_runtime_binding
+from app.adapters.odoo.results import (
+    approved_runtime_binding,
+    is_test_syn_odoo_execution,
+)
 from app.db.models import (
     AuditEvent,
     N8nRuntimeExecution,
@@ -262,6 +265,10 @@ async def result_callback(
     )
     db.add(runtime_result)
     synthetic_binding = approved_runtime_binding(execution, runtime_result)
+    if is_test_syn_odoo_execution(execution) and synthetic_binding is None:
+        await db.rollback()
+        N8N_RESULT_FAILURE.labels(reason="unapproved_test_syn_result").inc()
+        raise HTTPException(422, "unapproved TEST_SYN result contract")
     if mapped == ExecutionStatus.COMPLETED and synthetic_binding is not None:
         db.add(
             OdooResultDelivery(

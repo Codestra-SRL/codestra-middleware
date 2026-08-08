@@ -288,17 +288,7 @@ def approved_runtime_binding(
     execution: N8nRuntimeExecution,
     runtime_result: N8nRuntimeResult | None = None,
 ) -> dict[str, str] | None:
-    if not settings.test_syn_odoo_result_delivery_enabled:
-        return None
-    if (
-        settings.environment != "staging"
-        or execution.tenant_id != settings.test_syn_odoo_tenant_id
-        or execution.workflow_code != settings.test_syn_odoo_workflow_code
-        or execution.workflow_version != settings.test_syn_odoo_workflow_version
-        or execution.event_type != settings.test_syn_odoo_event_type
-        or execution.event_id != settings.test_syn_odoo_event_id
-        or execution.correlation_id != settings.test_syn_odoo_correlation_id
-    ):
+    if not is_test_syn_odoo_execution(execution):
         return None
     if execution.payload_json.get("synthetic") is not True:
         return None
@@ -323,6 +313,19 @@ def approved_runtime_binding(
         ):
             return None
     return binding
+
+
+def is_test_syn_odoo_execution(execution: N8nRuntimeExecution) -> bool:
+    return bool(
+        settings.test_syn_odoo_result_delivery_enabled
+        and settings.environment == "staging"
+        and execution.tenant_id == settings.test_syn_odoo_tenant_id
+        and execution.workflow_code == settings.test_syn_odoo_workflow_code
+        and execution.workflow_version == settings.test_syn_odoo_workflow_version
+        and execution.event_type == settings.test_syn_odoo_event_type
+        and execution.event_id == settings.test_syn_odoo_event_id
+        and execution.correlation_id == settings.test_syn_odoo_correlation_id
+    )
 
 
 def _runtime_result_body(
