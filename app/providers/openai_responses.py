@@ -12,6 +12,13 @@ from app.core.ai_provider import AIProviderError, CircuitBreaker, ProviderEvent
 from app.core.ai_provider import ProviderRequest
 
 TRANSIENT_STATUS = frozenset({408, 409, 429, 500, 502, 503, 504})
+STATUS_ERROR_CODES = {
+    400: "provider_bad_request",
+    401: "provider_authentication_failed",
+    403: "provider_permission_denied",
+    404: "provider_model_not_found",
+    429: "provider_rate_limited",
+}
 
 
 class OpenAIResponsesProvider:
@@ -76,10 +83,15 @@ class OpenAIResponsesProvider:
                 },
             ) as response:
                 if response.status_code >= 400:
+                    code = STATUS_ERROR_CODES.get(response.status_code)
+                    if code is None:
+                        code = (
+                            "provider_transient_error"
+                            if response.status_code in TRANSIENT_STATUS
+                            else "provider_request_rejected"
+                        )
                     raise AIProviderError(
-                        "provider_transient_error"
-                        if response.status_code in TRANSIENT_STATUS
-                        else "provider_request_rejected",
+                        code,
                         retryable=response.status_code in TRANSIENT_STATUS,
                     )
                 async for line in response.aiter_lines():
@@ -93,6 +105,8 @@ class OpenAIResponsesProvider:
                     except json.JSONDecodeError as exc:
                         raise AIProviderError("provider_invalid_stream") from exc
                     event_type = event.get("type")
+                    if event_type == "response.created":
+                        continue
                     if event_type == "response.output_text.delta":
                         delta = event.get("delta")
                         if isinstance(delta, str) and delta:
@@ -106,6 +120,8 @@ class OpenAIResponsesProvider:
                         )
                     elif event_type in {"response.failed", "response.incomplete"}:
                         raise AIProviderError("provider_generation_failed")
+                    elif event_type == "error":
+                        raise AIProviderError("provider_stream_error")
         except httpx.TimeoutException as exc:
             raise AIProviderError("provider_timeout", retryable=True) from exc
         except httpx.TransportError as exc:
@@ -113,4 +129,3 @@ class OpenAIResponsesProvider:
         finally:
             if owned_client:
                 await client.aclose()
-
