@@ -35,7 +35,11 @@ TENANT_REQUESTS_PER_MINUTE = 20
 MAX_IDEMPOTENCY_RECORDS = 4096
 
 
-class ClosableAsyncIterator(AsyncIterator[bytes], Protocol):
+class ClosableAsyncIterator(Protocol):
+    def __aiter__(self) -> AsyncIterator[bytes]: ...
+
+    async def __anext__(self) -> bytes: ...
+
     async def aclose(self) -> None: ...
 
 
