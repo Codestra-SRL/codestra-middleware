@@ -102,9 +102,16 @@ def request_context(value: Annotated[str, Header(alias="X-Correlation-ID")]) -> 
     return value
 
 
+def require_ai_submissions_available(_: Tenant = Depends(tenant)) -> None:
+    """Fail before creating durable state while AI service is unavailable."""
+    if not settings.ai_submissions_enabled:
+        raise HTTPException(503, "AI_TEMPORARILY_UNAVAILABLE")
+
+
 @router.post("/conversations", status_code=201)
 async def create_conversation(
     body: ConversationRequest,
+    _: None = Depends(require_ai_submissions_available),
     subject: Tenant = Depends(tenant),
     correlation_id: str = Depends(request_context),
     db: AsyncSession = Depends(get_session),
@@ -126,6 +133,7 @@ async def create_message(
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=16, max_length=255)
     ],
+    _: None = Depends(require_ai_submissions_available),
     subject: Tenant = Depends(tenant),
     correlation_id: str = Depends(request_context),
     db: AsyncSession = Depends(get_session),

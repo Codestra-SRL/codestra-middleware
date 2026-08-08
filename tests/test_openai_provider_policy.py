@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -51,8 +52,63 @@ def test_openai_secrets_require_root_style_permissions(tmp_path: Path) -> None:
 
 def test_provider_worker_is_disabled_by_default_and_has_no_tools() -> None:
     settings = Settings()
+    assert settings.ai_submissions_enabled is False
+    assert settings.ai_worker_claims_enabled is False
     assert settings.openai_provider_enabled is False
     source = Path("app/providers/openai_responses.py").read_text()
     assert '"store": False' in source
     assert '"tools"' not in source
     assert "api.openai.com/v1/responses" in source
+
+
+@pytest.mark.parametrize("value", [0, -1, 2, "invalid", None])
+def test_openai_concurrency_rejects_missing_or_invalid_values(value: object) -> None:
+    with pytest.raises(ValueError, match="concurrency"):
+        Settings(openai_worker_max_concurrency=value)  # type: ignore[arg-type]
+
+
+def test_openai_concurrency_is_explicitly_one() -> None:
+    configured = Settings(openai_worker_max_concurrency=1)
+    assert configured.openai_worker_max_concurrency == 1
+
+
+@pytest.mark.asyncio
+async def test_registration_must_match_configured_concurrency(monkeypatch) -> None:
+    monkeypatch.setattr(openai_jobs.settings, "openai_worker_max_concurrency", 1)
+    result = MagicMock()
+    result.mappings.return_value.first.return_value = {
+        "max_concurrency": 1,
+        "enabled": True,
+    }
+    db = AsyncMock()
+    db.execute.return_value = result
+    await openai_jobs.validate_worker_registration(db)
+
+    result.mappings.return_value.first.return_value = {
+        "max_concurrency": 2,
+        "enabled": True,
+    }
+    with pytest.raises(RuntimeError, match="registration_invalid"):
+        await openai_jobs.validate_worker_registration(db)
+
+
+@pytest.mark.asyncio
+async def test_capacity_wait_does_not_crash_worker(monkeypatch) -> None:
+    calls = 0
+
+    async def occupied(*_args: object) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OverflowError("worker_concurrency_limit")
+        raise RuntimeError("stop-test-loop")
+
+    async def no_wait(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(openai_jobs.settings, "openai_worker_max_concurrency", 1)
+    monkeypatch.setattr(openai_jobs, "cycle", occupied)
+    monkeypatch.setattr(openai_jobs.asyncio, "sleep", no_wait)
+    with pytest.raises(RuntimeError, match="stop-test-loop"):
+        await openai_jobs.run_forever(cast(Any, object()), cast(Any, object()))
+    assert calls == 2
