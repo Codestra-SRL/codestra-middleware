@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     openai_provider_enabled: bool = False
     openai_worker_service_id: str = "openai-responses-provider"
     openai_worker_id: str = "codestra-openai-01"
+    openai_worker_max_concurrency: int = 1
     openai_api_key_file: str = ""
     openai_safety_salt_file: str = ""
     openai_chat_model: str = "gpt-5.6-terra"
@@ -408,6 +409,13 @@ class Settings(BaseSettings):
         value = path.read_bytes().strip()
         if len(value) < 32:
             raise ValueError("registry snapshot signing key is too short")
+        return value
+
+    @field_validator("openai_worker_max_concurrency")
+    @classmethod
+    def validate_openai_worker_max_concurrency(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("OpenAI worker concurrency must equal one")
         return value
 
     @field_validator("vicidial_authorization_url", "vicidial_edge_url")

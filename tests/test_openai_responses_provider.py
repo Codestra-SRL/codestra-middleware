@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from app.core.ai_provider import CircuitBreaker, ProviderRequest
+from app.core.ai_provider import AIProviderError
 from app.core.ai_provider import redact_provider_input, safety_identifier
 from app.providers.openai_responses import OpenAIResponsesProvider
 
@@ -97,6 +98,47 @@ async def test_transient_failure_retries_before_any_output(monkeypatch) -> None:
     assert events[0].delta == "ok"
 
 
+@pytest.mark.asyncio
+async def test_stream_failure_event_is_fail_closed() -> None:
+    def handler(_value: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text='data: {"type":"response.failed"}\n\n',
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenAIResponsesProvider(
+            api_key="test-only-key",
+            timeout_seconds=10,
+            max_retries=0,
+            client=client,
+        )
+        with pytest.raises(AIProviderError, match="provider_generation_failed"):
+            _ = [event async for event in provider.stream(request())]
+
+
+@pytest.mark.asyncio
+async def test_no_chunk_stream_has_no_false_delta() -> None:
+    def handler(_value: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text=(
+                'data: {"type":"response.completed","response":{"usage":{}}}\n\n'
+                "data: [DONE]\n\n"
+            ),
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenAIResponsesProvider(
+            api_key="test-only-key",
+            timeout_seconds=10,
+            max_retries=0,
+            client=client,
+        )
+        events = [event async for event in provider.stream(request())]
+    assert [event for event in events if event.kind == "delta"] == []
+
+
 def test_identity_redaction_and_circuit_breaker_are_fail_closed(monkeypatch) -> None:
     assert redact_provider_input("password=hunter2 sk-secretfixture123") == (
         "[REDACTED] [REDACTED]"
@@ -109,4 +151,3 @@ def test_identity_redaction_and_circuit_breaker_are_fail_closed(monkeypatch) -> 
     assert breaker.allow()
     breaker.failed()
     assert not breaker.allow()
-

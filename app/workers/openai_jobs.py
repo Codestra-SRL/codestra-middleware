@@ -27,6 +27,32 @@ PRICE_MICRO_USD_PER_TOKEN = {
 }
 
 
+def validated_worker_concurrency() -> int:
+    """Return the sole approved concurrency or fail before registration/claim."""
+    value = settings.openai_worker_max_concurrency
+    if value != 1:
+        raise RuntimeError("openai_worker_concurrency_invalid")
+    return value
+
+
+async def validate_worker_registration(db: AsyncSession) -> None:
+    expected = validated_worker_concurrency()
+    row = (
+        await db.execute(
+            text("""
+        SELECT max_concurrency,enabled FROM ai_worker_registrations
+        WHERE worker_id=:worker AND service_id=:service
+    """),
+            {
+                "worker": settings.openai_worker_id,
+                "service": settings.openai_worker_service_id,
+            },
+        )
+    ).mappings().first()
+    if row is None or not row["enabled"] or int(row["max_concurrency"]) != expected:
+        raise RuntimeError("openai_worker_registration_invalid")
+
+
 async def _usage_in_last_day(
     db: AsyncSession,
     *,
@@ -259,6 +285,7 @@ async def cycle(
     if not settings.openai_provider_enabled:
         raise RuntimeError("OPENAI_PROVIDER_ENABLED is false")
     async with session_factory() as db:
+        await validate_worker_registration(db)
         job = await ai_jobs.claim(
             db,
             settings.openai_worker_id,
@@ -284,11 +311,39 @@ async def cycle(
                 correlation_id="openai-provider-cycle",
                 safe_error_details={"component": "openai-responses"},
             )
+        except Exception:
+            logger.error("OpenAI job failed code=provider_worker_error")
+            try:
+                return await ai_jobs.finish(
+                    db,
+                    UUID(str(job["id"])),
+                    settings.openai_worker_id,
+                    int(job["fencing_token"]),
+                    failed=True,
+                    error_code="provider_worker_error",
+                    retryable=False,
+                    correlation_id="openai-provider-cycle",
+                    safe_error_details={"component": "openai-responses"},
+                )
+            except PermissionError:
+                await db.rollback()
+                await ai_jobs.recover_expired(
+                    db,
+                    UUID(str(job["organization_id"])),
+                    UUID(str(job["workspace_id"])),
+                )
+                return "lease_lost"
 
 
 async def run_forever(
     provider: AIProvider, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
+    validated_worker_concurrency()
     while True:
-        await cycle(provider, session_factory)
+        try:
+            await cycle(provider, session_factory)
+        except OverflowError as exc:
+            if str(exc) != "worker_concurrency_limit":
+                raise
+            logger.info("OpenAI worker capacity occupied")
         await asyncio.sleep(0.25)
