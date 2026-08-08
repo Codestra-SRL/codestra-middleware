@@ -23,7 +23,7 @@ from app.core.runtime_redis import (
     TTL_SECONDS,
     runtime_key,
 )
-from app.workers.n8n_runtime import recover_stale_dispatches
+from app.workers.n8n_runtime import expire_running, recover_stale_dispatches
 from app.entrypoints.runtime import add_api_runtime
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -181,6 +181,14 @@ async def test_stale_dispatch_recovery_uses_bounded_lease():
     session.commit.assert_awaited_once()
     with pytest.raises(ValueError):
         await recover_stale_dispatches(session, 1)
+
+
+@pytest.mark.asyncio
+async def test_running_workflow_timeout_is_persisted():
+    session = AsyncMock()
+    session.execute.return_value.rowcount = 2
+    assert await expire_running(session) == 2
+    session.commit.assert_awaited_once()
 
 
 def test_result_callback_is_not_blocked_by_generic_bearer_guard(monkeypatch):

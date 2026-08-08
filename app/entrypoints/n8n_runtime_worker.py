@@ -9,7 +9,12 @@ import httpx
 
 from app.core.config import settings
 from app.db.session import SessionFactory
-from app.workers.n8n_runtime import claim, dispatch_one, recover_stale_dispatches
+from app.workers.n8n_runtime import (
+    claim,
+    dispatch_one,
+    expire_running,
+    recover_stale_dispatches,
+)
 
 
 async def run() -> None:
@@ -24,6 +29,7 @@ async def run() -> None:
         while not stop.is_set():
             async with SessionFactory() as session:
                 await recover_stale_dispatches(session)
+                await expire_running(session)
                 rows = await claim(session, min(settings.n8n_concurrency, 25))
             for row in rows:
                 async with SessionFactory() as session:

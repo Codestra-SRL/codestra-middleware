@@ -88,6 +88,30 @@ async def recover_stale_dispatches(
     return int(result.rowcount or 0)
 
 
+async def expire_running(session: AsyncSession) -> int:
+    """Close executions whose durable workflow deadline has elapsed."""
+    now = datetime.now(UTC)
+    result = await session.execute(
+        update(N8nRuntimeExecution)
+        .where(
+            N8nRuntimeExecution.status == ExecutionStatus.RUNNING,
+            N8nRuntimeExecution.timeout_at <= now,
+        )
+        .values(
+            status=ExecutionStatus.TIMED_OUT,
+            failure_class="PERMANENT",
+            last_error_code="WORKFLOW_TIMEOUT",
+            completed_at=now,
+            updated_at=now,
+        )
+    )
+    await session.commit()
+    count = int(result.rowcount or 0)
+    if count:
+        N8N_TIMEOUT.inc(count)
+    return count
+
+
 async def dispatch_one(
     session: AsyncSession,
     execution: N8nRuntimeExecution,

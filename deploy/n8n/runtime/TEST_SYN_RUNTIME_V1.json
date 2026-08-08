@@ -60,6 +60,9 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.4,
         "position": [1200, 0],
+        "retryOnFail": true,
+        "maxTries": 5,
+        "waitBetweenTries": 2000,
         "parameters": {
           "url": "http://middleware-n8n-runtime-canary:8095/api/v1/n8n-runtime/results",
           "method": "POST",
