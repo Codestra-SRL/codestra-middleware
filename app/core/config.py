@@ -175,6 +175,24 @@ class Settings(BaseSettings):
     odoo_service_credential_reference: str = ""
     odoo_service_private_key_file: str = ""
     odoo_result_delivery_enabled: bool = False
+    odoo_read_enabled: bool = False
+    odoo_sync_worker_enabled: bool = False
+    odoo_staging_writes_enabled: bool = False
+    odoo_production_writes_enabled: bool = False
+    odoo_base_url: str = ""
+    odoo_token_url: str = ""
+    odoo_client_id: str = "codestra-middleware-staging"
+    odoo_client_secret_file: str = ""
+    odoo_audience: str = "codestra-odoo-integration"
+    odoo_scope: str = ""
+    odoo_ca_file: str = ""
+    odoo_connect_timeout: float = 5.0
+    odoo_read_timeout: float = 15.0
+    odoo_max_retries: int = 3
+    odoo_sync_worker_id: str = "codestra-middleware-odoo-sync"
+    odoo_sync_batch_size: int = 25
+    odoo_sync_lease_seconds: int = 60
+    odoo_sync_business_units: str = ""
     email_dispatch_enabled: bool = False
     sms_dispatch_enabled: bool = False
     allow_live_email: bool = False
@@ -294,6 +312,7 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.postiz_publish_enabled,
+            self.odoo_production_writes_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")

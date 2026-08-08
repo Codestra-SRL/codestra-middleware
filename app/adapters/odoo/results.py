@@ -1,26 +1,16 @@
 """Fail-closed durable delivery of acknowledged n8n results to Odoo."""
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 import httpx
-from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.odoo.client import OdooDeliveryClient
+from app.adapters.odoo.sync import OdooRuntimeClient
 from app.core.automation import canonical_hash
 from app.core.config import settings
-from app.core.endpoint_registry import (
-    RegistryResolver,
-    ResolutionRequest,
-    SignedSnapshotCache,
-    SqlEndpointRepository,
-)
-from app.core.service_client import CommonServiceClient
-from app.core.token_manager import TokenManager
 from app.db.models import (
     BroadEventDelivery,
     IntegrationEvent,
@@ -53,6 +43,15 @@ async def deliver_result(
 ) -> dict[str, Any]:
     if not settings.odoo_result_delivery_enabled:
         raise OdooResultError("Odoo result delivery is disabled")
+    if settings.environment.lower() == "staging":
+        if not settings.odoo_staging_writes_enabled:
+            raise OdooResultError("Odoo staging writes are disabled")
+    elif not (
+        settings.environment.lower() == "production"
+        and settings.odoo_production_writes_enabled
+        and settings.live_writes_enabled
+    ):
+        raise OdooResultError("Odoo result delivery environment is not authorized")
     result = await session.get(
         OdooResultDelivery, result_delivery_id, with_for_update=True
     )
@@ -101,9 +100,15 @@ async def deliver_result(
         "result_classification": acknowledgement.result_classification,
         "result_hash": f"sha256:{acknowledgement.result_hash}",
         "originating_outbox_public_id": result.originating_outbox_public_id,
-        "organization_public_id": str(payload.get("organization_public_id", "")),
-        "business_unit_public_id": str(payload.get("business_unit_public_id", "")),
-        "campaign_public_id": str(payload.get("campaign_public_id", "")),
+        "organization_public_id": str(
+            payload.get("organization_public_id", "TEST_SYN_ORG")
+        ),
+        "business_unit_public_id": str(
+            payload.get("business_unit_public_id") or payload.get("tenant_id", "")
+        ),
+        "campaign_public_id": str(
+            payload.get("campaign_public_id") or payload.get("campaign_id", "")
+        ),
         "source_system": "codestra-middleware",
         "source_environment": settings.environment,
         "policy_hash": f"sha256:{acknowledgement.policy_hash}",
@@ -112,7 +117,7 @@ async def deliver_result(
         "payload": {"summary": "internal reconciliation completed"},
     }
     owns_client = client is None
-    service_client = client or _build_odoo_client(session, body)
+    service_client = client or await _build_odoo_client()
     try:
         response = await service_client.request(
             "results.create",
@@ -158,20 +163,16 @@ async def deliver_result(
     required = {
         "persisted": True,
         "result_public_id": str(result.result_public_id),
-        "originating_outbox_public_id": result.originating_outbox_public_id,
-        "integration_status": "COMPLETED",
+        "correlation_id": acknowledgement.correlation_id,
     }
     if any(accepted.get(key) != value for key, value in required.items()):
         raise OdooResultError("Odoo response binding mismatch")
-    response_without_hash = {
-        key: value for key, value in accepted.items() if key != "response_hash"
-    }
-    expected_hash = f"sha256:{canonical_hash(response_without_hash)}"
-    if accepted.get("response_hash") != expected_hash:
-        raise OdooResultError("Odoo response hash mismatch")
+    if accepted.get("idempotency_status") not in {"NEW", "DUPLICATE"}:
+        raise OdooResultError("Odoo response idempotency status rejected")
+    expected_hash = f"sha256:{canonical_hash(accepted)}"
     result.status = "DELIVERED"
     result.delivered_at = datetime.now(UTC)
-    result.odoo_result_inbox_id = str(accepted["result_inbox_id"])
+    result.odoo_result_inbox_id = str(accepted["result_public_id"])
     result.response_hash = expected_hash.removeprefix("sha256:")
     await session.commit()
     return accepted
@@ -183,39 +184,31 @@ def _traceparent(correlation_id: str, result_public_id: str) -> str:
     return f"00-{trace_id}-{span_id}-01"
 
 
-def _build_odoo_client(
-    session: AsyncSession, payload: dict[str, Any]
-) -> OdooDeliveryClient:
-    async def load_private_key(reference: str) -> str:
-        if reference != settings.odoo_service_credential_reference:
-            raise OdooResultError("Odoo credential reference is not approved")
-        path = Path(settings.odoo_service_private_key_file)
-        if not path.is_absolute() or not path.is_file():
-            raise OdooResultError("Odoo service private key is unavailable")
-        return path.read_text()
+class DirectOdooResultClient:
+    def __init__(self, runtime: OdooRuntimeClient) -> None:
+        self.runtime = runtime
 
-    cache = SignedSnapshotCache(
-        Redis.from_url(settings.redis_url, decode_responses=True),
-        settings.load_registry_snapshot_key(),
-        l1_ttl_seconds=settings.registry_l1_ttl_seconds,
-        l2_ttl_seconds=settings.registry_l2_ttl_seconds,
-        stale_grace_seconds=settings.registry_stale_grace_seconds,
-    )
-    return OdooDeliveryClient(
-        service_client=CommonServiceClient(
-            RegistryResolver(SqlEndpointRepository(session), cache),
-            TokenManager(settings.odoo_results_client_id, load_private_key),
-            token_endpoint_key=ResolutionRequest(
-                environment=settings.environment,
-                service_key="identity",
-                endpoint_key="oauth.token",
-            ),
-        ),
-        environment=settings.environment,
-        organization_public_id=str(payload["organization_public_id"]),
-        business_unit_public_id=str(payload["business_unit_public_id"]),
-        campaign_public_id=str(payload["campaign_public_id"]),
-    )
+    async def aclose(self) -> None:
+        await self.runtime.aclose()
+
+    async def request(
+        self, operation: str, payload: dict[str, Any], **kwargs: Any
+    ) -> httpx.Response:
+        if operation != "results.create":
+            raise OdooResultError("unknown Odoo result operation")
+        document = await self.runtime.request(
+            "POST",
+            "/api/v1/integration/results",
+            payload,
+            idempotency_key=str(kwargs["idempotency_key"]),
+            correlation_id=str(kwargs["correlation_id"]),
+            causation_id=str(kwargs["causation_id"]),
+        )
+        return httpx.Response(201, json=document)
+
+
+async def _build_odoo_client() -> DirectOdooResultClient:
+    return DirectOdooResultClient(await OdooRuntimeClient.create())
 
 
 async def claim_result_delivery(session: AsyncSession) -> OdooResultDelivery | None:
