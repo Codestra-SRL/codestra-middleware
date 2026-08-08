@@ -264,6 +264,23 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    sales_lead_intake_enabled: bool = False
+    sales_identity_resolution_enabled: bool = False
+    sales_odoo_read_only_lookup_enabled: bool = False
+    sales_verification_jobs_enabled: bool = False
+    scraper_result_ingest_enabled: bool = False
+    hunter_provider_enabled: bool = False
+    apollo_provider_enabled: bool = False
+    twilio_lookup_provider_enabled: bool = False
+    opencorporates_provider_enabled: bool = False
+    openai_lead_classification_enabled: bool = False
+    vicidial_publication_enabled: bool = False
+    outreach_enabled: bool = False
+    scraper_hmac_secret: str = ""
+    scraper_identity: str = "codestra-scraper-server-c"
+    sales_exact_match_threshold: int = 90
+    sales_review_match_threshold: int = 70
+    sales_policy_version: str = "sales-lead-v1.0"
 
     def validate_safety(self) -> None:
         broad_event_switches = (
@@ -294,6 +311,8 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.postiz_publish_enabled,
+            self.vicidial_publication_enabled,
+            self.outreach_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
