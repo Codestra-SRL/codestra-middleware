@@ -31,7 +31,7 @@ def test_sync_worker_has_private_odoo_network_and_secret_file_mounts():
     )[0]
     assert "codestra_internal_integration" in block
     assert "identity_service" in block
-    assert "odoo_results_client_secret:ro" in block
+    assert "middleware_client_secret:/run/secrets/odoo_client_secret:ro" in block
     assert 'ODOO_PRODUCTION_WRITES_ENABLED: "false"' in block
     assert 'LIVE_WRITES_ENABLED: "false"' in block
 

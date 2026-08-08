@@ -207,10 +207,21 @@ services:
       ODOO_STAGING_WRITES_ENABLED: "false"
       ODOO_PRODUCTION_WRITES_ENABLED: "false"
       LIVE_WRITES_ENABLED: "false"
+      ODOO_BASE_URL: http://odoo19-staging:8069
+      ODOO_TOKEN_URL: http://keycloak-staging:8080/realms/codestra/protocol/openid-connect/token
+      ODOO_CLIENT_ID: codestra-middleware-staging
+      ODOO_CLIENT_SECRET_FILE: /run/secrets/odoo_client_secret
+      ODOO_AUDIENCE: codestra-odoo-integration
+      ODOO_SCOPE: service.attest monitor.read odoo.integration.outbox.claim odoo.integration.outbox.read odoo.integration.outbox.renew odoo.integration.outbox.acknowledge odoo.integration.outbox.fail odoo.integration.outbox.release
+      ODOO_CONNECT_TIMEOUT: "5"
+      ODOO_READ_TIMEOUT: "15"
+      ODOO_MAX_RETRIES: "3"
+      ODOO_SYNC_WORKER_ID: codestra-middleware-odoo-sync-staging
+      ODOO_SYNC_BATCH_SIZE: "25"
+      ODOO_SYNC_LEASE_SECONDS: "60"
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-sync-worker-database-url:/run/secrets/database_url:ro
-      - /etc/codestra/secrets/internal-n8n/odoo-results-client-secret:/run/secrets/odoo_results_client_secret:ro
-      - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
+      - /opt/codestra/secrets/identity-staging/middleware_client_secret:/run/secrets/odoo_client_secret:ro
     networks:
       - middleware_backend
       - identity_service
@@ -272,17 +283,21 @@ services:
       SERVICE_NAME: middleware-odoo-result-worker
       QUEUE_NAME: odoo-results
       ODOO_RESULT_DELIVERY_ENABLED: "false"
-      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/codestra/integration/v1/results
-      ODOO_RESULTS_TOKEN_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/token
-      ODOO_RESULTS_CLIENT_ID: codestra-middleware-odoo-results
-      ODOO_RESULTS_CLIENT_SECRET_FILE: /run/secrets/odoo_results_client_secret
-      ODOO_RESULTS_AUDIENCE: codestra-odoo
-      ODOO_RESULTS_SCOPE: odoo.integration.results.write
-      ODOO_RESULTS_CA_FILE: /run/secrets/internal_integration_ca
+      ODOO_STAGING_WRITES_ENABLED: "false"
+      ODOO_PRODUCTION_WRITES_ENABLED: "false"
+      LIVE_WRITES_ENABLED: "false"
+      ODOO_BASE_URL: http://odoo19-staging:8069
+      ODOO_TOKEN_URL: http://keycloak-staging:8080/realms/codestra/protocol/openid-connect/token
+      ODOO_CLIENT_ID: codestra-middleware-staging
+      ODOO_CLIENT_SECRET_FILE: /run/secrets/odoo_client_secret
+      ODOO_AUDIENCE: codestra-odoo-integration
+      ODOO_SCOPE: odoo.integration.results.write
+      ODOO_CONNECT_TIMEOUT: "5"
+      ODOO_READ_TIMEOUT: "15"
+      ODOO_MAX_RETRIES: "3"
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-odoo-result-worker-database-url:/run/secrets/database_url:ro
-      - /etc/codestra/secrets/internal-n8n/odoo-results-client-secret:/run/secrets/odoo_results_client_secret:ro
-      - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
+      - /opt/codestra/secrets/identity-staging/middleware_client_secret:/run/secrets/odoo_client_secret:ro
     networks:
       - middleware_backend
       - identity_service
