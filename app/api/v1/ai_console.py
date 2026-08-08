@@ -158,6 +158,8 @@ async def create_message(
             idempotency_key=idempotency_key,
             correlation_id=correlation_id,
             max_attempts=settings.ai_job_max_attempts,
+            authenticated_roles=subject.roles,
+            approved_projects=frozenset(allowed),
         )
     except LookupError as exc:
         raise HTTPException(404, "conversation not found") from exc

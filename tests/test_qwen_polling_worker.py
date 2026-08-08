@@ -174,6 +174,10 @@ def test_worker_accepts_server_generated_browser_contract(
         idempotency_key=f"worker-browser-{task_type}",
         correlation_id=f"corr-worker-browser-{task_type}",
         max_attempts=2,
+        authenticated_roles=frozenset(
+            {"codestra_ai_user", "codestra_ai_developer"}
+        ),
+        approved_projects=frozenset({"codestra-ai-console"}),
     )
     observed = {}
 
@@ -195,6 +199,10 @@ def test_worker_accepts_server_generated_browser_contract(
     assert result["status"] == "SUCCEEDED"
     assert result["model_used"] == expected_model
     assert observed["payload"]["model"] == expected_model
+    serialized_prompt = observed["payload"]["messages"][0]["content"]
+    assert "Codestra Qwen" in serialized_prompt
+    assert "codestra-ai-console" in serialized_prompt
+    assert "codestra_ai_developer" in serialized_prompt
 
 
 def test_worker_empty_completion_duplicate_and_failure_paths(monkeypatch):
