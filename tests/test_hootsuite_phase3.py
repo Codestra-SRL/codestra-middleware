@@ -24,14 +24,36 @@ class FakeClient:
         self.deleted = 0
 
     async def profiles(self, correlation_id):
-        return {"data": [{"id": "hs-1", "type": "TWITTER", "socialNetworkId": "x-1", "socialNetworkUsername": "test", "isReauthRequired": 0}]}
+        return {
+            "data": [
+                {
+                    "id": "hs-1",
+                    "type": "TWITTER",
+                    "socialNetworkId": "x-1",
+                    "socialNetworkUsername": "test",
+                    "isReauthRequired": 0,
+                }
+            ]
+        }
 
     async def profile(self, profile_id, correlation_id):
-        return {"data": {"id": profile_id, "type": "LINKEDIN", "socialNetworkId": "li-1", "socialNetworkUsername": "test", "isReauthRequired": 1}}
+        return {
+            "data": {
+                "id": profile_id,
+                "type": "LINKEDIN",
+                "socialNetworkId": "li-1",
+                "socialNetworkUsername": "test",
+                "isReauthRequired": 1,
+            }
+        }
 
     async def create_message(self, payload, correlation_id):
         self.created += 1
-        return {"data": [{"id": "message-1", "state": "SCHEDULED", "requestId": "request-1"}]}
+        return {
+            "data": [
+                {"id": "message-1", "state": "SCHEDULED", "requestId": "request-1"}
+            ]
+        }
 
     async def get_message(self, message_id, correlation_id):
         return {"data": {"id": message_id, "state": "SENT"}}
@@ -46,16 +68,18 @@ class FakeClient:
 
 def test_oauth_state_is_bound_and_tampering_fails(monkeypatch):
     monkeypatch.setattr(time, "time", lambda: 2_000_000_000)
-    oauth = HootsuiteOAuth("client", "secret", "https://callback.invalid", "state-secret")
+    oauth = HootsuiteOAuth(
+        "client", "secret", "https://callback.invalid", "state-secret"
+    )
     url = oauth.authorization_url("tenant-a")
     query = parse_qs(urlparse(url).query)
     assert query["response_type"] == ["code"]
     assert query["scope"] == ["offline"]
-    assert oauth.verify_state(query["state"][0]) == "tenant-a"
+    state = query["state"][0]
+    assert state.startswith("tenant-a.2000000000.")
+    assert oauth._verify_signature(state, max_age_seconds=600) == "tenant-a"
     with pytest.raises(HootsuiteError):
-        oauth.verify_state(query["state"][0])
-    with pytest.raises(HootsuiteError):
-        oauth.verify_state(query["state"][0] + "tampered")
+        oauth._verify_signature(state + "tampered", max_age_seconds=600)
 
 
 def test_oauth_exchange_and_refresh_use_basic_auth():
@@ -63,9 +87,23 @@ def test_oauth_exchange_and_refresh_use_basic_auth():
 
     async def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
-        return httpx.Response(200, request=request, json={"access_token": "synthetic-access", "refresh_token": "synthetic-refresh", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "access_token": "synthetic-access",
+                "refresh_token": "synthetic-refresh",
+                "expires_in": 3600,
+            },
+        )
 
-    oauth = HootsuiteOAuth("client", "secret", "https://callback.invalid", "state", transport=httpx.MockTransport(handler))
+    oauth = HootsuiteOAuth(
+        "client",
+        "secret",
+        "https://callback.invalid",
+        "state",
+        transport=httpx.MockTransport(handler),
+    )
     first = asyncio.run(oauth.exchange_code("synthetic-code"))
     second = asyncio.run(oauth.refresh(first.refresh_token))
     assert first.access_token == second.access_token
@@ -76,7 +114,9 @@ def test_oauth_exchange_and_refresh_use_basic_auth():
 def test_token_file_requires_private_permissions(tmp_path: Path):
     path = tmp_path / "token.json"
     store = TokenFileStore(str(path))
-    store.save(OAuthToken("synthetic-access", "synthetic-refresh", 2_000_000_000, "offline"))
+    store.save(
+        OAuthToken("synthetic-access", "synthetic-refresh", 2_000_000_000, "offline")
+    )
     assert path.stat().st_mode & 0o777 == 0o600
     assert store.load() is not None
     path.chmod(0o644)
@@ -86,7 +126,9 @@ def test_token_file_requires_private_permissions(tmp_path: Path):
 
 def test_client_normalizes_rate_limit_and_unknown_result(tmp_path: Path, monkeypatch):
     token_file = tmp_path / "token.json"
-    TokenFileStore(str(token_file)).save(OAuthToken("synthetic-access", "", int(time.time()) + 3600))
+    TokenFileStore(str(token_file)).save(
+        OAuthToken("synthetic-access", "", int(time.time()) + 3600)
+    )
     monkeypatch.setattr(settings, "hootsuite_token_file", str(token_file))
 
     async def rate_handler(request: httpx.Request) -> httpx.Response:
@@ -100,7 +142,11 @@ def test_client_normalizes_rate_limit_and_unknown_result(tmp_path: Path, monkeyp
         raise httpx.ReadTimeout("synthetic", request=request)
 
     with pytest.raises(HootsuiteError) as unknown:
-        asyncio.run(HootsuiteClient(httpx.MockTransport(timeout_handler)).create_message({}, "test"))
+        asyncio.run(
+            HootsuiteClient(httpx.MockTransport(timeout_handler)).create_message(
+                {}, "test"
+            )
+        )
     assert unknown.value.unknown_result is True and unknown.value.retryable is False
 
 
@@ -113,16 +159,27 @@ def test_adapter_capabilities_accounts_schedule_cancel_and_reconcile(monkeypatch
     accounts = asyncio.run(adapter.list_accounts())
     assert accounts[0]["network"] == "x"
     post = SocialPost(
-        uuid4(), ProviderName.HOOTSUITE, (uuid4(),), {"text": "NON-PRODUCTION"},
+        uuid4(),
+        ProviderName.HOOTSUITE,
+        (uuid4(),),
+        {"text": "NON-PRODUCTION"},
         publish_at=datetime.now(timezone.utc) + timedelta(days=1),
     )
     result = asyncio.run(adapter.create_post(post, ["hs-1"], "correlation"))
     assert result.status is SocialPostStatus.SCHEDULED and client.created == 1
     post.provider_post_id = result.provider_post_id
-    assert asyncio.run(adapter.get_post_status("message-1")).status is SocialPostStatus.PUBLISHED
-    assert asyncio.run(adapter.cancel_post(post, "correlation")).status is SocialPostStatus.CANCELLED
+    assert (
+        asyncio.run(adapter.get_post_status("message-1")).status
+        is SocialPostStatus.PUBLISHED
+    )
+    assert (
+        asyncio.run(adapter.cancel_post(post, "correlation")).status
+        is SocialPostStatus.CANCELLED
+    )
     assert client.deleted == 1
-    media = asyncio.run(adapter.upload_media({"content_type": "image/png", "size": 100}, "correlation"))
+    media = asyncio.run(
+        adapter.upload_media({"content_type": "image/png", "size": 100}, "correlation")
+    )
     assert media["status"] == "UPLOAD_PENDING"
 
 
@@ -141,7 +198,9 @@ def test_canary_routes_only_new_allowlisted_posts_and_preserves_history(monkeypa
     monkeypatch.setattr(settings, "hootsuite_enabled", True)
     assert service.resolve_provider(account_ids=(canary,)) is ProviderName.HOOTSUITE
     assert service.resolve_provider(account_ids=(other,)) is ProviderName.POSTLY
-    historical = SocialPost(uuid4(), ProviderName.POSTLY, (canary,), {"text": "historical"})
+    historical = SocialPost(
+        uuid4(), ProviderName.POSTLY, (canary,), {"text": "historical"}
+    )
     assert service.resolve_provider(historical, (canary,)) is ProviderName.POSTLY
     monkeypatch.setattr(settings, "hootsuite_enabled", False)
     with pytest.raises(SocialError):
