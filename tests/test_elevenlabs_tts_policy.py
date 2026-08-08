@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
@@ -84,4 +85,4 @@ def test_invalid_governance_configuration_fails_startup(
     field: str, value: object
 ) -> None:
     with pytest.raises(ValidationError):
-        Settings(**{field: value})
+        Settings(**cast(Any, {field: value}))
