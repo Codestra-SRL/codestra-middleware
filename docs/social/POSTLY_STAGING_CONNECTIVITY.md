@@ -6,9 +6,9 @@ Observed Middleware Server A topology:
 - private: `10.40.0.1/24` on VLAN interface `enp41s0.4001`;
 - VLAN ID: `4001`;
 - VLAN MTU: `1400`;
-- expected Postly peer: `10.40.0.2`;
+- verified Postly peer: `10.40.0.3`;
 - public default route: `65.109.65.129` on `enp41s0`, unchanged.
 
-The private peer did not answer ARP/ICMP/TCP during Phase 2 discovery. Public SSH to `49.12.145.107` rejected the dedicated local identity. No firewall, route, VLAN, proxy, or public exposure change was made.
+The private peer answered ICMP, supported a 1372-byte ICMP payload (1400-byte IP MTU), and accepted TCP on private ports 80 and 443. Port 5000 was closed. The HTTPS listener responds, while unauthenticated Postiz public API access correctly returns `401`. No firewall, route, VLAN, proxy, or public exposure change was made; the public default route is unchanged.
 
-When access is restored, validate symmetric routes, neighbor discovery, MTU, private TLS identity, and a narrowly allowed Postly API port before setting `POSTIZ_INTERNAL_BASE_URL` to the private endpoint.
+Before setting `POSTIZ_INTERNAL_BASE_URL`, provision a dedicated staging identity and verify the private TLS hostname/SAN contract plus source-restricted ingress. Do not use the existing production organization credential.
