@@ -1,11 +1,5 @@
 # Provider migration
 
-## Postly to Hootsuite
+Canary routing applies only to new commands whose complete Codestra account set appears in `HOOTSUITE_CANARY_ACCOUNT_IDS`. A persisted post or job always resolves its recorded provider. Mixed or non-allowlisted account sets remain on the configured default.
 
-Import Hootsuite account mappings as new `SocialAccount` rows, validate capabilities, then change only the default for newly created posts. Historical and scheduled Postly posts retain `provider=postly` and their Postly external references. They continue through Postly or are explicitly cancelled and recreated through an approved operator workflow.
-
-## Hootsuite to Postly
-
-Apply the symmetric process: create Postly mappings, validate, and change the default only for new posts. Hootsuite history and scheduled jobs remain Hootsuite-owned.
-
-The API and Codestra post UUIDs never change. Credentials remain isolated. `SOCIAL_PROVIDER_MIGRATION_MODE` defaults to `disabled`; future `shadow`, `canary`, or `dual-read` modes must never imply dual publishing. Duplicate publish calls require an explicit new operation and idempotency key. Rollback restores the previous default; it never rewrites historical provider ownership.
+There is no automatic dual publishing or cross-provider failover. Rollback changes routing for new operations only; it never rewrites provider IDs, historical ownership, or scheduled jobs.

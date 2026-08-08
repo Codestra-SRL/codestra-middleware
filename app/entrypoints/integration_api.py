@@ -13,6 +13,7 @@ from app.api.v1.operations import router as operations_router
 from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.quarantine import router as quarantine_router
 from app.api.v1.reports import router as reports_router
+from app.api.v1.social import router as social_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.v1.webphone import router as webphone_router
 from app.entrypoints.runtime import add_api_runtime, run_api
@@ -32,6 +33,7 @@ routers = (
     n8n_transport_router,
     quarantine_router,
     telephony_router,
+    social_router,
 )
 app = FastAPI(
     title="Codestra Integration API",

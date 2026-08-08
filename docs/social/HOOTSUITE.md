@@ -1,5 +1,5 @@
 # Hootsuite
 
-The Phase 1 adapter implements the provider contract and accurate health/capability reporting but has no outbound implementation. Without credentials it reports `NOT_CONFIGURED`; with configuration but before implementation/activation it reports `DISABLED`. It never claims success.
+Phase 3 implements Hootsuite REST API v1 behind the existing provider-neutral adapter contract. Supported operations are OAuth, profile discovery, message create/schedule, message lookup, delete/cancel, and media-upload initialization/status. Unsupported operations return capability errors rather than synthetic success.
 
-Phase 3 should add OAuth token lifecycle, account discovery, request mappings, native webhook verification and the same normalized contract without changing Social API clients.
+The adapter registers in source but remains inert unless `HOOTSUITE_ENABLED=true`. Default provider selection and all publishing gates remain disabled. Hootsuite never receives Odoo traffic directly and never becomes a failover for Postly-owned jobs.

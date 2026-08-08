@@ -34,6 +34,12 @@ async def process_claimed_job(
     started = time.monotonic()
     try:
         action = JobType(job["job_type"])
+        if post.provider is ProviderName.HOOTSUITE and not settings.hootsuite_enabled:
+            raise SocialError(
+                "SOCIAL_PROVIDER_DISABLED",
+                "Hootsuite delivery is disabled",
+                status_code=403,
+            )
         if (
             post.provider is ProviderName.POSTLY
             and not settings.postiz_delivery_enabled
@@ -43,6 +49,9 @@ async def process_claimed_job(
                 "Postly delivery is disabled",
                 status_code=403,
             )
+        account_refs = await repository.staging_provider_account_refs(post.id)
+        if post.provider is ProviderName.HOOTSUITE:
+            post.metadata["provider_account_refs"] = account_refs
         if action is JobType.PUBLISH:
             if not settings.social_publish_enabled or (
                 post.provider is ProviderName.POSTLY
@@ -61,7 +70,6 @@ async def process_claimed_job(
         elif action is JobType.DELETE:
             result = await adapter.delete_post(post, job["correlation_id"])
         else:
-            account_refs = await repository.staging_provider_account_refs(post.id)
             result = await adapter.create_post(
                 post, account_refs, job["correlation_id"]
             )

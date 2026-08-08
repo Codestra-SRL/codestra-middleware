@@ -19,6 +19,9 @@ from app.social.providers import SocialProviderAdapter, SocialProviderRegistry
 from app.social.sql_repository import SqlSocialRepository
 from app.social.queue import RedisSocialQueue
 from app.workers.social import process_claimed_job
+from app.integrations.hootsuite.exceptions import HootsuiteError
+from app.integrations.hootsuite.oauth import HootsuiteOAuth
+from app.social.hootsuite_oauth_state import HootsuiteOAuthStateRepository
 
 
 DATABASE_URL = os.getenv("TEST_DATABASE_URL", "")
@@ -289,6 +292,102 @@ def test_redis_loss_preserves_and_recovers_canonical_job():
             await queue.enqueue(*recovered)
             assert await redis.llen(queue.queue_key) == 1
         await redis.aclose()
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_hootsuite_oauth_state_is_durable_atomic_and_single_use():
+    async def scenario() -> None:
+        engine = create_async_engine(DATABASE_URL)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        tenant_reference = f"tenant-phase3a-{uuid4()}"
+        expired_tenant_reference = f"tenant-expired-{uuid4()}"
+        oauth = HootsuiteOAuth(
+            "synthetic-client",
+            "synthetic-secret",
+            "https://middleware.invalid/api/v1/social/oauth/hootsuite/callback",
+            "synthetic-state-secret",
+        )
+        async with factory() as session:
+            url = await oauth.persistent_authorization_url(
+                tenant_reference, HootsuiteOAuthStateRepository(session)
+            )
+        from urllib.parse import parse_qs, urlparse
+
+        state = parse_qs(urlparse(url).query)["state"][0]
+
+        async with factory() as session:
+            stored = (
+                await session.execute(
+                    text(
+                        """SELECT state_hash, nonce_hash, tenant_reference, status
+                        FROM hootsuite_oauth_states WHERE tenant_reference=:tenant"""
+                    ),
+                    {"tenant": tenant_reference},
+                )
+            ).one()
+            assert stored.state_hash != state
+            assert stored.nonce_hash not in state
+            assert stored.tenant_reference == tenant_reference
+            assert stored.status == "ISSUED"
+
+        async def consume() -> str:
+            restarted = HootsuiteOAuth(
+                "synthetic-client",
+                "synthetic-secret",
+                "https://middleware.invalid/api/v1/social/oauth/hootsuite/callback",
+                "synthetic-state-secret",
+            )
+            async with factory() as session:
+                try:
+                    return await restarted.verify_persistent_state(
+                        state, HootsuiteOAuthStateRepository(session)
+                    )
+                except HootsuiteError:
+                    return "REJECTED"
+
+        results = await asyncio.gather(consume(), consume())
+        assert sorted(results) == ["REJECTED", tenant_reference]
+
+        assert await consume() == "REJECTED"
+
+        tampered = state + "tampered"
+        async with factory() as session:
+            with pytest.raises(HootsuiteError):
+                await oauth.verify_persistent_state(
+                    tampered, HootsuiteOAuthStateRepository(session)
+                )
+
+        async with factory() as session:
+            expired_url = await oauth.persistent_authorization_url(
+                expired_tenant_reference, HootsuiteOAuthStateRepository(session)
+            )
+            expired_state = parse_qs(urlparse(expired_url).query)["state"][0]
+            await session.execute(
+                text(
+                    """UPDATE hootsuite_oauth_states SET expires_at=now()-interval '1 second'
+                        WHERE tenant_reference=:tenant"""
+                ),
+                {"tenant": expired_tenant_reference},
+            )
+            await session.commit()
+        async with factory() as session:
+            with pytest.raises(HootsuiteError):
+                await oauth.verify_persistent_state(
+                    expired_state, HootsuiteOAuthStateRepository(session)
+                )
+
+        async with factory() as session:
+            await session.execute(
+                text("""INSERT INTO hootsuite_oauth_states
+                (state_hash,tenant_reference,nonce_hash,issued_at,expires_at,status)
+                VALUES (:hash,:tenant,'0',now()-interval '20 minutes',
+                now()-interval '10 minutes','ISSUED')"""),
+                {"hash": uuid4().hex.ljust(64, "0"), "tenant": f"expired-{uuid4()}"},
+            )
+            await session.commit()
+            assert await HootsuiteOAuthStateRepository(session).expire() == 2
         await engine.dispose()
 
     asyncio.run(scenario())

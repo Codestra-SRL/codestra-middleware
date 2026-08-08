@@ -117,7 +117,7 @@ def test_hootsuite_never_reports_fake_success():
     assert result["reachable"] is None
     with pytest.raises(SocialError) as error:
         run(HootsuiteProviderAdapter().create_post(None, [], "corr"))
-    assert error.value.code == "SOCIAL_PROVIDER_CAPABILITY_UNSUPPORTED"
+    assert error.value.code == "SOCIAL_PROVIDER_DISABLED"
 
 
 def test_default_feature_flags_prevent_real_provider_call(monkeypatch):

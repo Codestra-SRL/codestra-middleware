@@ -101,7 +101,7 @@ It does not generate AI content, handle provider OAuth, expose raw provider payl
 ```text
 SocialProviderAdapter
 ├── PostlyProviderAdapter
-├── HootsuiteProviderAdapter   [Phase 1: disabled, no outbound implementation]
+├── HootsuiteProviderAdapter   [Phase 3: implemented, disabled by default]
 └── FutureProviderAdapter      [planned]
 ```
 
@@ -133,9 +133,16 @@ The adapter is implemented and mock-tested. No real Postly credential or product
 
 ## 8. Hootsuite and future providers
 
-`HootsuiteProviderAdapter` is intentionally disabled in Phase 1. It reports `NOT_CONFIGURED` without credential-file configuration and `DISABLED` when configuration exists but outbound support is inactive. Its capability set is empty, so it cannot falsely report successful publishing.
+`HootsuiteProviderAdapter` implements official REST API v1 OAuth, profile discovery,
+message creation/scheduling, deletion/cancellation, lookup reconciliation, and media
+upload initialization. It remains disabled by default and never exposes tokens or
+raw provider errors. Operations not established by the reviewed API contract are
+not advertised.
 
-Phase 3 is planned to implement OAuth lifecycle, account discovery, request/response mappings, webhooks, rate limits, and provider-specific status reconciliation. Future providers can implement the same adapter contract without changing the public Social API.
+An explicit Codestra account allowlist can route only new operations while migration
+mode is `canary`. Persisted posts and jobs always use their recorded provider. Status
+events use polling because the publishing API reference does not document an accepted
+webhook signature contract. Dual publishing and automatic failover are prohibited.
 
 ## 9. Identity and provider ownership
 
