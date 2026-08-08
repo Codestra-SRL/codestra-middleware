@@ -6,7 +6,7 @@
     "nodes": [
       {
         "id": "runtime-webhook",
-        "name": "Governed Runtime Webhook",
+        "name": "runtime",
         "type": "n8n-nodes-base.webhook",
         "typeVersion": 2,
         "position": [0, 0],
@@ -84,7 +84,7 @@
       }
     ],
     "connections": {
-      "Governed Runtime Webhook":{"main":[[{"node":"Build Strict Result","type":"main","index":0}]]},
+      "runtime":{"main":[[{"node":"Build Strict Result","type":"main","index":0}]]},
       "Build Strict Result":{"main":[[{"node":"Hash Result Body","type":"main","index":0}]]},
       "Hash Result Body":{"main":[[{"node":"Build Signature Envelope","type":"main","index":0}]]},
       "Build Signature Envelope":{"main":[[{"node":"Sign Result","type":"main","index":0}]]},
