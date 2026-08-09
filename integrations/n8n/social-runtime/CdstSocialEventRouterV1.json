@@ -6,7 +6,7 @@
     "nodes": [
       {
         "id": "webhook",
-        "name": "Authenticated Social Ingress",
+        "name": "social-ingress",
         "type": "n8n-nodes-base.webhook",
         "typeVersion": 2,
         "position": [0, 0],
@@ -130,7 +130,7 @@
       }
     ],
     "connections": {
-      "Authenticated Social Ingress":{"main":[[{
+      "social-ingress":{"main":[[{
         "node":"Durable Middleware Authorization","type":"main","index":0}]]},
       "Durable Middleware Authorization":{"main":[[{"node":"Provider Neutral Route","type":"main","index":0}]]},
       "Provider Neutral Route":{"main":[[{"node":"Execute Provider Neutral Handler","type":"main","index":0}]]},

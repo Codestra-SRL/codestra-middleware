@@ -228,6 +228,12 @@ services:
     networks:
       - middleware_backend
       - n8n_staging_control
+    healthcheck: &worker-healthcheck
+      test: [CMD, python, -c, "import os; os.kill(1, 0)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   middleware-social-n8n-delivery-worker:
     <<: *worker
@@ -240,6 +246,7 @@ services:
       SOCIAL_N8N_DELIVERY_WORKER_ENABLED: "false"
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+    healthcheck: *worker-healthcheck
 
   middleware-postly-polling-worker:
     <<: *worker
@@ -254,6 +261,7 @@ services:
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/middleware-staging/postly/postiz_api_key:/run/secrets/postiz_api_key:ro
+    healthcheck: *worker-healthcheck
 
   middleware-reconciliation-worker:
     <<: *worker

@@ -89,6 +89,7 @@ def test_router_and_handlers_have_nonempty_connected_graphs():
     assert "X-Codestra-Signature" in router_text
     assert "n8n-runtime/results" in router_text
     assert "http://middleware-integration-api:8095" in router_text
+    assert '"name": "social-ingress"' in router_text
     assert "CdstSocialDeadLetterV1" in router_text
 
 
