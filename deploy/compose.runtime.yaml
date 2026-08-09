@@ -263,6 +263,9 @@ services:
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/middleware-staging/postly/postiz_api_key:/run/secrets/postiz_api_key:ro
+    networks:
+      - middleware_backend
+      - middleware_edge
     healthcheck: *worker-healthcheck
 
   middleware-reconciliation-worker:
