@@ -22,6 +22,18 @@ for an unapproved hostname through the internal proxy and require HTTP 403.
 The gateway logs only a fixed outcome classification. It never logs authority
 headers, provider credentials, request bodies, response bodies, or audio.
 
+## Explicit IPAM
+
+Server A exhausts Docker's automatically allocated IPv4 pools, so both overlay
+networks use small explicit RFC1918 subnets. `10.254.41.0/29` is the internal
+controller-to-proxy segment and `10.254.41.8/29` is the gateway egress segment.
+Each provides six usable addresses and was selected after inventorying every
+live Docker subnet, host address, and host route. They do not overlap the
+Server A private VLAN (`10.40.0.0/24`), existing controlled segments
+(`10.250.240.0/28`, `10.250.241.0/29`, and `10.254.40.0/28`), or any other live
+route. Deployment must repeat the overlap check before network creation. Do not
+change Docker daemon address pools, restart Docker, or delete another network.
+
 Rollback removes this overlay, recreates only the controller on its prior
 internal networks, removes the ephemeral ElevenLabs runtime secret, and leaves
 the provider disabled.

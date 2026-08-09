@@ -33,5 +33,13 @@ services:
 networks:
   elevenlabs_proxy:
     internal: true
+    ipam:
+      config:
+        - subnet: 10.254.41.0/29
+          gateway: 10.254.41.1
   elevenlabs_egress:
     internal: false
+    ipam:
+      config:
+        - subnet: 10.254.41.8/29
+          gateway: 10.254.41.9
