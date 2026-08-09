@@ -82,6 +82,10 @@ def test_router_and_handlers_have_nonempty_connected_graphs():
     handlers = json.loads(HANDLERS.read_text())
     assert len(router) == 1
     assert len(handlers) == 11
+    assert all(
+        workflow["nodes"][0]["parameters"].get("inputSource") == "passthrough"
+        for workflow in handlers
+    )
     for workflow in router + handlers:
         _assert_connected(workflow)
     router_text = ROUTER.read_text()
