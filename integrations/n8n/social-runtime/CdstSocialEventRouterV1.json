@@ -19,7 +19,7 @@
         "typeVersion": 4.4,
         "position": [240, 0],
         "parameters": {
-          "url": "http://codestra-middleware-staging-middleware-staging-1:8095/api/v1/n8n-runtime/social-authorize",
+          "url": "http://middleware-integration-api:8095/api/v1/n8n-runtime/social-authorize",
           "method": "POST",
           "sendHeaders": true,
           "headerParameters": {"parameters": [
@@ -107,7 +107,7 @@
         "maxTries": 5,
         "waitBetweenTries": 2000,
         "parameters": {
-          "url": "http://codestra-middleware-staging-middleware-staging-1:8095/api/v1/n8n-runtime/results",
+          "url": "http://middleware-integration-api:8095/api/v1/n8n-runtime/results",
           "method": "POST",
           "sendHeaders": true,
           "headerParameters": {"parameters": [
