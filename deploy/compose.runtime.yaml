@@ -180,6 +180,7 @@ services:
       ODOO_RESULTS_CA_FILE: /run/secrets/internal_integration_ca
       N8N_RUNTIME_ENABLED: "true"
       N8N_RUNTIME_HMAC_SECRET_FILE: /run/secrets/n8n_runtime_hmac
+      POSTIZ_INTERNAL_BASE_URL: http://10.40.0.3:8443
       POSTIZ_API_KEY_FILE: /run/secrets/postiz_api_key
 
   middleware-policy-engine:
@@ -255,6 +256,7 @@ services:
       <<: *safe-flags
       SERVICE_NAME: middleware-postly-polling-worker
       POSTLY_POLLING_ENABLED: "false"
+      POSTIZ_INTERNAL_BASE_URL: http://10.40.0.3:8443
       POSTIZ_API_KEY_FILE: /run/secrets/postiz_api_key
       SOCIAL_PUBLISH_ENABLED: "false"
       POSTIZ_PUBLISH_ENABLED: "false"
