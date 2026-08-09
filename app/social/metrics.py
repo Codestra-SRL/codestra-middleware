@@ -85,3 +85,39 @@ production_account_connected = Gauge(
     "Connection state of a production canary account",
     ("provider", "network"),
 )
+
+poll_cycles = Counter(
+    "social_poll_cycles_total", "Postly read-only polling cycles", ("result",)
+)
+poll_failures = Counter(
+    "social_poll_failures_total", "Postly polling failures", ("reason",)
+)
+poll_events_emitted = Counter(
+    "social_poll_events_emitted_total",
+    "Normalized events emitted by polling",
+    ("event_type",),
+)
+n8n_delivery_attempts = Counter(
+    "social_n8n_delivery_attempts_total", "Social n8n delivery attempts", ("result",)
+)
+n8n_delivery_success = Counter(
+    "social_n8n_delivery_success_total", "Completed social n8n deliveries"
+)
+n8n_delivery_failure = Counter(
+    "social_n8n_delivery_failure_total", "Failed social n8n deliveries", ("reason",)
+)
+n8n_delivery_deadletter = Counter(
+    "social_n8n_delivery_deadletter_total",
+    "Dead-lettered social n8n deliveries",
+    ("reason",),
+)
+n8n_callback_rejections = Counter(
+    "social_n8n_callback_rejections_total",
+    "Rejected social n8n callbacks",
+    ("reason",),
+)
+n8n_duplicate_events = Counter(
+    "social_n8n_duplicate_events_total",
+    "Deduplicated social n8n events",
+    ("event_type",),
+)

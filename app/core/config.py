@@ -278,6 +278,14 @@ class Settings(BaseSettings):
     social_provider_mode: str = "single"
     social_provider_migration_mode: str = "disabled"
     social_n8n_events_enabled: bool = False
+    social_n8n_delivery_worker_enabled: bool = False
+    social_n8n_delivery_worker_id: str = "social-n8n-delivery-01"
+    social_n8n_delivery_batch_size: int = 8
+    social_n8n_delivery_lease_seconds: int = 60
+    postly_polling_enabled: bool = False
+    postly_poll_interval_seconds: int = 60
+    postly_poll_lookback_seconds: int = 300
+    postly_poll_batch_size: int = 100
     social_odoo_sync_enabled: bool = False
     social_odoo_write_enabled: bool = False
     social_analytics_sync_enabled: bool = False
@@ -323,6 +331,16 @@ class Settings(BaseSettings):
     lead_automation_hmac_secret: str = ""
 
     def validate_safety(self) -> None:
+        if self.social_n8n_delivery_batch_size not in range(1, 26):
+            raise ValueError("social n8n delivery batch size must be between 1 and 25")
+        if self.social_n8n_delivery_lease_seconds not in range(10, 601):
+            raise ValueError("social n8n delivery lease must be between 10 and 600 seconds")
+        if self.postly_poll_interval_seconds not in range(30, 3601):
+            raise ValueError("Postly polling interval must be between 30 and 3600 seconds")
+        if self.postly_poll_lookback_seconds not in range(60, 86401):
+            raise ValueError("Postly polling lookback must be between 60 seconds and one day")
+        if self.postly_poll_batch_size not in range(1, 501):
+            raise ValueError("Postly polling batch size must be between 1 and 500")
         if self.social_worker_concurrency != 1:
             raise ValueError(
                 "social worker concurrency must remain 1 in controlled staging"

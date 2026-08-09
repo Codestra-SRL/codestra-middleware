@@ -68,3 +68,30 @@ groups:
         expr: increase(social_dual_publish_attempt_total[5m]) > 0
         labels: {severity: critical, service: middleware, component: social}
         annotations: {summary: "Forbidden dual publish attempted", runbook_url: "https://monitoring.codestra.co/runbooks/social-production"}
+      - alert: CodestraPostlyPollingDown
+        expr: absent(increase(social_poll_cycles_total[5m]))
+        for: 5m
+        labels: {severity: warning, service: middleware, component: social-polling}
+        annotations: {summary: "Postly polling has stopped", runbook_url: "https://monitoring.codestra.co/runbooks/social-production"}
+      - alert: CodestraPostlyPollAuthFailure
+        expr: increase(social_poll_failures_total{reason="authentication"}[5m]) > 0
+        labels: {severity: critical, service: middleware, component: social-polling}
+        annotations: {summary: "Postly polling authentication failed", runbook_url: "https://monitoring.codestra.co/runbooks/social-production"}
+      - alert: CodestraPostlyPollCheckpointStalled
+        expr: increase(social_poll_cycles_total{result="success"}[15m]) == 0
+        for: 15m
+        labels: {severity: warning, service: middleware, component: social-polling}
+        annotations: {summary: "Postly polling checkpoint is stalled", runbook_url: "https://monitoring.codestra.co/runbooks/social-production"}
+      - alert: CodestraSocialN8nDeliveryFailureRate
+        expr: rate(social_n8n_delivery_failure_total[10m]) > 0.05
+        for: 10m
+        labels: {severity: critical, service: middleware, component: social-n8n}
+        annotations: {summary: "Social n8n delivery failure rate is elevated", runbook_url: "https://monitoring.codestra.co/runbooks/social-production"}
+      - alert: CodestraSocialN8nDeadLetterCreated
+        expr: increase(social_n8n_delivery_deadletter_total[5m]) > 0
+        labels: {severity: critical, service: middleware, component: social-n8n}
+        annotations: {summary: "Social n8n delivery was dead-lettered", runbook_url: "https://monitoring.codestra.co/runbooks/social-production"}
+      - alert: CodestraSocialN8nCallbackAuthFailure
+        expr: increase(social_n8n_callback_rejections_total[5m]) > 0
+        labels: {severity: critical, service: middleware, component: social-n8n}
+        annotations: {summary: "Social n8n callback authentication failed", runbook_url: "https://monitoring.codestra.co/runbooks/social-production"}

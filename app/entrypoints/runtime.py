@@ -157,6 +157,7 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "/api/v1/n8n/executions/register",
             "/api/v1/n8n/acknowledgements",
             "/api/v1/n8n-runtime/results",
+            "/api/v1/n8n-runtime/social-authorize",
         }
         if (
             (

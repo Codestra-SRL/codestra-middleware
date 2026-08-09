@@ -71,6 +71,15 @@ x-runtime: &runtime
     TELEPHONY_RECONCILIATION_ENABLED: "false"
     TELEPHONY_NOTIFICATIONS_ENABLED: "false"
     TELEPHONY_EVIDENCE_ENABLED: "false"
+    SOCIAL_INTEGRATION_ENABLED: "false"
+    SOCIAL_PUBLISH_ENABLED: "false"
+    SOCIAL_N8N_EVENTS_ENABLED: "false"
+    SOCIAL_N8N_DELIVERY_WORKER_ENABLED: "false"
+    POSTLY_POLLING_ENABLED: "false"
+    POSTIZ_DELIVERY_ENABLED: "false"
+    POSTIZ_PUBLISH_ENABLED: "false"
+    SOCIAL_ODOO_WRITE_ENABLED: "false"
+    HOOTSUITE_ENABLED: "false"
   healthcheck:
     test:
       - CMD
@@ -142,6 +151,7 @@ services:
       - /etc/codestra/secrets/internal-n8n/middleware-client-secret:/run/secrets/middleware_n8n_client_secret:ro
       - /etc/codestra/secrets/internal-n8n/odoo-results-client-secret:/run/secrets/odoo_results_client_secret:ro
       - /etc/codestra/secrets/internal-n8n/runtime-hmac:/run/secrets/n8n_runtime_hmac:ro
+      - /etc/codestra/secrets/middleware-staging/postly/postiz_api_key:/run/secrets/postiz_api_key:ro
       - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
     environment:
       <<: *safe-flags
@@ -170,6 +180,7 @@ services:
       ODOO_RESULTS_CA_FILE: /run/secrets/internal_integration_ca
       N8N_RUNTIME_ENABLED: "true"
       N8N_RUNTIME_HMAC_SECRET_FILE: /run/secrets/n8n_runtime_hmac
+      POSTIZ_API_KEY_FILE: /run/secrets/postiz_api_key
 
   middleware-policy-engine:
     <<: *runtime
@@ -217,6 +228,32 @@ services:
     networks:
       - middleware_backend
       - n8n_staging_control
+
+  middleware-social-n8n-delivery-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.social_n8n_delivery_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-social-n8n-delivery-worker
+      N8N_RUNTIME_ENABLED: "true"
+      SOCIAL_N8N_EVENTS_ENABLED: "false"
+      SOCIAL_N8N_DELIVERY_WORKER_ENABLED: "false"
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+
+  middleware-postly-polling-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.postly_polling_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-postly-polling-worker
+      POSTLY_POLLING_ENABLED: "false"
+      POSTIZ_API_KEY_FILE: /run/secrets/postiz_api_key
+      SOCIAL_PUBLISH_ENABLED: "false"
+      POSTIZ_PUBLISH_ENABLED: "false"
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/middleware-staging/postly/postiz_api_key:/run/secrets/postiz_api_key:ro
 
   middleware-reconciliation-worker:
     <<: *worker
