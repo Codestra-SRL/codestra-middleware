@@ -14,6 +14,7 @@ from pathlib import Path
 
 CODE = r"""
 const crypto = require('crypto');
+const http = require('http');
 const inbound = $input.first().json;
 const headers = inbound.headers || {};
 const envelope = inbound.body || {};
@@ -32,8 +33,27 @@ const authHeaders = {
   'X-Correlation-ID': envelope.correlation_id,
   'Content-Type': 'application/json',
 };
-const post = async (path, body, extraHeaders = authHeaders) => $helpers.httpRequest({
-  method: 'POST', url: `${base}${path}`, headers: extraHeaders, body, json: true, returnFullResponse: false,
+const post = async (path, body, extraHeaders = authHeaders) => new Promise((resolve, reject) => {
+  const target = new URL(`${base}${path}`);
+  const raw = canonical(body);
+  const request = http.request({
+    hostname: target.hostname, port: target.port || 80, path: `${target.pathname}${target.search}`,
+    method: 'POST', headers: {...extraHeaders, 'Content-Length': Buffer.byteLength(raw)}, timeout: 30000,
+  }, response => {
+    const chunks = [];
+    response.on('data', chunk => chunks.push(chunk));
+    response.on('end', () => {
+      const responseBody = Buffer.concat(chunks).toString('utf8');
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        reject(new Error(`middleware HTTP ${response.statusCode}: ${responseBody.slice(0, 512)}`));
+        return;
+      }
+      try { resolve(responseBody ? JSON.parse(responseBody) : {}); } catch (error) { reject(error); }
+    });
+  });
+  request.on('timeout', () => request.destroy(new Error('middleware request timed out')));
+  request.on('error', reject);
+  request.end(raw);
 });
 const rawEnvelope = canonical(envelope);
 const authorizeHeaders = {
