@@ -50,8 +50,10 @@ jobs:
           test "${GITHUB_SHA}" = "$(git rev-parse HEAD)"
           [[ "${SHA}" =~ ^[0-9a-f]{40}$ ]]
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" > pr.json
-          test "$(jq -r .state pr.json)" = open
+          test "$(jq -r .state pr.json)" = closed
+          test "$(jq -r .merged pr.json)" = true
           test "$(jq -r .head.sha pr.json)" = "${SHA}"
+          git merge-base --is-ancestor "${SHA}" HEAD
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" > reviews.json
           jq -e --arg sha "${SHA}" 'any(.[]; .user.login == "kazan555" and .state == "APPROVED" and .commit_id == $sha)' reviews.json >/dev/null
           gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/status" > status.json
@@ -69,7 +71,7 @@ jobs:
           set -euo pipefail
           [[ "${PATH_INPUT}" =~ ^[A-Za-z0-9._/-]+$ ]]
           [[ "${PATH_INPUT}" != /* && "/${PATH_INPUT}/" != *"/../"* ]]
-          gh api "repos/${GITHUB_REPOSITORY}/contents/${PATH_INPUT}?ref=${SHA}" --jq .content | base64 --decode > request.json
+          gh api "repos/${GITHUB_REPOSITORY}/contents/${PATH_INPUT}?ref=${GITHUB_SHA}" --jq .content | base64 --decode > request.json
           test "$(sha256sum request.json | cut -d' ' -f1)" = "${EXPECTED_HASH}"
           jq -cS . request.json > canonical.json
           cmp --silent request.json canonical.json

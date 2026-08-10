@@ -106,5 +106,9 @@ def test_workflow_requires_separate_protected_owner_gates() -> None:
     assert "github.actor" in workflow
     assert "kazan555" in workflow
     assert "codestra/required-ci" in workflow
+    assert 'test "$(jq -r .state pr.json)" = closed' in workflow
+    assert 'test "$(jq -r .merged pr.json)" = true' in workflow
+    assert 'git merge-base --is-ancestor "${SHA}" HEAD' in workflow
+    assert "contents/${PATH_INPUT}?ref=${GITHUB_SHA}" in workflow
     assert "cosign sign-blob" in workflow
     assert "pull_request_target" not in workflow
