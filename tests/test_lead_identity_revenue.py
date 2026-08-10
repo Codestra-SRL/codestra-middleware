@@ -198,3 +198,12 @@ def test_openapi_has_provider_neutral_n7_contracts():
     assert required <= set(paths)
     schema = str(app.openapi()).casefold()
     assert "oauth_token" not in schema and "provider_secret" not in schema
+
+
+def test_integration_runtime_exposes_n7_contracts():
+    from app.entrypoints.integration_api import app
+
+    paths = app.openapi()["paths"]
+    assert "/api/v1/identity/resolve" in paths
+    assert "/api/v1/leads/{lead_id}/next-action" in paths
+    assert "/api/v1/analytics/attribution/revenue" in paths
