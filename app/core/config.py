@@ -269,6 +269,13 @@ class Settings(BaseSettings):
     sales_odoo_read_only_lookup_enabled: bool = False
     sales_verification_jobs_enabled: bool = False
     scraper_result_ingest_enabled: bool = False
+    scraper_middleware_delivery_enabled: bool = False
+    lead_verification_dry_run_only: bool = True
+    lead_outreach_enabled: bool = False
+    odoo_lead_write_enabled: bool = False
+    vicidial_lead_write_enabled: bool = False
+    n8n_lead_delivery_enabled: bool = False
+    postly_lead_delivery_enabled: bool = False
     hunter_provider_enabled: bool = False
     apollo_provider_enabled: bool = False
     twilio_lookup_provider_enabled: bool = False
@@ -314,6 +321,13 @@ class Settings(BaseSettings):
             self.postiz_publish_enabled,
             self.vicidial_publication_enabled,
             self.outreach_enabled,
+            self.scraper_middleware_delivery_enabled,
+            not self.lead_verification_dry_run_only,
+            self.lead_outreach_enabled,
+            self.odoo_lead_write_enabled,
+            self.vicidial_lead_write_enabled,
+            self.n8n_lead_delivery_enabled,
+            self.postly_lead_delivery_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")

@@ -22,8 +22,13 @@ class ComplianceSnapshot:
     campaign_id: str
     available: bool = True
     global_dnc: bool = False
+    tenant_dnc: bool = False
     campaign_dnc: bool = False
     internal_suppression: bool = False
+    email_suppressed: bool = False
+    phone_suppressed: bool = False
+    opted_out: bool = False
+    legal_restriction: bool = False
     consent: str = "UNKNOWN"  # GRANTED, WITHDRAWN, UNKNOWN
     channel_eligible: bool = False
 
@@ -67,11 +72,11 @@ def evaluate(
         return ComplianceDecision(
             ComplianceStatus.BLOCKED_GLOBAL_DNC, gates, ("GLOBAL_DNC",), True, False
         )
-    if snapshot.internal_suppression:
+    if snapshot.tenant_dnc:
         return ComplianceDecision(
             ComplianceStatus.BLOCKED_INTERNAL_SUPPRESSION,
             gates,
-            ("INTERNAL_SUPPRESSION",),
+            ("TENANT_DNC",),
             True,
             False,
         )
@@ -79,11 +84,26 @@ def evaluate(
         return ComplianceDecision(
             ComplianceStatus.BLOCKED_CAMPAIGN_DNC, gates, ("CAMPAIGN_DNC",), True, False
         )
+    for active, reason in (
+        (snapshot.email_suppressed, "EMAIL_SUPPRESSED"),
+        (snapshot.phone_suppressed, "PHONE_SUPPRESSED"),
+        (snapshot.opted_out, "OPTED_OUT"),
+        (snapshot.legal_restriction, "LEGAL_RESTRICTION"),
+        (snapshot.internal_suppression, "INTERNAL_SUPPRESSION"),
+    ):
+        if active:
+            return ComplianceDecision(
+                ComplianceStatus.BLOCKED_INTERNAL_SUPPRESSION,
+                gates,
+                (reason,),
+                True,
+                False,
+            )
     if snapshot.consent == "WITHDRAWN":
         return ComplianceDecision(
             ComplianceStatus.BLOCKED_CONSENT_WITHDRAWN,
             gates,
-            ("CONSENT_WITHDRAWN",),
+            ("CONSENT_DENIED",),
             True,
             False,
         )
@@ -91,7 +111,7 @@ def evaluate(
         return ComplianceDecision(
             ComplianceStatus.REVIEW_CONSENT_UNKNOWN,
             gates,
-            ("CONSENT_REVIEW_REQUIRED",),
+            ("CONSENT_UNKNOWN",),
             False,
             True,
         )
