@@ -12,7 +12,7 @@ on:
       image_digest:
         required: true
         type: string
-      request_path:
+      request_base64:
         required: true
         type: string
       request_sha256:
@@ -50,26 +50,25 @@ jobs:
           test "${GITHUB_SHA}" = "$(git rev-parse HEAD)"
           [[ "${SHA}" =~ ^[0-9a-f]{40}$ ]]
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" > pr.json
-          test "$(jq -r .state pr.json)" = open
+          test "$(jq -r .merged_at pr.json)" != "null"
           test "$(jq -r .head.sha pr.json)" = "${SHA}"
+          git cat-file -e "${SHA}^{commit}"
+          git merge-base --is-ancestor "${SHA}" "${GITHUB_SHA}"
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" > reviews.json
           jq -e --arg sha "${SHA}" 'any(.[]; .user.login == "kazan555" and .state == "APPROVED" and .commit_id == $sha)' reviews.json >/dev/null
           gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/status" > status.json
           jq -e 'any(.statuses[]; .context == "codestra/required-ci" and .state == "success")' status.json >/dev/null
-      - name: Fetch and validate inert request
+      - name: Validate detached immutable request
         id: request
         env:
-          GH_TOKEN: ${{ github.token }}
+          REQUEST_BASE64: ${{ inputs.request_base64 }}
           SHA: ${{ inputs.release_sha }}
           PR: ${{ inputs.pr_number }}
-          PATH_INPUT: ${{ inputs.request_path }}
           EXPECTED_HASH: ${{ inputs.request_sha256 }}
           IMAGE_DIGEST: ${{ inputs.image_digest }}
         run: |
           set -euo pipefail
-          [[ "${PATH_INPUT}" =~ ^[A-Za-z0-9._/-]+$ ]]
-          [[ "${PATH_INPUT}" != /* && "/${PATH_INPUT}/" != *"/../"* ]]
-          gh api "repos/${GITHUB_REPOSITORY}/contents/${PATH_INPUT}?ref=${SHA}" --jq .content | base64 --decode > request.json
+          printf '%s' "${REQUEST_BASE64}" | base64 --decode > request.json
           test "$(sha256sum request.json | cut -d' ' -f1)" = "${EXPECTED_HASH}"
           jq -cS . request.json > canonical.json
           cmp --silent request.json canonical.json
@@ -86,7 +85,9 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${{ vars.CODESTRA_RELEASE_OWNER_LOGIN }}"
+          test -n "${{ vars.CODESTRA_SECURITY_OWNER_LOGIN }}"
           test "${{ github.actor }}" != "${{ vars.CODESTRA_RELEASE_OWNER_LOGIN }}"
+          test "${{ github.actor }}" != "${{ vars.CODESTRA_SECURITY_OWNER_LOGIN }}"
           printf '%s\n' '${{ inputs.release_sha }}' '${{ inputs.image_digest }}' '${{ needs.validate.outputs.request-sha }}' > release-owner-binding.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -103,8 +104,10 @@ jobs:
       - name: Record separate Security Owner gate
         run: |
           set -euo pipefail
-          test "${{ vars.CODESTRA_SECURITY_OWNER_LOGIN }}" = kazan555
-          test "${{ github.actor }}" != kazan555
+          test -n "${{ vars.CODESTRA_RELEASE_OWNER_LOGIN }}"
+          test -n "${{ vars.CODESTRA_SECURITY_OWNER_LOGIN }}"
+          test "${{ github.actor }}" != "${{ vars.CODESTRA_RELEASE_OWNER_LOGIN }}"
+          test "${{ github.actor }}" != "${{ vars.CODESTRA_SECURITY_OWNER_LOGIN }}"
           printf '%s\n' '${{ inputs.release_sha }}' '${{ inputs.image_digest }}' '${{ needs.validate.outputs.request-sha }}' > security-owner-binding.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -131,7 +134,7 @@ jobs:
           set -euo pipefail
           test "$(sed -n 1p release-owner-binding.txt)" = '${{ inputs.release_sha }}'
           test "$(sed -n 1p security-owner-binding.txt)" = '${{ inputs.release_sha }}'
-          jq -cnS --arg sha '${{ inputs.release_sha }}' --arg digest '${{ inputs.image_digest }}' --arg request '${{ needs.validate.outputs.request-sha }}' --arg run '${{ github.run_id }}' '{schema_version:"codestra.production-canary.authorization.v1",release_sha:$sha,image_digest:$digest,request_sha256:$request,workflow_run_id:$run}' > authorization.json
+          jq -cnS --arg sha '${{ inputs.release_sha }}' --arg digest '${{ inputs.image_digest }}' --arg request '${{ needs.validate.outputs.request-sha }}' --arg run '${{ github.run_id }}' '{schema_version:"codestra.production-canary.authorization.v2",release_sha:$sha,image_digest:$digest,request_sha256:$request,workflow_run_id:$run}' > authorization.json
           cosign sign-blob --yes --bundle authorization.sigstore.json authorization.json
           sha256sum authorization.json authorization.sigstore.json > SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
