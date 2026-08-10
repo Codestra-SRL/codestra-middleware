@@ -94,7 +94,7 @@ async def main() -> None:
                 VALUES (:key,:type,'1.0',:event,:entity,'social',:correlation,
                  CAST(:payload AS jsonb),:hash,'queued') RETURNING id"""),
             {"key": f"phase-n8-http-{event_id}", "type": payload["event_type"],
-             "event": event_id, "entity": "synthetic:phase-n8:http",
+             "event": event_id, "entity": f"synthetic:phase-n8:http:{event_id}",
              "correlation": correlation_id, "payload": json.dumps(payload), "hash": payload_hash},
         )
         await session.execute(
