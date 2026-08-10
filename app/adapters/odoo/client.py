@@ -33,6 +33,8 @@ ODOO_ENDPOINTS = {
     "telephony.mappings.read": "odoo.telephony.mappings.read",
     "reconciliation.runs.read": "odoo.reconciliation.runs.read",
     "reconciliation.drifts.read": "odoo.reconciliation.drifts.read",
+    "sales.lookup": "odoo.sales.lookup",
+    "sales.verification.read": "odoo.sales.verification.read",
 }
 
 ODOO_READ_OPERATIONS = frozenset(
@@ -49,6 +51,8 @@ ODOO_READ_OPERATIONS = frozenset(
         "telephony.mappings.read",
         "reconciliation.runs.read",
         "reconciliation.drifts.read",
+        "sales.lookup",
+        "sales.verification.read",
     }
 )
 

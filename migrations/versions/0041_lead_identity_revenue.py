@@ -1,13 +1,13 @@
 """Lead identity graph, next-action, and revenue attribution.
 
 Revision ID: 0041_lead_identity_revenue
-Revises: 0040_social_automation
+Revises: 0040_social_automation, 0034_sales_lead_foundation
 """
 
 from alembic import op
 
 revision = "0041_lead_identity_revenue"
-down_revision = "0040_social_automation"
+down_revision = ("0040_social_automation", "0034_sales_lead_foundation")
 branch_labels = None
 depends_on = None
 
