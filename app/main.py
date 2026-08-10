@@ -24,6 +24,7 @@ from app.api.v1.registry import router as registry_router
 from app.api.v1.recordings import router as recordings_router
 from app.api.v1.social import router as social_router
 from app.api.v1.social_platform import router as social_platform_router
+from app.api.v1.lead_identity import router as lead_identity_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.internal.ai_jobs import router as internal_ai_jobs_router
 from app.api.v1.ai_console import router as ai_console_router
@@ -70,6 +71,7 @@ app.include_router(registry_router)
 app.include_router(commands_router)
 app.include_router(recordings_router)
 app.include_router(social_platform_router)
+app.include_router(lead_identity_router)
 app.include_router(social_router)
 app.mount("/metrics", make_asgi_app())
 
@@ -136,7 +138,9 @@ async def control_request_guard(request: Request, call_next):
             request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
         )
         and request.url.path not in SELF_AUTHENTICATED_PATHS
-        and not (request.method == "POST" and SOCIAL_WEBHOOK_PATH.fullmatch(request.url.path))
+        and not (
+            request.method == "POST" and SOCIAL_WEBHOOK_PATH.fullmatch(request.url.path)
+        )
         and not _is_ai_console_jwt_route(request)
     ):
         try:

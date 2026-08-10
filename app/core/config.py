@@ -315,6 +315,12 @@ class Settings(BaseSettings):
     ai_automatic_publish: bool = False
     campaign_automatic_approval: bool = False
     deadletter_automatic_replay: bool = False
+    identity_graph_enabled: bool = False
+    lead_intelligence_enabled: bool = False
+    next_best_action_enabled: bool = False
+    attribution_engine_enabled: bool = False
+    revenue_event_sync_enabled: bool = False
+    automatic_contacting_enabled: bool = False
     social_media_max_bytes: int = 25_000_000
     social_trace_retention_days: int = 30
     social_health_retention_days: int = 90
@@ -444,6 +450,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "automatic publishing, approval, and dead-letter replay are forbidden"
             )
+        if self.automatic_contacting_enabled:
+            raise ValueError("automatic lead contacting is forbidden")
         if any(broad_event_switches):
             if not all(broad_event_switches):
                 raise ValueError("broad-event activation requires every canonical gate")
