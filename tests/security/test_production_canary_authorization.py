@@ -127,6 +127,9 @@ def test_workflow_accepts_only_merged_exact_release_and_detached_request() -> No
     workflow = (ROOT / ".github/workflows/production-canary-authorization.yml").read_text()
     assert 'test "$(jq -r .merged_at pr.json)" != "null"' in workflow
     assert 'test "$(jq -r .head.sha pr.json)" = "${SHA}"' in workflow
+    assert 'git fetch --no-tags --unshallow origin main' in workflow
+    assert 'git fetch --no-tags --depth=1 origin "pull/${PR}/head:refs/remotes/origin/production-canary-pr"' in workflow
+    assert 'test "$(git rev-parse refs/remotes/origin/production-canary-pr)" = "${SHA}"' in workflow
     assert 'git merge-base --is-ancestor "${SHA}" "${GITHUB_SHA}"' in workflow
     assert "request_base64" in workflow
     assert "contents/${PATH_INPUT}?ref=${SHA}" not in workflow

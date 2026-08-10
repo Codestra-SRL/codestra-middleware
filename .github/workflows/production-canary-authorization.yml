@@ -52,6 +52,9 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" > pr.json
           test "$(jq -r .merged_at pr.json)" != "null"
           test "$(jq -r .head.sha pr.json)" = "${SHA}"
+          git fetch --no-tags --unshallow origin main
+          git fetch --no-tags --depth=1 origin "pull/${PR}/head:refs/remotes/origin/production-canary-pr"
+          test "$(git rev-parse refs/remotes/origin/production-canary-pr)" = "${SHA}"
           git cat-file -e "${SHA}^{commit}"
           git merge-base --is-ancestor "${SHA}" "${GITHUB_SHA}"
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" > reviews.json
