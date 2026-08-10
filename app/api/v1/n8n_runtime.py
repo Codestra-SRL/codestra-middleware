@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -17,6 +18,7 @@ from app.core.n8n_runtime import (
     DispatchRequest,
     ExecutionStatus,
     ResultContract,
+    SocialEventEnvelope,
     canonical_bytes,
     load_secret,
     sha256,
@@ -37,6 +39,11 @@ from app.db.models import (
 )
 from app.db.session import get_session
 from app.metrics import N8N_DISPATCH, N8N_RESULT, N8N_RESULT_FAILURE
+from app.social.metrics import (
+    n8n_callback_rejections,
+    n8n_delivery_deadletter,
+    n8n_delivery_success,
+)
 
 router = APIRouter(prefix="/api/v1/n8n-runtime", tags=["n8n-runtime"])
 
@@ -150,6 +157,138 @@ async def execution_status(
     return _safe_execution(execution)
 
 
+@router.post("/social-authorize", status_code=202)
+async def authorize_social_ingress(
+    request: Request,
+    response: Response,
+    x_codestra_identity: Annotated[str, Header(alias="X-Codestra-Identity")],
+    x_codestra_tenant: Annotated[str, Header(alias="X-Codestra-Tenant")],
+    x_codestra_workflow: Annotated[str, Header(alias="X-Codestra-Workflow")],
+    x_codestra_execution: Annotated[str, Header(alias="X-Codestra-Execution")],
+    x_codestra_correlation_id: Annotated[
+        str, Header(alias="X-Codestra-Correlation-ID")
+    ],
+    x_codestra_timestamp: Annotated[str, Header(alias="X-Codestra-Timestamp")],
+    x_codestra_nonce: Annotated[str, Header(alias="X-Codestra-Nonce")],
+    x_codestra_body_sha256: Annotated[str, Header(alias="X-Codestra-Body-SHA256")],
+    x_codestra_signature: Annotated[str, Header(alias="X-Codestra-Signature")],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    """Authorize n8n handling with durable replay and event deduplication."""
+    raw = await request.body()
+    body_hash = sha256(raw)
+    try:
+        verify_fresh(x_codestra_timestamp, settings.signature_ttl_seconds)
+        if x_codestra_identity != "codestra-middleware":
+            raise ValueError("wrong identity")
+        if x_codestra_workflow != "CDST_SOCIAL_EVENT_ROUTER":
+            raise ValueError("wrong workflow")
+        if body_hash != x_codestra_body_sha256.removeprefix("sha256:"):
+            raise ValueError("body hash mismatch")
+        verify_runtime(
+            x_codestra_signature,
+            load_secret(settings.n8n_runtime_hmac_secret_file),
+            identity=x_codestra_identity,
+            tenant_id=x_codestra_tenant,
+            workflow_code=x_codestra_workflow,
+            execution_id=x_codestra_execution,
+            correlation_id=x_codestra_correlation_id,
+            timestamp=x_codestra_timestamp,
+            nonce=x_codestra_nonce,
+            body_hash=body_hash,
+        )
+        outer = json.loads(raw)
+        social = SocialEventEnvelope.model_validate(outer["payload"])
+        execution_id = UUID(x_codestra_execution)
+    except (KeyError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        n8n_callback_rejections.labels(reason="ingress_authentication").inc()
+        raise HTTPException(401, "invalid social n8n ingress") from exc
+    execution = await db.get(N8nRuntimeExecution, execution_id, with_for_update=True)
+    delivery_id = await db.scalar(
+        text(
+            "SELECT delivery_id FROM social_n8n_delivery_execution "
+            "WHERE execution_id=:execution"
+        ),
+        {"execution": execution_id},
+    )
+    if (
+        execution is None
+        or delivery_id is None
+        or execution.tenant_id != x_codestra_tenant
+        or execution.workflow_code != x_codestra_workflow
+        or execution.correlation_id != x_codestra_correlation_id
+        or social.tenant_id != execution.tenant_id
+        or social.event_id != execution.event_id
+        or social.event_type != execution.event_type
+        or outer.get("execution_id") != str(execution.execution_id)
+    ):
+        await db.rollback()
+        n8n_callback_rejections.labels(reason="ingress_binding").inc()
+        raise HTTPException(409, "social n8n ingress binding mismatch")
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:scope,0))"),
+        {"scope": f"social-n8n:{x_codestra_identity}:{x_codestra_nonce}"},
+    )
+    if await db.get(N8nRuntimeNonce, (x_codestra_identity, x_codestra_nonce)):
+        await db.rollback()
+        n8n_callback_rejections.labels(reason="ingress_replay").inc()
+        raise HTTPException(409, "replayed social n8n ingress")
+    db.add(
+        N8nRuntimeNonce(
+            identity=x_codestra_identity,
+            nonce=x_codestra_nonce,
+            tenant_id=execution.tenant_id,
+            execution_id=execution.execution_id,
+            body_hash=body_hash,
+            expires_at=datetime.now(UTC)
+            + timedelta(seconds=settings.signature_ttl_seconds),
+        )
+    )
+    existing = (
+        await db.execute(
+            text(
+                "SELECT body_hash FROM social_n8n_ingress_events "
+                "WHERE event_id=:event"
+            ),
+            {"event": social.event_id},
+        )
+    ).mappings().first()
+    if existing is not None:
+        if existing["body_hash"] != body_hash:
+            await db.rollback()
+            raise HTTPException(409, "social event payload conflict")
+        await db.commit()
+        response.status_code = 200
+        return {"authorized": True, "duplicate": True, "route": "duplicate"}
+    await db.execute(
+        text(
+            """INSERT INTO social_n8n_ingress_events
+            (event_id,execution_id,delivery_id,body_hash,first_nonce)
+            VALUES (:event,:execution,:delivery,:hash,:nonce)"""
+        ),
+        {
+            "event": social.event_id,
+            "execution": execution.execution_id,
+            "delivery": delivery_id,
+            "hash": body_hash,
+            "nonce": x_codestra_nonce,
+        },
+    )
+    await db.commit()
+    return {
+        "authorized": True,
+        "duplicate": False,
+        "route": social.event_type,
+        "event_id": social.event_id,
+        "event": social.model_dump(mode="json"),
+        "execution_id": str(execution.execution_id),
+        "workflow_code": execution.workflow_code,
+        "workflow_version": execution.workflow_version,
+        "tenant_id": execution.tenant_id,
+        "correlation_id": execution.correlation_id,
+    }
+
+
 @router.post("/results", status_code=202)
 async def result_callback(
     request: Request,
@@ -189,6 +328,7 @@ async def result_callback(
         execution_id = UUID(x_codestra_execution)
     except (RuntimeError, ValueError) as exc:
         N8N_RESULT_FAILURE.labels(reason="authentication_or_contract").inc()
+        n8n_callback_rejections.labels(reason="authentication_or_contract").inc()
         raise HTTPException(
             401, "invalid n8n result authentication or contract"
         ) from exc
@@ -206,10 +346,12 @@ async def result_callback(
     ):
         await db.rollback()
         N8N_RESULT_FAILURE.labels(reason="binding").inc()
+        n8n_callback_rejections.labels(reason="binding").inc()
         raise HTTPException(409, "n8n result binding mismatch")
     if await db.get(N8nRuntimeNonce, (x_codestra_identity, x_codestra_nonce)):
         await db.rollback()
         N8N_RESULT_FAILURE.labels(reason="replay").inc()
+        n8n_callback_rejections.labels(reason="replay").inc()
         raise HTTPException(409, "replayed n8n result")
     db.add(
         N8nRuntimeNonce(
@@ -305,6 +447,38 @@ async def result_callback(
             },
         )
     )
+    delivery_id = await db.scalar(
+        text(
+            "SELECT delivery_id FROM social_n8n_delivery_execution "
+            "WHERE execution_id=:execution"
+        ),
+        {"execution": execution.execution_id},
+    )
+    if delivery_id is not None and mapped in {
+        ExecutionStatus.COMPLETED,
+        ExecutionStatus.FAILED,
+        ExecutionStatus.DEAD_LETTER,
+    }:
+        delivery_status = (
+            "delivered" if mapped == ExecutionStatus.COMPLETED else "dead_letter"
+        )
+        await db.execute(
+            text(
+                """UPDATE integration_delivery SET status=:status,last_error=:error,
+                lease_owner=NULL,lease_expires_at=NULL,result_json=CAST(:result AS jsonb)
+                WHERE id=:delivery AND status='delivering'"""
+            ),
+            {
+                "status": delivery_status,
+                "error": None if delivery_status == "delivered" else f"N8N_{mapped}",
+                "result": json.dumps(body.model_dump(mode="json"), default=str),
+                "delivery": delivery_id,
+            },
+        )
+        if delivery_status == "delivered":
+            n8n_delivery_success.inc()
+        else:
+            n8n_delivery_deadletter.labels(reason=f"N8N_{mapped}").inc()
     try:
         await db.commit()
     except IntegrityError as exc:

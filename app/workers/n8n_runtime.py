@@ -209,6 +209,9 @@ async def dispatch_one(
         )
         return False
     execution.status = ExecutionStatus.RUNNING
+    execution.failure_class = None
+    execution.last_error_code = None
+    execution.next_attempt_at = None
     execution.updated_at = datetime.now(UTC)
     await session.commit()
     N8N_DISPATCH.labels(outcome="submitted").inc()
