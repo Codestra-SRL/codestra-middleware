@@ -287,6 +287,24 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    sales_lead_intake_enabled: bool = False
+    sales_identity_resolution_enabled: bool = False
+    sales_odoo_read_only_lookup_enabled: bool = False
+    sales_verification_jobs_enabled: bool = False
+    scraper_result_ingest_enabled: bool = False
+    hunter_provider_enabled: bool = False
+    apollo_provider_enabled: bool = False
+    twilio_lookup_provider_enabled: bool = False
+    opencorporates_provider_enabled: bool = False
+    openai_lead_classification_enabled: bool = False
+    vicidial_publication_enabled: bool = False
+    outreach_enabled: bool = False
+    sales_lead_request_max_bytes: int = 131072
+    sales_verification_max_concurrency: int = 4
+    sales_scraper_identity: str = ""
+    sales_scraper_tenant_id: str = ""
+    sales_scraper_campaign_allowlist: str = ""
+    sales_scraper_hmac_secret_file: str = ""
 
     def validate_safety(self) -> None:
         broad_event_switches = (
@@ -317,6 +335,8 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.postiz_publish_enabled,
+            self.vicidial_publication_enabled,
+            self.outreach_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
@@ -370,6 +390,16 @@ class Settings(BaseSettings):
                 if not value:
                     raise ValueError(f"required {attribute} secret file is empty")
                 setattr(self, attribute, value)
+
+    @property
+    def sales_scraper_hmac_secret(self) -> bytes:
+        path = self._protected_secret_path(
+            self.sales_scraper_hmac_secret_file, "sales scraper HMAC"
+        )
+        value = path.read_bytes().strip()
+        if len(value) < 32:
+            raise ValueError("sales scraper HMAC secret is too short")
+        return value
 
     @staticmethod
     def _optional_secret(filename: str, label: str) -> str:
