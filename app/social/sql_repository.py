@@ -212,15 +212,22 @@ class SqlSocialRepository:
     async def list_accounts(
         self, account_id: UUID | None = None
     ) -> list[dict[str, Any]]:
-        where = "WHERE id=:account_id" if account_id is not None else ""
+        query = (
+            """SELECT id,tenant_id,provider,network,external_profile_name,
+            external_profile_id,connection_state,capabilities,
+            COALESCE(metadata->>'classification','UNKNOWN') classification,last_sync_at,
+            created_at,updated_at FROM social_accounts
+            WHERE id=:account_id ORDER BY created_at,id"""
+            if account_id is not None
+            else """SELECT id,tenant_id,provider,network,external_profile_name,
+            external_profile_id,connection_state,capabilities,
+            COALESCE(metadata->>'classification','UNKNOWN') classification,last_sync_at,
+            created_at,updated_at FROM social_accounts ORDER BY created_at,id"""
+        )
         rows = (
             (
                 await self.session.execute(
-                    text(f"""SELECT id,tenant_id,provider,network,external_profile_name,
-                external_profile_id,connection_state,capabilities,
-                COALESCE(metadata->>'classification','UNKNOWN') classification,last_sync_at,
-                created_at,updated_at FROM social_accounts
-                {where} ORDER BY created_at,id"""),
+                    text(query),
                     {"account_id": account_id} if account_id is not None else {},
                 )
             )

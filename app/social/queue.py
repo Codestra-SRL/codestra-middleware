@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import random
 import json
+import secrets
 from collections.abc import Awaitable
 from typing import Any, cast
 from uuid import UUID
@@ -17,7 +17,7 @@ def retry_delay(
     if attempt < 1:
         raise ValueError("attempt must be positive")
     ceiling = min(maximum_seconds, base_seconds * (2 ** (attempt - 1)))
-    return ceiling * random.uniform(0.5, 1.0)
+    return ceiling * secrets.SystemRandom().uniform(0.5, 1.0)
 
 
 def classify_failure(error: BaseException) -> str:
