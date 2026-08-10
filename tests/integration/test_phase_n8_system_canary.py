@@ -395,6 +395,12 @@ def test_complete_synthetic_business_canary(monkeypatch):
             assert dry_run["dry_run"] is True
             assert dry_run["write_enabled"] is False
             assert dry_run["command_dispatched"] is False
+            await session.execute(
+                text(
+                    "DELETE FROM n8n_workflow_registry WHERE workflow_code='CDST_SOCIAL_EVENT_ROUTER' AND workflow_version='1' AND owner='synthetic-canary'"
+                )
+            )
+            await session.commit()
         await engine.dispose()
 
     asyncio.run(scenario())
