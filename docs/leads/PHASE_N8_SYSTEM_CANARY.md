@@ -2,7 +2,7 @@
 
 Phase N8 certifies the internal business pipeline with reserved synthetic data. It does not certify a real Postly account, production Odoo, VICIdial, or any contacting action.
 
-The executable acceptance test is `tests/integration/test_phase_n8_system_canary.py`. It creates a unique tenant, campaign, content item, event, person, lead, two campaign touches, and a synthetic USD revenue event in disposable PostgreSQL. The test drives the durable n8n delivery bridge, simulates an authenticated successful workflow result at the established execution boundary, and verifies terminal reconciliation.
+The database acceptance test is `tests/integration/test_phase_n8_system_canary.py`. The runtime acceptance command is `scripts/run_phase_n8_http_canary.py`. It creates a unique tenant, campaign, content item, event, person, lead, campaign touch, and synthetic USD revenue event in disposable PostgreSQL. The runtime command drives the durable delivery bridge through an authenticated HTTP webhook in an isolated n8n instance and requires the actual signed workflow callback before terminal reconciliation succeeds.
 
 The canary enables identity, lead intelligence, next-action, attribution, revenue-sync, and social n8n flags only in the disposable process. Source and production defaults remain off. `SOCIAL_PUBLISH_ENABLED`, `SOCIAL_ODOO_WRITE_ENABLED`, VICIdial writes, and automatic contacting remain false.
 
@@ -22,7 +22,9 @@ synthetic social.message.received
   -> five versioned attribution calculations
 ```
 
-The n8n portion exercises middleware staging, idempotency, execution creation, and completion reconciliation. It does not claim that the inactive Git-controlled N7 lead workflows were promoted to the shared n8n service.
+The n8n workflow remains inactive in Git and is rendered by `scripts/render_phase_n8_n8n_workflow.py`. Operators may import and publish it only in an isolated staging instance. The webhook acknowledges immediately so middleware can release its execution-row lock before the workflow calls the signed authorization boundary.
+
+Every identity resolution, lead creation/deduplication, interaction, next-action decision, synthetic revenue event, and attribution calculation appends a tenant-sequenced SHA-256 hash-chain record to `lead_pipeline_audit_events`. PostgreSQL triggers reject updates and deletes. Audit metadata is allowlisted and excludes raw contact values.
 
 ## Acceptance invariants
 

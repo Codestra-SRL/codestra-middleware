@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.v1.social_platform import OdooDryRunRequest, odoo_dry_run
@@ -63,6 +64,7 @@ def test_complete_synthetic_business_canary(monkeypatch):
                         source="SOCIAL",
                         consent="UNKNOWN",
                         dnc="CLEAR",
+                        correlation_id=correlation_id,
                     )
                 )
             lead_id = lead_ids[0][0]
@@ -204,6 +206,7 @@ def test_complete_synthetic_business_canary(monkeypatch):
                 external_reference=f"synthetic-revenue-{event_id}",
                 occurred_at=now + timedelta(minutes=1),
                 is_synthetic=True,
+                correlation_id=correlation_id,
             )
             duplicate_revenue_id, duplicate_created = await repository.create_revenue(
                 tenant_id=tenant_id,
@@ -215,6 +218,7 @@ def test_complete_synthetic_business_canary(monkeypatch):
                 external_reference=f"synthetic-revenue-{event_id}",
                 occurred_at=now + timedelta(minutes=1),
                 is_synthetic=True,
+                correlation_id=correlation_id,
             )
             assert revenue_created and not duplicate_created
             assert duplicate_revenue_id == revenue_id
@@ -226,7 +230,10 @@ def test_complete_synthetic_business_canary(monkeypatch):
                 "TIME_DECAY",
             ):
                 calculation = await repository.calculate_attribution(
-                    tenant_id=tenant_id, revenue_event_id=revenue_id, model=model
+                    tenant_id=tenant_id,
+                    revenue_event_id=revenue_id,
+                    model=model,
+                    correlation_id=correlation_id,
                 )
                 assert sum(
                     item["weight"] for item in calculation["allocations"]
@@ -395,6 +402,53 @@ def test_complete_synthetic_business_canary(monkeypatch):
             assert dry_run["dry_run"] is True
             assert dry_run["write_enabled"] is False
             assert dry_run["command_dispatched"] is False
+
+            audit_rows = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT id,sequence,event_type,previous_hash,event_hash,safe_metadata "
+                            "FROM lead_pipeline_audit_events WHERE tenant_id=:tenant "
+                            "AND correlation_id=:correlation ORDER BY sequence"
+                        ),
+                        {"tenant": tenant_id, "correlation": correlation_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            event_types = {row["event_type"] for row in audit_rows}
+            assert {
+                "identity.resolved",
+                "lead.created",
+                "lead.deduplicated",
+                "lead.interaction.recorded",
+                "lead.interaction.deduplicated",
+                "revenue.recorded",
+                "revenue.deduplicated",
+                "attribution.calculated",
+            } <= event_types
+            assert [row["sequence"] for row in audit_rows] == list(
+                range(1, len(audit_rows) + 1)
+            )
+            assert audit_rows[0]["previous_hash"] is None
+            for previous, current in zip(audit_rows, audit_rows[1:]):
+                assert current["previous_hash"] == previous["event_hash"]
+            serialized_audit = json.dumps(
+                [dict(row) for row in audit_rows], default=str
+            ).lower()
+            assert "synthetic-lead@example.invalid" not in serialized_audit
+            assert "+15555550100" not in serialized_audit
+
+            with pytest.raises(DBAPIError, match="immutable"):
+                await session.execute(
+                    text(
+                        "UPDATE lead_pipeline_audit_events SET outcome='MUTATED' "
+                        "WHERE id=:id"
+                    ),
+                    {"id": audit_rows[0]["id"]},
+                )
+            await session.rollback()
             await session.execute(
                 text(
                     "DELETE FROM n8n_workflow_registry WHERE workflow_code='CDST_SOCIAL_EVENT_ROUTER' AND workflow_version='1' AND owner='synthetic-canary'"
