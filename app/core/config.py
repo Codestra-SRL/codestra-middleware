@@ -415,7 +415,6 @@ class Settings(BaseSettings):
             self.telephony_command_worker_enabled,
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
-            self.postiz_publish_enabled,
             self.vicidial_publication_enabled,
             self.outreach_enabled,
             self.scraper_middleware_delivery_enabled,
