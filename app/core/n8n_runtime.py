@@ -81,6 +81,52 @@ class ResultContract(BaseModel):
         return value.astimezone(UTC)
 
 
+class SocialEventEnvelope(BaseModel):
+    """Strict provider-neutral social event accepted by the n8n router."""
+
+    model_config = ConfigDict(extra="forbid")
+    event_id: str = Field(min_length=1, max_length=128)
+    event_type: str = Field(pattern=r"^social\.[a-z0-9_.-]+$", max_length=128)
+    event_version: Literal[1]
+    occurred_at: datetime
+    correlation_id: str = Field(min_length=1, max_length=128)
+    tenant_id: str = Field(min_length=1, max_length=64)
+    source: Literal["social"]
+    provider: Literal["postly", "hootsuite"]
+    subject_id: str = Field(min_length=1, max_length=128)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("payload")
+    @classmethod
+    def bounded_social_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        encoded = json.dumps(value, separators=(",", ":")).encode()
+        if len(encoded) > 65536:
+            raise ValueError("social event payload exceeds limit")
+        forbidden = {
+            "authorization",
+            "access_token",
+            "refresh_token",
+            "api_key",
+            "password",
+            "client_secret",
+            "cookie",
+        }
+
+        def contains_secret(document: Any) -> bool:
+            if isinstance(document, dict):
+                return any(
+                    str(key).lower() in forbidden or contains_secret(item)
+                    for key, item in document.items()
+                )
+            if isinstance(document, list):
+                return any(contains_secret(item) for item in document)
+            return False
+
+        if contains_secret(value):
+            raise ValueError("social event payload contains forbidden credentials")
+        return value
+
+
 def canonical_bytes(value: BaseModel | dict[str, Any]) -> bytes:
     document = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
     return json.dumps(
