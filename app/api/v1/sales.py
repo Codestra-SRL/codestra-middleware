@@ -278,3 +278,24 @@ async def get_verification_results(
             404,
         )
     return service.job_document(job, include_results=True)
+
+
+@router.post("/verification-jobs/{job_id}/cancel")
+async def cancel_verification_job(
+    job_id: str,
+    request: Request,
+    tenant_id: str = Header("", alias="X-Codestra-Tenant-ID"),
+):
+    correlation_id = _correlation(request)
+    if not settings.sales_verification_jobs_enabled:
+        return _disabled(correlation_id, "SALES_VERIFICATION_JOBS_ENABLED")
+    try:
+        job = service.cancel_job(job_id, tenant_id)
+    except SalesError:
+        return _error(
+            "VERIFICATION_JOB_NOT_FOUND",
+            "verification job was not found",
+            correlation_id,
+            404,
+        )
+    return service.job_document(job)

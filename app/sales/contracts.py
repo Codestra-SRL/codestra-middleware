@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
@@ -94,8 +95,12 @@ class Company(StrictModel):
     domain: str | None = Field(default=None, max_length=253)
     website_url: str | None = None
     registration_number: str | None = Field(default=None, max_length=128)
+    tax_identifier: str | None = Field(default=None, max_length=128)
+    trading_name: str | None = Field(default=None, max_length=256)
+    business_telephone: str | None = Field(default=None, max_length=64)
     country_code: str = Field(pattern=r"^[A-Z]{2}$")
     industry: str | None = Field(default=None, max_length=128)
+    services: list[str] = Field(default_factory=list, max_length=32)
     address: Address = Field(default_factory=Address)
 
     @field_validator("website_url")
@@ -113,6 +118,8 @@ class Contact(StrictModel):
     business_email: str | None = Field(default=None, max_length=320)
     business_phone: str | None = Field(default=None, max_length=64)
     country_code: str | None = Field(default=None, pattern=r"^[A-Z]{2}$")
+    company_association: str | None = Field(default=None, max_length=256)
+    public_profile_url: str | None = None
 
     @field_validator("business_email")
     @classmethod
@@ -120,6 +127,18 @@ class Contact(StrictModel):
         if value and (value.count("@") != 1 or "." not in value.rsplit("@", 1)[1]):
             raise ValueError("business email is malformed")
         return value
+
+    @field_validator("public_profile_url")
+    @classmethod
+    def public_profile(cls, value: str | None) -> str | None:
+        return validate_public_url(value) if value else value
+
+
+class ProvenanceClassification(StrEnum):
+    VERIFIED_FACT = "VERIFIED_FACT"
+    PUBLIC_OBSERVATION = "PUBLIC_OBSERVATION"
+    SYSTEM_INFERENCE = "SYSTEM_INFERENCE"
+    UNKNOWN = "UNKNOWN"
 
 
 class Evidence(StrictModel):
@@ -129,6 +148,13 @@ class Evidence(StrictModel):
     snippet: str = Field(min_length=1, max_length=MAX_SNIPPET)
     content_hash: str = Field(pattern=r"^(sha256:)?[0-9a-f]{64}$")
     observed_at: datetime
+    classification: ProvenanceClassification = (
+        ProvenanceClassification.PUBLIC_OBSERVATION
+    )
+    extraction_method: str = Field(default="structured", max_length=64)
+    field_paths: list[str] = Field(default_factory=list, max_length=32)
+    robots_policy_reference: str | None = Field(default=None, max_length=256)
+    provider_verification_reference: str | None = Field(default=None, max_length=256)
 
     _public_url = field_validator("source_url")(validate_public_url)
     _observed_utc = field_validator("observed_at")(_utc)
@@ -140,6 +166,14 @@ class Evidence(StrictModel):
         if "<html" in lowered or "<script" in lowered or "<!doctype" in lowered:
             raise ValueError("raw HTML is forbidden")
         return value
+
+    @model_validator(mode="after")
+    def supported_fields(self) -> "Evidence":
+        paths = self.field_paths or [self.field]
+        allowed = ("company.", "contact.")
+        if any(not value.startswith(allowed) for value in paths):
+            raise ValueError("evidence references an unsupported material field")
+        return self
 
 
 class SourceClaims(StrictModel):
@@ -160,11 +194,25 @@ class LeadCandidate(StrictModel):
     schema_version: str = Field(pattern=r"^codestra\.sales\.lead-candidate\.v1$")
     tenant_id: str = Field(min_length=1, max_length=128)
     campaign_id: str = Field(min_length=1, max_length=128)
+    candidate_id: str | None = Field(default=None, max_length=128)
+    scraper_job_id: str | None = Field(default=None, max_length=128)
+    source_type: str = Field(default="public_web", pattern=r"^public_web$")
     source: Source
     company: Company
     contact: Contact = Field(default_factory=Contact)
     evidence: list[Evidence] = Field(default_factory=list, max_length=MAX_EVIDENCE)
     source_claims: SourceClaims = Field(default_factory=SourceClaims)
+    provenance: list[ProvenanceClassification] = Field(
+        default_factory=list, max_length=8
+    )
+    provider_results: dict[str, MetadataValue] = Field(
+        default_factory=dict, max_length=16
+    )
+    extraction_timestamp: datetime | None = None
+    content_hashes: list[str] = Field(default_factory=list, max_length=32)
+    idempotency_metadata: dict[str, MetadataValue] = Field(
+        default_factory=dict, max_length=8
+    )
     metadata: dict[str, MetadataValue] = Field(default_factory=dict, max_length=32)
 
     @field_validator("metadata")
@@ -177,14 +225,62 @@ class LeadCandidate(StrictModel):
                 raise ValueError("metadata is outside bounded limits")
         return value
 
+    _extraction_utc = field_validator("extraction_timestamp")(
+        lambda value: _utc(value) if value else value
+    )
+
+    @field_validator("content_hashes")
+    @classmethod
+    def hashes_are_sha256(cls, values: list[str]) -> list[str]:
+        if any(not re.fullmatch(r"(sha256:)?[0-9a-f]{64}", value) for value in values):
+            raise ValueError("content hash must be SHA-256")
+        return values
+
+    @model_validator(mode="after")
+    def material_values_have_evidence(self) -> "LeadCandidate":
+        material = {
+            "company.name": self.company.name,
+            "company.legal_name": self.company.legal_name,
+            "company.trading_name": self.company.trading_name,
+            "company.domain": self.company.domain,
+            "company.website_url": self.company.website_url,
+            "company.registration_number": self.company.registration_number,
+            "company.tax_identifier": self.company.tax_identifier,
+            "company.business_telephone": self.company.business_telephone,
+            "company.industry": self.company.industry,
+            "company.services": self.company.services,
+            "company.address.line1": self.company.address.line1,
+            "company.address.city": self.company.address.city,
+            "company.address.region": self.company.address.region,
+            "contact.full_name": self.contact.full_name,
+            "contact.title": self.contact.title,
+            "contact.business_email": self.contact.business_email,
+            "contact.business_phone": self.contact.business_phone,
+            "contact.company_association": self.contact.company_association,
+            "contact.public_profile_url": self.contact.public_profile_url,
+        }
+        supported = {
+            path
+            for item in self.evidence
+            for path in (item.field_paths or [item.field])
+        }
+        missing = sorted(
+            path for path, value in material.items() if value and path not in supported
+        )
+        if missing:
+            raise ValueError(f"material fields lack evidence: {', '.join(missing)}")
+        return self
+
 
 class Decision(StrEnum):
-    NET_NEW = "NET_NEW"
-    EXACT_EXISTING = "EXACT_EXISTING"
+    ACCEPTED = "ACCEPTED"
+    EXACT_DUPLICATE = "EXACT_DUPLICATE"
     POSSIBLE_DUPLICATE = "POSSIBLE_DUPLICATE"
-    BLOCKED = "BLOCKED"
+    SUPPRESSED = "SUPPRESSED"
+    MANUAL_REVIEW = "MANUAL_REVIEW"
+    INVALID_EVIDENCE = "INVALID_EVIDENCE"
+    INVALID_PAYLOAD = "INVALID_PAYLOAD"
     REJECTED = "REJECTED"
-    CONFLICT = "CONFLICT"
 
 
 class GateState(StrEnum):
@@ -215,10 +311,25 @@ class LeadResolution(StrictModel):
     schema_version: str = RESOLUTION_SCHEMA
     candidate_id: str
     decision: Decision
+    decision_code: str = "VERIFICATION_COMPLETED"
+    eligible_for_storage: bool = True
+    eligible_for_outreach: bool = False
+    duplicate_status: str = "NONE"
+    match_type: str = "NONE"
+    matched_entity_references: list[str] = Field(default_factory=list, max_length=8)
+    match_confidence: int = Field(default=0, ge=0, le=100)
     company_resolution: MatchResolution
     contact_resolution: MatchResolution
     gates: Gates
     rejection_reasons: list[str] = Field(default_factory=list)
+    manual_review_reasons: list[str] = Field(default_factory=list)
+    suppression_results: list[str] = Field(default_factory=list)
+    consent_results: list[str] = Field(default_factory=list)
+    evidence_validation: str = "VALIDATED"
+    provider_validation_summaries: dict[str, str] = Field(default_factory=dict)
+    audit_reference: str | None = None
+    idempotency_result: str = "CREATED"
+    contract_version: str = RESOLUTION_SCHEMA
     review_required: bool
     dry_run: bool = True
     correlation_id: str
