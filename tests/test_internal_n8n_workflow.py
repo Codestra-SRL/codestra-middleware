@@ -48,9 +48,11 @@ def test_production_workflow_contains_no_direct_write_or_customer_nodes():
 
 def test_private_proxy_exposes_only_canonical_governed_odoo_result_route():
     source = PRIVATE_CADDY.read_text()
-    assert "path /api/v1/integration/results" in source
+    assert "reverse_proxy /api/v1/integration/results odoo:8069" in source
+    assert "reverse_proxy /web/health odoo:8069" in source
     assert "/codestra/integration/v1/results" not in source
-    assert "handle {\n\t\trespond \"not found\" 404\n\t}" in source
+    assert "\tabort\n" in source
+    assert "\tbind 0.0.0.0\n" not in source
 
 
 def test_production_inventory_does_not_self_authorize_workflows():
