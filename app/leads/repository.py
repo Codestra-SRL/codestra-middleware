@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -15,6 +16,83 @@ from app.leads.domain import attribution_weights, stable_hash
 class LeadRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    async def append_audit(
+        self,
+        *,
+        tenant_id: UUID,
+        event_type: str,
+        entity_type: str,
+        entity_id: UUID | None,
+        correlation_id: str,
+        actor: str = "middleware",
+        outcome: str = "PASS",
+        safe_metadata: dict[str, Any] | None = None,
+    ) -> UUID:
+        """Append one immutable, PII-free event to a tenant hash chain."""
+        await self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+            {"key": f"lead-audit:{tenant_id}"},
+        )
+        previous = (
+            (
+                await self.session.execute(
+                    text(
+                        "SELECT sequence,event_hash FROM lead_pipeline_audit_events "
+                        "WHERE tenant_id=:tenant ORDER BY sequence DESC LIMIT 1"
+                    ),
+                    {"tenant": tenant_id},
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        sequence = int(previous["sequence"]) + 1 if previous else 1
+        previous_hash = str(previous["event_hash"]) if previous else None
+        occurred_at = datetime.now(UTC)
+        metadata = safe_metadata or {}
+        material = json.dumps(
+            {
+                "tenant_id": str(tenant_id),
+                "sequence": sequence,
+                "event_type": event_type,
+                "entity_type": entity_type,
+                "entity_id": str(entity_id) if entity_id else None,
+                "correlation_id": correlation_id,
+                "actor": actor,
+                "outcome": outcome,
+                "safe_metadata": metadata,
+                "previous_hash": previous_hash,
+                "occurred_at": occurred_at.isoformat(),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        event_hash = hashlib.sha256(material.encode()).hexdigest()
+        audit_id = uuid4()
+        await self.session.execute(
+            text(
+                "INSERT INTO lead_pipeline_audit_events"
+                "(id,tenant_id,sequence,event_type,entity_type,entity_id,correlation_id,actor,outcome,safe_metadata,previous_hash,event_hash,occurred_at) "
+                "VALUES(:id,:tenant,:sequence,:event_type,:entity_type,:entity_id,:correlation,:actor,:outcome,:metadata,:previous_hash,:event_hash,:occurred_at)"
+            ),
+            {
+                "id": audit_id,
+                "tenant": tenant_id,
+                "sequence": sequence,
+                "event_type": event_type,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "correlation": correlation_id,
+                "actor": actor,
+                "outcome": outcome,
+                "metadata": json.dumps(metadata),
+                "previous_hash": previous_hash,
+                "event_hash": event_hash,
+                "occurred_at": occurred_at,
+            },
+        )
+        return audit_id
 
     async def resolve_person(
         self,
@@ -77,6 +155,15 @@ class LeadRepository:
                     "signals": json.dumps({"conflicting_identity_count": len(matches)}),
                     "correlation": correlation_id,
                 },
+            )
+            await self.append_audit(
+                tenant_id=tenant_id,
+                event_type="identity.resolution.conflict",
+                entity_type="PERSON",
+                entity_id=None,
+                correlation_id=correlation_id,
+                outcome="REVIEW_REQUIRED",
+                safe_metadata={"conflicting_identity_count": len(matches)},
             )
             await self.session.commit()
             return {
@@ -143,6 +230,14 @@ class LeadRepository:
                 ),
                 "correlation": correlation_id,
             },
+        )
+        await self.append_audit(
+            tenant_id=tenant_id,
+            event_type="identity.resolved",
+            entity_type="PERSON",
+            entity_id=person_id,
+            correlation_id=correlation_id,
+            safe_metadata={"created": created, "confidence": "EXACT"},
         )
         await self.session.commit()
         return {
@@ -271,6 +366,7 @@ class LeadRepository:
         source: str,
         consent: str,
         dnc: str,
+        correlation_id: str = "",
     ) -> tuple[UUID, bool]:
         key = stable_hash(
             str(tenant_id), str(person_id), str(company_id), str(campaign_id)
@@ -309,6 +405,14 @@ class LeadRepository:
                     "dnc": dnc,
                 },
             )
+        await self.append_audit(
+            tenant_id=tenant_id,
+            event_type="lead.created" if created else "lead.deduplicated",
+            entity_type="LEAD",
+            entity_id=lead_id,
+            correlation_id=correlation_id or f"repository:{lead_id}",
+            safe_metadata={"source": source, "campaign_linked": campaign_id is not None},
+        )
         await self.session.commit()
         return lead_id, created
 
@@ -356,6 +460,14 @@ class LeadRepository:
                     {"tenant": tenant_id, "source": source, "event": source_event_id},
                 )
             ).scalar_one()
+        await self.append_audit(
+            tenant_id=tenant_id,
+            event_type="lead.interaction.recorded" if row is not None else "lead.interaction.deduplicated",
+            entity_type="INTERACTION",
+            entity_id=interaction_id,
+            correlation_id=correlation_id,
+            safe_metadata={"interaction_type": interaction_type, "source": source},
+        )
         await self.session.commit()
         return interaction_id, row is not None
 
@@ -464,6 +576,7 @@ class LeadRepository:
         external_reference: str,
         occurred_at: datetime,
         is_synthetic: bool = False,
+        correlation_id: str = "",
     ) -> tuple[UUID, bool]:
         event_id = uuid4()
         row = (
@@ -498,11 +611,28 @@ class LeadRepository:
                     },
                 )
             ).scalar_one()
+        await self.append_audit(
+            tenant_id=tenant_id,
+            event_type="revenue.recorded" if row is not None else "revenue.deduplicated",
+            entity_type="REVENUE",
+            entity_id=event_id,
+            correlation_id=correlation_id or f"repository:{event_id}",
+            safe_metadata={
+                "type": event_type,
+                "currency": currency,
+                "is_synthetic": is_synthetic,
+            },
+        )
         await self.session.commit()
         return event_id, row is not None
 
     async def calculate_attribution(
-        self, *, tenant_id: UUID, revenue_event_id: UUID, model: str
+        self,
+        *,
+        tenant_id: UUID,
+        revenue_event_id: UUID,
+        model: str,
+        correlation_id: str = "",
     ) -> dict[str, Any]:
         event = (
             (
@@ -596,6 +726,14 @@ class LeadRepository:
                     "currency": event["currency"],
                 }
             )
+        await self.append_audit(
+            tenant_id=tenant_id,
+            event_type="attribution.calculated",
+            entity_type="ATTRIBUTION",
+            entity_id=calculation_id,
+            correlation_id=correlation_id or f"repository:{calculation_id}",
+            safe_metadata={"model": model, "allocation_count": len(allocations)},
+        )
         await self.session.commit()
         return {
             "calculation_id": calculation_id,

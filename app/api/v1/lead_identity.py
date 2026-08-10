@@ -427,6 +427,7 @@ async def identity_timeline(
 @router.post("/leads", status_code=201)
 async def create_lead(
     body: LeadCreate,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     permissions: str | None = Header(None, alias="X-Codestra-Permissions"),
 ) -> dict:
@@ -447,6 +448,7 @@ async def create_lead(
         source=body.source,
         consent=body.consent_status,
         dnc=body.dnc_status,
+        correlation_id=correlation(request),
     )
     (lead_created if created else lead_deduped).labels(
         source=metric_source(body.source)
@@ -529,6 +531,7 @@ async def decide_action(
     permissions: str | None = Header(None, alias="X-Codestra-Permissions"),
 ) -> dict:
     actor = require("lead.score", permissions)
+    correlation_id = correlation(request)
     if not settings.next_best_action_enabled:
         raise HTTPException(
             503,
@@ -577,7 +580,7 @@ async def decide_action(
             "eligible": decision.eligible_for_contact,
             "reasons": json.dumps(list(decision.reasons)),
             "actor": actor,
-            "correlation": correlation(request),
+            "correlation": correlation_id,
         },
     )
     await session.execute(
@@ -585,6 +588,21 @@ async def decide_action(
             "UPDATE lead_records SET current_score=:score,next_best_action=:action,updated_at=now() WHERE id=:lead"
         ),
         {"score": score, "action": decision.action.value, "lead": lead_id},
+    )
+    await LeadRepository(session).append_audit(
+        tenant_id=body.tenant_id,
+        event_type="lead.next_action.calculated",
+        entity_type="DECISION",
+        entity_id=decision_id,
+        correlation_id=correlation_id,
+        actor=actor,
+        outcome="BLOCKED" if not decision.eligible_for_contact else "ELIGIBLE",
+        safe_metadata={
+            "action": decision.action.value,
+            "score": score,
+            "reason_codes": list(decision.reasons),
+            "automatic_contact": False,
+        },
     )
     await session.commit()
     next_actions.labels(
@@ -604,6 +622,30 @@ async def decide_action(
         "components": components,
         "automatic_contact": False,
     }
+
+
+@router.get("/lead-audit/traces/{correlation_id}")
+async def audit_trace(
+    correlation_id: str,
+    tenant_id: UUID = Query(),
+    session: AsyncSession = Depends(get_session),
+    permissions: str | None = Header(None, alias="X-Codestra-Permissions"),
+) -> list[dict]:
+    require("lead.audit.read", permissions)
+    rows = (
+        (
+            await session.execute(
+                text(
+                    "SELECT id,sequence,event_type,entity_type,entity_id,correlation_id,actor,outcome,safe_metadata,previous_hash,event_hash,occurred_at "
+                    "FROM lead_pipeline_audit_events WHERE tenant_id=:tenant AND correlation_id=:correlation ORDER BY sequence"
+                ),
+                {"tenant": tenant_id, "correlation": correlation_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(row) for row in rows]
 
 
 @router.get("/leads/{lead_id}/next-action")
@@ -668,6 +710,7 @@ async def feedback(
 @router.post("/analytics/attribution/revenue", status_code=201)
 async def revenue(
     body: RevenueCreate,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     permissions: str | None = Header(None, alias="X-Codestra-Permissions"),
 ) -> dict:
@@ -690,6 +733,7 @@ async def revenue(
         external_reference=body.external_reference,
         occurred_at=body.occurred_at,
         is_synthetic=body.is_synthetic,
+        correlation_id=correlation(request),
     )
     if created:
         revenue_events.labels(
@@ -706,6 +750,7 @@ async def revenue(
 async def calculate(
     event_id: UUID,
     body: AttributionRequest,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     permissions: str | None = Header(None, alias="X-Codestra-Permissions"),
 ) -> dict:
@@ -720,7 +765,10 @@ async def calculate(
         )
     try:
         result = await LeadRepository(session).calculate_attribution(
-            tenant_id=body.tenant_id, revenue_event_id=event_id, model=body.model
+            tenant_id=body.tenant_id,
+            revenue_event_id=event_id,
+            model=body.model,
+            correlation_id=correlation(request),
         )
         attribution_calculations.labels(model=body.model).inc()
         return result
