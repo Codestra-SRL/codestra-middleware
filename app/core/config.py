@@ -173,6 +173,7 @@ class Settings(BaseSettings):
     middleware_n8n_scope: str = "n8n.events.submit"
     odoo_results_client_id: str = "codestra-middleware-odoo-results"
     odoo_results_client_secret_file: str = ""
+    odoo_results_ca_file: str = ""
     odoo_service_credential_reference: str = ""
     odoo_service_private_key_file: str = ""
     odoo_result_delivery_enabled: bool = False

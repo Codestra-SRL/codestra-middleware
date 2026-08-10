@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 
 WORKFLOW = Path("deploy/n8n/cod-reconciliation-event-v1.workflow.json")
+PRIVATE_CADDY = Path("deploy/internal-n8n/Caddyfile")
+INVENTORY = Path("deploy/internal-n8n/production-workflow-inventory.json")
 
 
 def test_production_workflow_is_inactive_scoped_and_credential_referenced():
@@ -42,3 +44,24 @@ def test_production_workflow_contains_no_direct_write_or_customer_nodes():
     serialized = json.dumps(document).lower()
     assert "vicidial" not in serialized
     assert "asterisk" not in serialized
+
+
+def test_private_proxy_exposes_only_canonical_governed_odoo_result_route():
+    source = PRIVATE_CADDY.read_text()
+    assert "path /api/v1/integration/results" in source
+    assert "/codestra/integration/v1/results" not in source
+    assert "handle {\n\t\trespond \"not found\" 404\n\t}" in source
+
+
+def test_production_inventory_does_not_self_authorize_workflows():
+    document = json.loads(INVENTORY.read_text())
+    classifications = {
+        item["workflow_id"]: item["classification"]
+        for item in document["workflows"]
+    }
+    assert classifications["CodReconciliationEventV1"] == "INACTIVE_UNCLASSIFIED"
+    assert classifications["TEST_SYN_RUNTIME_V1"] == "TEST_SYN_ONLY"
+    assert all(
+        item["classification"] != "APPROVED_PRODUCTION"
+        for item in document["workflows"]
+    )

@@ -72,6 +72,19 @@ def test_runtime_action_flags_default_fail_closed() -> None:
         assert f'{flag}: "false"' in COMPOSE
 
 
+def test_production_odoo_route_uses_canonical_governed_api_and_private_ca() -> None:
+    assert (
+        "https://odoo.internal.codestra.agency/api/v1/integration/results"
+        in COMPOSE
+    )
+    assert "/codestra/integration/v1/results" not in COMPOSE
+    assert "ODOO_RESULTS_CA_FILE: /run/secrets/internal_integration_ca" in COMPOSE
+    assert (
+        "/etc/codestra/pki/internal-integration/ca.crt:"
+        "/run/secrets/internal_integration_ca:ro"
+    ) in COMPOSE
+
+
 def test_canonical_compose_does_not_pin_one_off_scheduler_release() -> None:
     scheduler = _service_block("middleware-scheduler")
     assert "\n    image:" not in scheduler

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import ssl
 import time
 from typing import Any
 from uuid import uuid4
@@ -26,6 +27,7 @@ class CommonServiceClient:
         *,
         token_endpoint_key: ResolutionRequest,
         transport: httpx.AsyncBaseTransport | None = None,
+        verify: ssl.SSLContext | str | bool = True,
     ) -> None:
         self.resolver = resolver
         self.token_manager = token_manager
@@ -33,6 +35,8 @@ class CommonServiceClient:
         self.http = httpx.AsyncClient(
             follow_redirects=False,
             transport=transport,
+            verify=verify,
+            trust_env=False,
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
         )
 

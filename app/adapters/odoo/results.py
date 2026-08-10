@@ -386,9 +386,18 @@ def _build_odoo_client(
         if not path.is_absolute() or not path.is_file() or path.is_symlink():
             raise OdooResultError("Odoo client secret is unavailable")
         value = path.read_text().strip()
-        if len(value) < 32:
+        if path.stat().st_mode & 0o007 or len(value) < 32:
             raise OdooResultError("Odoo client secret is invalid")
         return value
+
+    ca_path = Path(settings.odoo_results_ca_file)
+    if (
+        not ca_path.is_absolute()
+        or not ca_path.is_file()
+        or ca_path.is_symlink()
+        or ca_path.stat().st_mode & 0o022
+    ):
+        raise OdooResultError("Odoo internal CA is unavailable or unsafe")
 
     token_manager: TokenManager | ClientSecretTokenManager
     if settings.odoo_results_client_secret_file:
@@ -414,6 +423,7 @@ def _build_odoo_client(
                 service_key="identity",
                 endpoint_key="oauth.token",
             ),
+            verify=str(ca_path),
         ),
         environment=settings.environment,
         organization_public_id=str(payload["organization_public_id"]),
