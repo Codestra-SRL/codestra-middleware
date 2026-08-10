@@ -14,24 +14,26 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 REQUEST_KEYS = {
     "schema_version",
-    "repository",
+    "middleware_repository",
     "pr_number",
     "release_sha",
     "image_digest",
-    "vicidial_server",
-    "middleware_server",
-    "campaign",
+    "deployment_environment",
+    "test_campaign",
     "test_agent",
     "test_extension",
+    "test_lead",
+    "test_list",
     "test_destination",
-    "min_calls",
-    "max_calls",
-    "execution_window_start_utc",
-    "execution_window_end_utc",
-    "authorization_expiry_utc",
-    "production_scope",
-    "production_flags",
-    "rollback_sha",
+    "test_disposition",
+    "maximum_call_count",
+    "allowed_call_type",
+    "customer_data_allowed",
+    "pstn_allowed",
+    "valid_from",
+    "valid_until",
+    "rollback_authority",
+    "authorized_flags",
 }
 ALLOWED_FLAGS = {
     "OUTBOX_PROCESSING_ENABLED",
@@ -74,42 +76,41 @@ def validate(
     if set(request) != REQUEST_KEYS:
         raise ValidationError("request fields mismatch")
     expected = {
-        "schema_version": "codestra.production-canary.authorization.v1",
-        "repository": repository,
+        "schema_version": "codestra.production-canary.authorization.v2",
+        "middleware_repository": repository,
         "pr_number": pr_number,
         "release_sha": release_sha,
         "image_digest": image_digest,
-        "vicidial_server": "65.21.67.207",
-        "middleware_server": "65.109.65.169",
-        "campaign": "TEST_SYN",
+        "deployment_environment": "production",
+        "test_campaign": "TEST_SYN",
         "test_agent": "webtest001",
         "test_extension": "6101",
+        "test_lead": 41,
+        "test_list": 9001,
         "test_destination": "6000",
+        "test_disposition": "CALLBK",
+        "maximum_call_count": 1,
+        "allowed_call_type": "internal_test_only",
+        "customer_data_allowed": False,
+        "pstn_allowed": False,
     }
     if any(request.get(key) != value for key, value in expected.items()):
         raise ValidationError("request identity or canary scope mismatch")
-    if not SHA.fullmatch(release_sha) or not SHA.fullmatch(
-        str(request["rollback_sha"])
-    ):
-        raise ValidationError("release or rollback SHA is invalid")
+    if not SHA.fullmatch(release_sha):
+        raise ValidationError("release SHA is invalid")
     if not DIGEST.fullmatch(image_digest):
         raise ValidationError("image digest is invalid")
-    if request["min_calls"] != 5 or request["max_calls"] != 10:
-        raise ValidationError("call bounds must be exactly 5 through 10")
-    start = _time(request["execution_window_start_utc"])
-    end = _time(request["execution_window_end_utc"])
-    expiry = _time(request["authorization_expiry_utc"])
+    start = _time(request["valid_from"])
+    expiry = _time(request["valid_until"])
     current = now or datetime.now(timezone.utc)
-    if start < current or end <= start or expiry < end:
+    if start < current or expiry <= start:
         raise ValidationError("execution window is invalid")
-    if (end - start).total_seconds() > 3600 or (expiry - start).total_seconds() > 7200:
+    if (expiry - start).total_seconds() > 3600:
         raise ValidationError("authorization window is too broad")
-    scope = request["production_scope"]
-    if not isinstance(scope, list) or not scope or any(
-        not isinstance(value, str) or not value for value in scope
-    ):
-        raise ValidationError("production scope is invalid")
-    flags = request["production_flags"]
+    rollback_authority = request["rollback_authority"]
+    if not isinstance(rollback_authority, str) or not rollback_authority.strip():
+        raise ValidationError("rollback authority is invalid")
+    flags = request["authorized_flags"]
     if (
         not isinstance(flags, dict)
         or not flags
