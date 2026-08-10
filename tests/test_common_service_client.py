@@ -91,3 +91,27 @@ async def test_common_client_rejects_redirect():
             )
     finally:
         await client.aclose()
+
+
+def test_common_client_binds_explicit_private_ca(monkeypatch, tmp_path):
+    observed = {}
+
+    class Client:
+        def __init__(self, **kwargs):
+            observed.update(kwargs)
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(httpx, "AsyncClient", Client)
+    ca = tmp_path / "internal-ca.crt"
+    ca.write_text("test certificate bytes")
+    CommonServiceClient(
+        Resolver(),
+        TokenManager(),
+        token_endpoint_key=ResolutionRequest("production", "identity", "oauth.token"),
+        verify=str(ca),
+    )
+    assert observed["verify"] == str(ca)
+    assert observed["follow_redirects"] is False
+    assert observed["trust_env"] is False

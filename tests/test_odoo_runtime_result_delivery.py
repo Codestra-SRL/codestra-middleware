@@ -7,6 +7,7 @@ import pytest
 
 from app.adapters.odoo.results import (
     OdooResultError,
+    _build_odoo_client,
     deliver_result,
     recover_stale_result_deliveries,
 )
@@ -111,6 +112,31 @@ def session_for(execution, runtime_result, delivery):
     session.get.side_effect = get
     session.scalar.return_value = None
     return session
+
+
+def test_runtime_odoo_client_fails_closed_without_internal_ca(monkeypatch, tmp_path):
+    secret = tmp_path / "client-secret"
+    secret.write_text("s" * 64)
+    secret.chmod(0o600)
+    monkeypatch.setattr(settings, "odoo_results_client_secret_file", str(secret))
+    monkeypatch.setattr(settings, "odoo_results_ca_file", "")
+    with pytest.raises(OdooResultError, match="internal CA"):
+        _build_odoo_client(AsyncMock(), {"organization_public_id": "ORG"})
+
+
+def test_runtime_odoo_client_rejects_world_writable_internal_ca(
+    monkeypatch, tmp_path
+):
+    secret = tmp_path / "client-secret"
+    secret.write_text("s" * 64)
+    secret.chmod(0o600)
+    ca = tmp_path / "ca.crt"
+    ca.write_text("certificate")
+    ca.chmod(0o666)
+    monkeypatch.setattr(settings, "odoo_results_client_secret_file", str(secret))
+    monkeypatch.setattr(settings, "odoo_results_ca_file", str(ca))
+    with pytest.raises(OdooResultError, match="internal CA"):
+        _build_odoo_client(AsyncMock(), {"organization_public_id": "ORG"})
 
 
 @pytest.mark.asyncio

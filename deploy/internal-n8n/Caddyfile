@@ -43,7 +43,7 @@ odoo.internal.codestra.agency {
 	bind 0.0.0.0
 	tls /run/secrets/odoo_internal_tls_cert /run/secrets/odoo_internal_tls_key
 
-	@result path /codestra/integration/v1/results
+	@result path /api/v1/integration/results
 	handle @result {
 		request_body {
 			max_size 64KB

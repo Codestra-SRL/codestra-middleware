@@ -173,7 +173,7 @@ services:
       N8N_SERVICE_AUDIENCE: codestra-middleware
       N8N_SERVICE_JWKS_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/certs
       N8N_SERVICE_CLIENT_ID: codestra-n8n-production
-      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/codestra/integration/v1/results
+      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/api/v1/integration/results
       ODOO_RESULTS_TOKEN_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/token
       ODOO_RESULTS_CLIENT_ID: codestra-middleware-odoo-results
       ODOO_RESULTS_CLIENT_SECRET_FILE: /run/secrets/odoo_results_client_secret
@@ -260,7 +260,7 @@ services:
       SERVICE_NAME: middleware-odoo-result-worker
       QUEUE_NAME: odoo-results
       ODOO_RESULT_DELIVERY_ENABLED: "false"
-      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/codestra/integration/v1/results
+      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/api/v1/integration/results
       ODOO_RESULTS_TOKEN_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/token
       ODOO_RESULTS_CLIENT_ID: codestra-middleware-odoo-results
       ODOO_RESULTS_CLIENT_SECRET_FILE: /run/secrets/odoo_results_client_secret
