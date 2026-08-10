@@ -121,3 +121,58 @@ n8n_duplicate_events = Counter(
     "Deduplicated social n8n events",
     ("event_type",),
 )
+workflow_starts = Counter(
+    "codestra_n8n_workflow_starts_total",
+    "Codestra workflow starts",
+    ("workflow", "version"),
+)
+workflow_results = Counter(
+    "codestra_n8n_workflow_results_total",
+    "Codestra workflow results",
+    ("workflow", "version", "result"),
+)
+workflow_duration = Histogram(
+    "codestra_n8n_workflow_duration_seconds",
+    "Codestra workflow duration",
+    ("workflow", "version"),
+)
+workflow_duplicate_rejections = Counter(
+    "codestra_n8n_duplicate_rejections_total",
+    "Duplicate workflow events rejected",
+    ("workflow", "version"),
+)
+workflow_auth_rejections = Counter(
+    "codestra_n8n_auth_rejections_total",
+    "Workflow authentication rejections",
+    ("workflow", "version", "reason"),
+)
+ai_requests = Counter(
+    "ai_requests_total", "AI requests", ("provider", "model", "task", "result")
+)
+ai_tokens_input = Counter(
+    "ai_tokens_input_total", "AI input tokens", ("provider", "model", "task")
+)
+ai_tokens_output = Counter(
+    "ai_tokens_output_total", "AI output tokens", ("provider", "model", "task")
+)
+ai_cost_estimate = Counter(
+    "ai_cost_estimate_total", "Estimated AI cost", ("provider", "model", "task")
+)
+campaign_transitions = Counter(
+    "social_campaign_transitions_total",
+    "Campaign state transitions",
+    ("old_state", "new_state", "result"),
+)
+provider_health_score_metric = Gauge(
+    "social_provider_health_score",
+    "Provider health component score",
+    ("provider", "component"),
+)
+workflow_drift = Gauge(
+    "codestra_n8n_workflow_drift", "Workflow drift state", ("workflow", "environment")
+)
+workflow_security_findings = Counter(
+    "codestra_n8n_security_findings_total",
+    "Workflow security findings",
+    ("severity", "code"),
+)

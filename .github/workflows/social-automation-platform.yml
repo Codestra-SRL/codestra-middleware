@@ -1,0 +1,59 @@
+name: Social automation platform
+
+on:
+  pull_request:
+    paths:
+      - "app/platform/**"
+      - "app/api/v1/social_platform.py"
+      - "integrations/n8n/workflows/**"
+      - "integrations/n8n/nodes-codestra/**"
+      - "migrations/versions/0040_social_automation.py"
+      - "tests/test_social_automation_platform.py"
+      - ".github/workflows/social-automation-platform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22.18.0"
+          cache: npm
+          cache-dependency-path: integrations/n8n/nodes-codestra/package-lock.json
+      - name: Install checksum-pinned Python dependencies
+        run: python -m pip install --require-hashes -r requirements.lock -r requirements-test.lock
+      - name: Validate workflow security and contracts
+        run: python -m app.tools.validate_n8n_workflows
+      - name: Test platform domain and APIs
+        run: python -m pytest -q tests/test_social_automation_platform.py
+      - name: Build and test private nodes
+        working-directory: integrations/n8n/nodes-codestra
+        run: |
+          npm ci --ignore-scripts --legacy-peer-deps
+          npm run build
+          npm test
+      - name: Confirm fail-closed source defaults
+        run: |
+          python - <<'PY'
+          from app.core.config import Settings
+          s = Settings()
+          assert not s.social_publish_enabled
+          assert not s.social_production_canary_enabled
+          assert not s.social_odoo_write_enabled
+          assert not s.ai_automatic_publish
+          assert not s.campaign_automatic_approval
+          assert not s.social_automatic_provider_failover_enabled
+          assert not s.social_automatic_dual_publish_enabled
+          assert not s.deadletter_automatic_replay
+          PY

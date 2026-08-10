@@ -307,6 +307,18 @@ class Settings(BaseSettings):
     social_production_monitoring_gate_verified: bool = False
     social_automatic_provider_failover_enabled: bool = False
     social_automatic_dual_publish_enabled: bool = False
+    social_global_kill_switch: bool = True
+    social_provider_postly_kill_switch: bool = True
+    social_n8n_delivery_kill_switch: bool = True
+    social_campaign_automation_kill_switch: bool = True
+    social_ai_generation_kill_switch: bool = True
+    ai_automatic_publish: bool = False
+    campaign_automatic_approval: bool = False
+    deadletter_automatic_replay: bool = False
+    social_media_max_bytes: int = 25_000_000
+    social_trace_retention_days: int = 30
+    social_health_retention_days: int = 90
+    social_security_audit_retention_days: int = 365
     social_webhook_ttl_seconds: int = 300
     postly_webhook_secret: str = ""
     postly_webhook_secret_file: str = ""
@@ -334,11 +346,17 @@ class Settings(BaseSettings):
         if self.social_n8n_delivery_batch_size not in range(1, 26):
             raise ValueError("social n8n delivery batch size must be between 1 and 25")
         if self.social_n8n_delivery_lease_seconds not in range(10, 601):
-            raise ValueError("social n8n delivery lease must be between 10 and 600 seconds")
+            raise ValueError(
+                "social n8n delivery lease must be between 10 and 600 seconds"
+            )
         if self.postly_poll_interval_seconds not in range(30, 3601):
-            raise ValueError("Postly polling interval must be between 30 and 3600 seconds")
+            raise ValueError(
+                "Postly polling interval must be between 30 and 3600 seconds"
+            )
         if self.postly_poll_lookback_seconds not in range(60, 86401):
-            raise ValueError("Postly polling lookback must be between 60 seconds and one day")
+            raise ValueError(
+                "Postly polling lookback must be between 60 seconds and one day"
+            )
         if self.postly_poll_batch_size not in range(1, 501):
             raise ValueError("Postly polling batch size must be between 1 and 500")
         if self.social_worker_concurrency != 1:
@@ -417,6 +435,14 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "automatic provider failover and dual publishing are forbidden"
+            )
+        if (
+            self.ai_automatic_publish
+            or self.campaign_automatic_approval
+            or self.deadletter_automatic_replay
+        ):
+            raise ValueError(
+                "automatic publishing, approval, and dead-letter replay are forbidden"
             )
         if any(broad_event_switches):
             if not all(broad_event_switches):

@@ -23,6 +23,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.registry import router as registry_router
 from app.api.v1.recordings import router as recordings_router
 from app.api.v1.social import router as social_router
+from app.api.v1.social_platform import router as social_platform_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.internal.ai_jobs import router as internal_ai_jobs_router
 from app.api.v1.ai_console import router as ai_console_router
@@ -68,6 +69,7 @@ app.include_router(campaign_search_router)
 app.include_router(registry_router)
 app.include_router(commands_router)
 app.include_router(recordings_router)
+app.include_router(social_platform_router)
 app.include_router(social_router)
 app.mount("/metrics", make_asgi_app())
 
