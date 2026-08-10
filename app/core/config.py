@@ -422,7 +422,6 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.social_odoo_write_enabled,
-            self.postiz_publish_enabled,
             self.vicidial_publication_enabled,
             self.outreach_enabled,
             self.scraper_middleware_delivery_enabled,
