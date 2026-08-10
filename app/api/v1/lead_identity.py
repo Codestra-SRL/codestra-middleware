@@ -22,15 +22,26 @@ from app.leads.domain import (
     quality_score,
 )
 from app.leads.repository import LeadRepository
+from app.leads.metrics import (
+    attribution_calculations,
+    consent_blocks,
+    dnc_blocks,
+    identity_resolution,
+    lead_created,
+    lead_deduped,
+    lead_scores,
+    next_actions,
+    revenue_events,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["lead-identity-revenue"])
 
 ATTRIBUTION_GROUP_QUERIES = {
-    "campaigns": "SELECT a.campaign_id AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND c.superseded=false GROUP BY a.campaign_id,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
-    "content": "SELECT a.content_id AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND c.superseded=false GROUP BY a.content_id,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
-    "networks": "SELECT t.network AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND c.superseded=false GROUP BY t.network,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
-    "providers": "SELECT t.provider AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND c.superseded=false GROUP BY t.provider,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
-    "leads": "SELECT r.lead_id AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND c.superseded=false GROUP BY r.lead_id,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
+    "campaigns": "SELECT a.campaign_id AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND r.is_synthetic=false AND c.superseded=false GROUP BY a.campaign_id,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
+    "content": "SELECT a.content_id AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND r.is_synthetic=false AND c.superseded=false GROUP BY a.content_id,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
+    "networks": "SELECT t.network AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND r.is_synthetic=false AND c.superseded=false GROUP BY t.network,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
+    "providers": "SELECT t.provider AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND r.is_synthetic=false AND c.superseded=false GROUP BY t.provider,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
+    "leads": "SELECT r.lead_id AS key,a.currency,SUM(a.attributed_amount) AS attributed_amount,COUNT(*) AS allocation_count FROM attribution_allocations a JOIN attribution_calculations c ON c.id=a.calculation_id JOIN revenue_events r ON r.id=c.revenue_event_id JOIN lead_campaign_touches t ON t.id=a.touch_id WHERE r.tenant_id=:tenant AND r.is_synthetic=false AND c.superseded=false GROUP BY r.lead_id,a.currency ORDER BY attributed_amount DESC NULLS LAST LIMIT 500",
 }
 
 
@@ -196,12 +207,23 @@ class RevenueCreate(StrictModel):
     source_system: str = Field(min_length=1, max_length=64)
     external_reference: str = Field(min_length=1, max_length=255)
     occurred_at: datetime
+    is_synthetic: bool = False
 
     @model_validator(mode="after")
     def monetary_pair(self):
         if (self.amount is None) != (self.currency is None):
             raise ValueError("amount and currency must be supplied together")
+        synthetic_source = self.source_system.upper().startswith("SYNTHETIC_")
+        if synthetic_source != self.is_synthetic:
+            raise ValueError(
+                "synthetic revenue source and is_synthetic marker must agree"
+            )
         return self
+
+
+def metric_source(value: str) -> str:
+    normalized = value.upper()
+    return normalized if normalized in {"SOCIAL", "WEB", "EMAIL", "OTHER"} else "OTHER"
 
 
 class AttributionRequest(StrictModel):
@@ -283,6 +305,10 @@ async def resolve(
         correlation_id=correlation(request),
     )
     result["phone_normalization_status"] = status
+    identity_resolution.labels(
+        result="created" if result.get("created") else "matched",
+        confidence=str(result.get("confidence", "UNKNOWN")),
+    ).inc()
     return result
 
 
@@ -422,6 +448,9 @@ async def create_lead(
         consent=body.consent_status,
         dnc=body.dnc_status,
     )
+    (lead_created if created else lead_deduped).labels(
+        source=metric_source(body.source)
+    ).inc()
     return {
         "lead_id": lead_id,
         "created": created,
@@ -525,6 +554,7 @@ async def decide_action(
             404, {"code": "LEAD_NOT_FOUND", "message": "Lead was not found"}
         )
     score, components = quality_score(body.score_components)
+    lead_scores.observe(score)
     decision = next_best_action(
         dnc=lead["dnc_status"],
         consent=lead["consent_status"],
@@ -557,6 +587,14 @@ async def decide_action(
         {"score": score, "action": decision.action.value, "lead": lead_id},
     )
     await session.commit()
+    next_actions.labels(
+        action=decision.action.value,
+        eligible=str(decision.eligible_for_contact).lower(),
+    ).inc()
+    if "DNC_BLOCK" in decision.reasons:
+        dnc_blocks.labels(channel="all").inc()
+    if "CONSENT_NOT_GRANTED" in decision.reasons:
+        consent_blocks.labels(channel="all").inc()
     return {
         "decision_id": decision_id,
         "action": decision.action,
@@ -651,7 +689,12 @@ async def revenue(
         source_system=body.source_system,
         external_reference=body.external_reference,
         occurred_at=body.occurred_at,
+        is_synthetic=body.is_synthetic,
     )
+    if created:
+        revenue_events.labels(
+            type=body.event_type, currency=(body.currency or "NONE").upper()
+        ).inc()
     return {
         "revenue_event_id": event_id,
         "created": created,
@@ -676,9 +719,11 @@ async def calculate(
             },
         )
     try:
-        return await LeadRepository(session).calculate_attribution(
+        result = await LeadRepository(session).calculate_attribution(
             tenant_id=body.tenant_id, revenue_event_id=event_id, model=body.model
         )
+        attribution_calculations.labels(model=body.model).inc()
+        return result
     except ValueError as exc:
         raise HTTPException(
             404, {"code": str(exc), "message": "Revenue event was not found"}

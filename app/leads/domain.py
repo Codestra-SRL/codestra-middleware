@@ -166,6 +166,8 @@ def next_best_action(
         return ActionDecision(NextAction.DO_NOT_CONTACT, ("DNC_BLOCK",), False)
     if consent != "GRANTED":
         return ActionDecision(NextAction.MANUAL_REVIEW, ("CONSENT_NOT_GRANTED",), False)
+    if intent == "SPAM":
+        return ActionDecision(NextAction.DO_NOT_CONTACT, ("SPAM_DETECTED",), False)
     if intent == "SUPPORT":
         return ActionDecision(NextAction.SUPPORT_HANDOFF, ("SUPPORT_INTENT",), True)
     if intent == "BUYING_INTENT" and score >= 70 and phone:

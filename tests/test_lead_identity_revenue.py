@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 
@@ -17,6 +18,7 @@ from app.leads.domain import (
     quality_score,
     stable_hash,
 )
+from app.api.v1.lead_identity import RevenueCreate, metric_source
 
 
 def test_email_normalization_is_conservative():
@@ -98,6 +100,21 @@ def test_dnc_and_consent_have_final_authority():
     assert not unknown.eligible_for_contact
 
 
+def test_spam_never_recommends_contact():
+    decision = next_best_action(
+        dnc="CLEAR",
+        consent="GRANTED",
+        intent="SPAM",
+        score=100,
+        phone=True,
+        email=True,
+        social=True,
+    )
+    assert decision.action == NextAction.DO_NOT_CONTACT
+    assert decision.reasons == ("SPAM_DETECTED",)
+    assert not decision.eligible_for_contact
+
+
 def test_next_action_rules_are_deterministic():
     decision = next_best_action(
         dnc="CLEAR",
@@ -158,6 +175,21 @@ def test_revenue_reference_hash_is_deterministic_without_exposure():
     assert "ODOO-SALE-1" not in stable_hash("ODOO-SALE-1")
 
 
+def test_synthetic_revenue_marker_is_mandatory_and_metric_labels_are_bounded():
+    with pytest.raises(ValueError, match="synthetic revenue source"):
+        RevenueCreate(
+            tenant_id=uuid4(),
+            lead_id=uuid4(),
+            event_type="PAYMENT_RECEIVED",
+            amount=Decimal("1"),
+            currency="USD",
+            source_system="SYNTHETIC_TEST",
+            external_reference="synthetic-1",
+            occurred_at=datetime.now(timezone.utc),
+        )
+    assert metric_source("customer-controlled-value") == "OTHER"
+
+
 def test_n7_feature_flags_fail_closed():
     value = Settings()
     assert not value.identity_graph_enabled
@@ -207,3 +239,4 @@ def test_integration_runtime_exposes_n7_contracts():
     assert "/api/v1/identity/resolve" in paths
     assert "/api/v1/leads/{lead_id}/next-action" in paths
     assert "/api/v1/analytics/attribution/revenue" in paths
+    assert "/api/v1/odoo/leads/dry-run" in paths

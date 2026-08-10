@@ -463,12 +463,13 @@ class LeadRepository:
         source_system: str,
         external_reference: str,
         occurred_at: datetime,
+        is_synthetic: bool = False,
     ) -> tuple[UUID, bool]:
         event_id = uuid4()
         row = (
             await self.session.execute(
                 text(
-                    "INSERT INTO revenue_events(id,tenant_id,lead_id,amount,currency,type,occurred_at,source_system,external_reference_hash,confidence) VALUES(:id,:tenant,:lead,:amount,:currency,:type,:occurred,:source,:hash,'EXACT') ON CONFLICT (tenant_id,source_system,external_reference_hash) DO NOTHING RETURNING id"
+                    "INSERT INTO revenue_events(id,tenant_id,lead_id,amount,currency,type,occurred_at,source_system,external_reference_hash,confidence,is_synthetic) VALUES(:id,:tenant,:lead,:amount,:currency,:type,:occurred,:source,:hash,'EXACT',:synthetic) ON CONFLICT (tenant_id,source_system,external_reference_hash) DO NOTHING RETURNING id"
                 ),
                 {
                     "id": event_id,
@@ -480,6 +481,7 @@ class LeadRepository:
                     "occurred": occurred_at,
                     "source": source_system,
                     "hash": stable_hash(external_reference),
+                    "synthetic": is_synthetic,
                 },
             )
         ).scalar_one_or_none()
