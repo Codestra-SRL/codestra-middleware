@@ -161,7 +161,7 @@ def workflow() -> dict:
                 "parameters": {
                     "httpMethod": "POST",
                     "path": "codestra-social-router-v1",
-                    "responseMode": "responseNode",
+                    "responseMode": "onReceived",
                     "options": {},
                 },
                 "webhookId": "codestra-phase-n8-business-canary-v1",
@@ -174,25 +174,10 @@ def workflow() -> dict:
                 "position": [300, 0],
                 "parameters": {"jsCode": CODE},
             },
-            {
-                "id": "phase-n8-response",
-                "name": "Synthetic Result",
-                "type": "n8n-nodes-base.respondToWebhook",
-                "typeVersion": 1.4,
-                "position": [600, 0],
-                "parameters": {
-                    "respondWith": "json",
-                    "responseBody": "={{$json}}",
-                    "options": {"responseCode": 202},
-                },
-            },
         ],
         "connections": {
             "Authenticated Synthetic Ingress": {
                 "main": [[{"node": "N7 Business Pipeline", "type": "main", "index": 0}]]
-            },
-            "N7 Business Pipeline": {
-                "main": [[{"node": "Synthetic Result", "type": "main", "index": 0}]]
             },
         },
         "settings": {"executionOrder": "v1", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "all"},

@@ -7,7 +7,6 @@ def test_isolated_workflow_uses_only_standard_nodes_and_stays_inactive_in_git():
     assert {node["type"] for node in document["nodes"]} == {
         "n8n-nodes-base.webhook",
         "n8n-nodes-base.code",
-        "n8n-nodes-base.respondToWebhook",
     }
     assert "codestra-social-router-v1" in str(document)
 
