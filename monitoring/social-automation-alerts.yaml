@@ -1,0 +1,40 @@
+groups:
+  - name: codestra-social-automation
+    rules:
+      - alert: CodestraN8nWorkflowFailureSpike
+        expr: sum(rate(codestra_n8n_workflow_results_total{result="failure"}[10m])) > 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Codestra workflow failure rate is elevated"}
+      - alert: CodestraN8nDeadLetterGrowth
+        expr: increase(social_n8n_delivery_deadletter_total[15m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "Social workflow delivery entered dead letter"}
+      - alert: CodestraWorkflowDrift
+        expr: max(codestra_n8n_workflow_drift) > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "Deployed n8n workflow differs from Git"}
+      - alert: CodestraProviderHealthDegraded
+        expr: min by(provider) (social_provider_health_score{component="api"}) < 20
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Social provider health is degraded"}
+      - alert: CodestraPollingStale
+        expr: increase(social_poll_cycles_total[15m]) == 0
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "Social polling has not completed a cycle"}
+      - alert: CodestraWorkflowSecurityCritical
+        expr: increase(codestra_n8n_security_findings_total{severity=~"HIGH|CRITICAL"}[5m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "High-risk n8n security finding detected"}
+      - alert: CodestraAIFailure
+        expr: sum(rate(ai_requests_total{result="failure"}[10m])) > 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "AI request failures are elevated"}
+      - alert: CodestraDuplicateProtectionViolation
+        expr: increase(social_dual_publish_attempt_total[5m]) > 0 or increase(social_provider_failover_attempt_total[5m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "Forbidden social routing attempt detected"}

@@ -1,0 +1,24 @@
+{
+  "name": "@codestra/n8n-nodes-codestra",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.1.0",
+    "typescript": "5.8.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "2.30.8"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": ["dist/CodestraMiddleware.credentials.js"],
+    "nodes": ["dist/nodes.js"]
+  }
+}
