@@ -10,4 +10,6 @@ Phase N8 runs only in disposable infrastructure. Rollback is:
 6. Preserve the synthetic evidence database until acceptance review is complete, then remove it under the test-data retention policy.
 7. Restore the prior exact image if an isolated runtime image was changed.
 
+For the isolated n8n promotion, unpublish the `CdstPhaseN8BusinessCanaryV1` workflow and stop the disposable n8n, API, and PostgreSQL containers. Remove only volumes whose names were recorded as Phase N8 disposable resources. Confirm the pre-existing middleware and n8n containers retain their prior image digests and health before optionally recreating the isolated stack.
+
 Rollback never deletes production data or rewrites identity, lead, provider, or attribution ownership. Production social publishing, Odoo writes, VICIdial commands, and automatic contacting remain disabled throughout.
