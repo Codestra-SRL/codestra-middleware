@@ -82,6 +82,19 @@ def candidate(**updates):
                 "snippet": "Public business contact evidence",
                 "content_hash": "a" * 64,
                 "observed_at": "2026-08-08T12:00:00Z",
+                "field_paths": [
+                    "company.name",
+                    "company.domain",
+                    "company.website_url",
+                    "company.registration_number",
+                    "company.address.line1",
+                    "company.address.city",
+                    "company.address.region",
+                    "contact.full_name",
+                    "contact.title",
+                    "contact.business_email",
+                    "contact.business_phone",
+                ],
             }
         ],
         "source_claims": {
@@ -110,10 +123,15 @@ def run(value):
 
 
 def test_valid_minimum_and_fully_populated_contract():
-    minimum = candidate(contact={}, evidence=[], source_claims={}, metadata={})
+    minimum = candidate(contact={}, source_claims={}, metadata={})
     full = candidate()
     assert minimum.tenant_id == full.tenant_id == "tenant-a"
     assert full.source_claims.consent_claimed is True  # captured, never authoritative
+
+
+def test_material_values_without_evidence_are_rejected():
+    with pytest.raises(ValidationError):
+        candidate(evidence=[])
 
 
 @pytest.mark.parametrize(
@@ -290,7 +308,7 @@ def test_campaign_dnc_does_not_cross_campaign_and_high_score_cannot_override():
     result, _ = run(
         SalesLeadService(adapter).resolve(candidate(), "idempotency-key-0001", "corr-1")
     )
-    assert result.decision == "BLOCKED"
+    assert result.decision == "SUPPRESSED"
 
 
 def test_idempotent_replay_conflict_concurrency_and_cross_tenant_isolation():
@@ -352,7 +370,8 @@ def test_authoritative_failure_never_classifies_net_new():
     result, _ = run(
         SalesLeadService(adapter).resolve(candidate(), "idempotency-key-0003", "corr-1")
     )
-    assert result.decision == "BLOCKED"
+    assert result.decision == "MANUAL_REVIEW"
+    assert result.decision_code == "ODOO_UNAVAILABLE"
     assert result.gates.global_dnc == "DEPENDENCY_UNAVAILABLE"
 
 

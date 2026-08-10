@@ -235,7 +235,8 @@ class SalesLeadService:
                 )
                 resolution = LeadResolution(
                     candidate_id=candidate_id,
-                    decision=Decision.BLOCKED,
+                    decision=Decision.MANUAL_REVIEW,
+                    decision_code="ODOO_UNAVAILABLE",
                     company_resolution=MatchResolution(
                         matched=False, score=0, reasons=["ODOO_LOOKUP_UNAVAILABLE"]
                     ),
@@ -243,7 +244,10 @@ class SalesLeadService:
                         matched=False, score=0, reasons=["ODOO_LOOKUP_UNAVAILABLE"]
                     ),
                     gates=compliance.gates,
-                    rejection_reasons=list(compliance.reasons),
+                    rejection_reasons=["ODOO_UNAVAILABLE"],
+                    manual_review_reasons=["ODOO_UNAVAILABLE"],
+                    provider_validation_summaries={"odoo": "UNAVAILABLE"},
+                    audit_reference=candidate_id,
                     review_required=True,
                     correlation_id=correlation_id,
                 )
@@ -258,13 +262,15 @@ class SalesLeadService:
                 )
                 highest = max(company.score, contact.score)
                 if compliance.blocked:
-                    decision = Decision.BLOCKED
+                    decision = Decision.SUPPRESSED
                 elif highest >= self.policy.exact_threshold:
-                    decision = Decision.EXACT_EXISTING
+                    decision = Decision.EXACT_DUPLICATE
                 elif highest >= self.policy.review_threshold:
                     decision = Decision.POSSIBLE_DUPLICATE
+                elif compliance.review_required:
+                    decision = Decision.MANUAL_REVIEW
                 else:
-                    decision = Decision.NET_NEW
+                    decision = Decision.ACCEPTED
                 review_required = (
                     compliance.review_required
                     or decision == Decision.POSSIBLE_DUPLICATE
@@ -272,6 +278,32 @@ class SalesLeadService:
                 resolution = LeadResolution(
                     candidate_id=candidate_id,
                     decision=decision,
+                    decision_code=decision.value,
+                    eligible_for_outreach=(
+                        decision == Decision.ACCEPTED
+                        and not compliance.blocked
+                        and not compliance.review_required
+                    ),
+                    duplicate_status=(
+                        "EXACT"
+                        if decision == Decision.EXACT_DUPLICATE
+                        else "POSSIBLE"
+                        if decision == Decision.POSSIBLE_DUPLICATE
+                        else "NONE"
+                    ),
+                    match_type=(
+                        "EXACT"
+                        if decision == Decision.EXACT_DUPLICATE
+                        else "FUZZY"
+                        if decision == Decision.POSSIBLE_DUPLICATE
+                        else "NONE"
+                    ),
+                    matched_entity_references=[
+                        value
+                        for value in (company.public_id, contact.public_id)
+                        if value
+                    ],
+                    match_confidence=highest,
                     company_resolution=MatchResolution(
                         matched=company.score >= self.policy.exact_threshold,
                         odoo_company_id=company.public_id,
@@ -288,6 +320,21 @@ class SalesLeadService:
                     rejection_reasons=list(
                         compliance.reasons if compliance.blocked else ()
                     ),
+                    manual_review_reasons=list(
+                        compliance.reasons
+                        if review_required and not compliance.blocked
+                        else ()
+                    ),
+                    suppression_results=list(
+                        compliance.reasons if compliance.blocked else ()
+                    ),
+                    consent_results=[
+                        reason
+                        for reason in compliance.reasons
+                        if reason.startswith("CONSENT_")
+                    ],
+                    provider_validation_summaries={"odoo": "AVAILABLE"},
+                    audit_reference=candidate_id,
                     review_required=review_required,
                     correlation_id=correlation_id,
                 )
@@ -333,7 +380,7 @@ class SalesLeadService:
                 resolution.company_resolution.reasons
                 + resolution.contact_resolution.reasons
                 + resolution.rejection_reasons
-            ) or ("NET_NEW",)
+            ) or ("ACCEPTED",)
             self._audit(
                 "identity_resolution.completed",
                 candidate,
@@ -414,10 +461,11 @@ class SalesLeadService:
                 job.correlation_id,
             )
             classification = {
-                Decision.EXACT_EXISTING: "EXACT_DUPLICATE",
+                Decision.EXACT_DUPLICATE: "EXACT_DUPLICATE",
                 Decision.POSSIBLE_DUPLICATE: "POSSIBLE_DUPLICATE",
-                Decision.BLOCKED: "DNC_BLOCKED",
-                Decision.NET_NEW: "VERIFIED_VALID",
+                Decision.SUPPRESSED: "DNC_BLOCKED",
+                Decision.ACCEPTED: "VERIFIED_VALID",
+                Decision.MANUAL_REVIEW: "NEEDS_REVIEW",
             }.get(resolution.decision, "NEEDS_REVIEW")
             job.results.append(
                 {
