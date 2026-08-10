@@ -1,0 +1,26 @@
+groups:
+  - name: codestra-lead-revenue
+    rules:
+      - alert: IDENTITY_CONFLICT_SPIKE
+        expr: increase(identity_conflicts_total[15m]) > 10
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Identity conflict rate is elevated"}
+      - alert: LEAD_DEDUPE_FAILURE_SPIKE
+        expr: increase(lead_created_total[15m]) > 2 * increase(lead_deduped_total[15m])
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Lead creation/deduplication ratio is anomalous"}
+      - alert: DNC_BLOCK_FAILURE
+        expr: increase(next_best_action_total{eligible="true",action!="DO_NOT_CONTACT"}[10m]) > 0 and increase(dnc_blocks_total[10m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "Contact eligibility requires immediate DNC audit"}
+      - alert: ATTRIBUTION_PIPELINE_STALE
+        expr: increase(revenue_events_total[1h]) > 0 and increase(attribution_calculations_total[1h]) == 0
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "Revenue events are not being attributed"}
+      - alert: NEXT_ACTION_ENGINE_FAILURE
+        expr: increase(http_requests_total{path=~".*/next-action",status=~"5.."}[10m]) > 5
+        labels: {severity: warning}
+        annotations: {summary: "Next-best-action failures detected"}

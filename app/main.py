@@ -1,6 +1,8 @@
 import re
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
@@ -24,6 +26,8 @@ from app.api.v1.registry import router as registry_router
 from app.api.v1.recordings import router as recordings_router
 from app.api.v1.social import router as social_router
 from app.api.v1.social_platform import router as social_platform_router
+from app.api.v1.lead_identity import router as lead_identity_router
+from app.api.v1.sales import router as sales_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.internal.ai_jobs import router as internal_ai_jobs_router
 from app.api.v1.ai_console import router as ai_console_router
@@ -70,8 +74,28 @@ app.include_router(registry_router)
 app.include_router(commands_router)
 app.include_router(recordings_router)
 app.include_router(social_platform_router)
+app.include_router(lead_identity_router)
 app.include_router(social_router)
+app.include_router(sales_router)
 app.mount("/metrics", make_asgi_app())
+
+
+@app.exception_handler(RequestValidationError)
+async def sanitized_validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/api/v1/sales/"):
+        correlation_id = request.headers.get("X-Correlation-ID", "") or "generated"
+        return JSONResponse(
+            {
+                "code": "INVALID_LEAD_CANDIDATE",
+                "message": "sales request validation failed",
+                "correlation_id": correlation_id,
+                "retryable": False,
+            },
+            status_code=422,
+            headers={"X-Correlation-ID": correlation_id},
+        )
+    return await request_validation_exception_handler(request, exc)
+
 
 SIGNED_WEBHOOK_PATHS = frozenset(
     {
@@ -84,6 +108,7 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v1/n8n-runtime/results",
         "/api/v1/lead-automation/results",
         "/api/v1/registry/resolve",
+        "/api/v1/sales/scraper-results",
     }
 )
 SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
@@ -123,10 +148,38 @@ def _is_ai_console_jwt_route(request: Request) -> bool:
 
 @app.middleware("http")
 async def control_request_guard(request: Request, call_next):
+    content_length = int(request.headers.get("content-length", "0") or 0)
     if (
-        int(request.headers.get("content-length", "0") or 0)
-        > settings.request_max_bytes
+        request.method == "POST"
+        and request.url.path.startswith("/api/v1/sales/")
+        and request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        != "application/json"
     ):
+        correlation_id = request.headers.get("X-Correlation-ID", "") or "generated"
+        return JSONResponse(
+            {
+                "code": "INVALID_CONTENT_TYPE",
+                "message": "application/json is required",
+                "correlation_id": correlation_id,
+                "retryable": False,
+            },
+            status_code=415,
+        )
+    if (
+        request.url.path.startswith("/api/v1/sales/")
+        and content_length > settings.sales_lead_request_max_bytes
+    ):
+        correlation_id = request.headers.get("X-Correlation-ID", "") or "generated"
+        return JSONResponse(
+            {
+                "code": "REQUEST_TOO_LARGE",
+                "message": "request exceeds the sales intake limit",
+                "correlation_id": correlation_id,
+                "retryable": False,
+            },
+            status_code=413,
+        )
+    if content_length > settings.request_max_bytes:
         return JSONResponse({"detail": "request too large"}, status_code=413)
     if (
         (request.url.path.startswith("/api/") or request.url.path.startswith("/v1/"))
@@ -136,7 +189,9 @@ async def control_request_guard(request: Request, call_next):
             request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
         )
         and request.url.path not in SELF_AUTHENTICATED_PATHS
-        and not (request.method == "POST" and SOCIAL_WEBHOOK_PATH.fullmatch(request.url.path))
+        and not (
+            request.method == "POST" and SOCIAL_WEBHOOK_PATH.fullmatch(request.url.path)
+        )
         and not _is_ai_console_jwt_route(request)
     ):
         try:

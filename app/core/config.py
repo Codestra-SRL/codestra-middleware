@@ -315,6 +315,12 @@ class Settings(BaseSettings):
     ai_automatic_publish: bool = False
     campaign_automatic_approval: bool = False
     deadletter_automatic_replay: bool = False
+    identity_graph_enabled: bool = False
+    lead_intelligence_enabled: bool = False
+    next_best_action_enabled: bool = False
+    attribution_engine_enabled: bool = False
+    revenue_event_sync_enabled: bool = False
+    automatic_contacting_enabled: bool = False
     social_media_max_bytes: int = 25_000_000
     social_trace_retention_days: int = 30
     social_health_retention_days: int = 90
@@ -341,6 +347,31 @@ class Settings(BaseSettings):
     n8n_result_processing_enabled: bool = False
     odoo_lead_apply_enabled: bool = False
     lead_automation_hmac_secret: str = ""
+    sales_lead_intake_enabled: bool = False
+    sales_identity_resolution_enabled: bool = False
+    sales_odoo_read_only_lookup_enabled: bool = False
+    sales_verification_jobs_enabled: bool = False
+    scraper_result_ingest_enabled: bool = False
+    scraper_middleware_delivery_enabled: bool = False
+    lead_verification_dry_run_only: bool = True
+    lead_outreach_enabled: bool = False
+    odoo_lead_write_enabled: bool = False
+    vicidial_lead_write_enabled: bool = False
+    n8n_lead_delivery_enabled: bool = False
+    postly_lead_delivery_enabled: bool = False
+    hunter_provider_enabled: bool = False
+    apollo_provider_enabled: bool = False
+    twilio_lookup_provider_enabled: bool = False
+    opencorporates_provider_enabled: bool = False
+    openai_lead_classification_enabled: bool = False
+    vicidial_publication_enabled: bool = False
+    outreach_enabled: bool = False
+    sales_lead_request_max_bytes: int = 131072
+    sales_verification_max_concurrency: int = 4
+    sales_scraper_identity: str = ""
+    sales_scraper_tenant_id: str = ""
+    sales_scraper_campaign_allowlist: str = ""
+    sales_scraper_hmac_secret_file: str = ""
 
     def validate_safety(self) -> None:
         if self.social_n8n_delivery_batch_size not in range(1, 26):
@@ -391,6 +422,15 @@ class Settings(BaseSettings):
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
             self.social_odoo_write_enabled,
+            self.vicidial_publication_enabled,
+            self.outreach_enabled,
+            self.scraper_middleware_delivery_enabled,
+            not self.lead_verification_dry_run_only,
+            self.lead_outreach_enabled,
+            self.odoo_lead_write_enabled,
+            self.vicidial_lead_write_enabled,
+            self.n8n_lead_delivery_enabled,
+            self.postly_lead_delivery_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
@@ -444,6 +484,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "automatic publishing, approval, and dead-letter replay are forbidden"
             )
+        if self.automatic_contacting_enabled:
+            raise ValueError("automatic lead contacting is forbidden")
         if any(broad_event_switches):
             if not all(broad_event_switches):
                 raise ValueError("broad-event activation requires every canonical gate")
@@ -494,6 +536,16 @@ class Settings(BaseSettings):
                 if not value:
                     raise ValueError(f"required {attribute} secret file is empty")
                 setattr(self, attribute, value)
+
+    @property
+    def sales_scraper_hmac_secret(self) -> bytes:
+        path = self._protected_secret_path(
+            self.sales_scraper_hmac_secret_file, "sales scraper HMAC"
+        )
+        value = path.read_bytes().strip()
+        if len(value) < 32:
+            raise ValueError("sales scraper HMAC secret is too short")
+        return value
 
     @staticmethod
     def _optional_secret(filename: str, label: str) -> str:
