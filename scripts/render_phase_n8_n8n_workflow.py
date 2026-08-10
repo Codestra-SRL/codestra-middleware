@@ -15,6 +15,7 @@ from pathlib import Path
 CODE = r"""
 const crypto = require('crypto');
 const http = require('http');
+const {URL} = require('url');
 const inbound = $input.first().json;
 const headers = inbound.headers || {};
 const envelope = inbound.body || {};
