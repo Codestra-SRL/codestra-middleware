@@ -17,6 +17,7 @@ from app.api.v1.mappings import router as mappings_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.n8n_target import router as n8n_target_router
 from app.api.v1.n8n_transport import router as n8n_transport_router
+from app.api.v1.n8n_runtime import router as n8n_runtime_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.publisher import router as publisher_router
@@ -24,6 +25,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.registry import router as registry_router
 from app.api.v1.recordings import router as recordings_router
 from app.api.v1.sales import router as sales_router
+from app.api.v1.social import router as social_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.internal.ai_jobs import router as internal_ai_jobs_router
 from app.api.v1.ai_console import router as ai_console_router
@@ -53,6 +55,7 @@ app.include_router(publisher_router)
 app.include_router(webphone_router)
 app.include_router(n8n_staging_router)
 app.include_router(n8n_transport_router)
+app.include_router(n8n_runtime_router)
 app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(internal_ai_jobs_router)
@@ -69,6 +72,7 @@ app.include_router(registry_router)
 app.include_router(commands_router)
 app.include_router(recordings_router)
 app.include_router(sales_router)
+app.include_router(social_router)
 app.mount("/metrics", make_asgi_app())
 
 
@@ -97,12 +101,14 @@ SIGNED_WEBHOOK_PATHS = frozenset(
         "/api/v1/n8n/executions",
         "/api/v1/n8n/executions/register",
         "/api/v1/n8n/acknowledgements",
+        "/api/v1/n8n-runtime/results",
         "/api/v1/lead-automation/results",
         "/api/v1/registry/resolve",
         "/api/v1/sales/scraper-results",
     }
 )
 SELF_AUTHENTICATED_PATHS = frozenset({"/v1/registry/search"})
+SOCIAL_WEBHOOK_PATH = re.compile(r"^/api/v1/social/webhooks/(?:postly|hootsuite)$")
 AI_CONSOLE_SELF_AUTHENTICATED_PATHS = (
     ("POST", re.compile(r"^/api/v1/ai/conversations$")),
     (
@@ -179,6 +185,7 @@ async def control_request_guard(request: Request, call_next):
             request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
         )
         and request.url.path not in SELF_AUTHENTICATED_PATHS
+        and not (request.method == "POST" and SOCIAL_WEBHOOK_PATH.fullmatch(request.url.path))
         and not _is_ai_console_jwt_route(request)
     ):
         try:

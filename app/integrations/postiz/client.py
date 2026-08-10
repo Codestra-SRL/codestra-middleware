@@ -37,7 +37,9 @@ class PostizClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
                 response = await client.request(method, self._url(path), headers=self._headers(correlation_id), **kwargs)
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+        except httpx.ReadTimeout as exc:
+            raise PostizError("unknown_result", "Postiz result is unknown", unknown_result=True) from exc
+        except (httpx.ConnectTimeout, httpx.ConnectError, httpx.NetworkError) as exc:
             raise PostizError("temporary", "Postiz connection failed", retryable=True) from exc
         if response.status_code == 429:
             raise PostizError("rate_limit", "Postiz rate limit reached", retryable=True, status=429)

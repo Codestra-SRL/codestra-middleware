@@ -169,10 +169,12 @@ async def submit_reserved(
         follow_redirects=False,
         timeout=httpx.Timeout(10.0),
         verify=settings.n8n_target_ca_file or True,
+        trust_env=False,
     )
     token_client = httpx.AsyncClient(
         follow_redirects=False,
         timeout=httpx.Timeout(5.0),
+        trust_env=False,
     )
     try:
         token = await client_credentials_token(

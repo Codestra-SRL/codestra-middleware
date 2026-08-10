@@ -172,9 +172,40 @@ class Settings(BaseSettings):
     middleware_n8n_audience: str = "codestra-n8n-production"
     middleware_n8n_scope: str = "n8n.events.submit"
     odoo_results_client_id: str = "codestra-middleware-odoo-results"
+    odoo_results_client_secret_file: str = ""
+    odoo_results_ca_file: str = ""
     odoo_service_credential_reference: str = ""
     odoo_service_private_key_file: str = ""
     odoo_result_delivery_enabled: bool = False
+    test_syn_odoo_result_delivery_enabled: bool = False
+    test_syn_odoo_tenant_id: str = "TEST_SYN_TENANT"
+    test_syn_odoo_workflow_code: str = "TEST_SYN_ROUTER"
+    test_syn_odoo_workflow_version: str = "1"
+    test_syn_odoo_event_type: str = "test.synthetic.odoo_result"
+    test_syn_odoo_event_id: str = ""
+    test_syn_odoo_correlation_id: str = ""
+    test_syn_odoo_organization_public_id: str = ""
+    test_syn_odoo_business_unit_public_id: str = ""
+    test_syn_odoo_campaign_public_id: str = ""
+    test_syn_odoo_outbox_public_id: str = ""
+    odoo_read_enabled: bool = False
+    odoo_sync_worker_enabled: bool = False
+    odoo_staging_writes_enabled: bool = False
+    odoo_production_writes_enabled: bool = False
+    odoo_base_url: str = ""
+    odoo_token_url: str = ""
+    odoo_client_id: str = "codestra-middleware-staging"
+    odoo_client_secret_file: str = ""
+    odoo_audience: str = "codestra-odoo-integration"
+    odoo_scope: str = ""
+    odoo_ca_file: str = ""
+    odoo_connect_timeout: float = 5.0
+    odoo_read_timeout: float = 15.0
+    odoo_max_retries: int = 3
+    odoo_sync_worker_id: str = "codestra-middleware-odoo-sync"
+    odoo_sync_batch_size: int = 25
+    odoo_sync_lease_seconds: int = 60
+    odoo_sync_business_units: str = ""
     email_dispatch_enabled: bool = False
     sms_dispatch_enabled: bool = False
     allow_live_email: bool = False
@@ -192,6 +223,17 @@ class Settings(BaseSettings):
     outbox_lease_seconds: int = 60
     odoo_concurrency: int = 4
     n8n_concurrency: int = 8
+    n8n_runtime_enabled: bool = False
+    n8n_runtime_environment: str = "staging"
+    n8n_runtime_base_url: str = ""
+    n8n_runtime_hmac_secret_file: str = ""
+    n8n_runtime_dispatch_timeout_seconds: float = 10.0
+    n8n_runtime_workflow_timeout_seconds: int = 600
+    n8n_runtime_max_attempts: int = 5
+    redis_runtime_enabled: bool = False
+    redis_runtime_environment: str = "staging"
+    redis_runtime_prefix: str = "codestra"
+    redis_runtime_socket_timeout_seconds: float = 1.0
     recording_concurrency: int = 2
     retention_worker_enabled: bool = True
     retention_delete_enabled: bool = False
@@ -249,6 +291,48 @@ class Settings(BaseSettings):
     postiz_publish_enabled: bool = False
     postiz_media_upload_enabled: bool = False
     postiz_analytics_enabled: bool = False
+    social_integration_enabled: bool = False
+    social_publish_enabled: bool = False
+    social_provider: str = "disabled"
+    social_provider_mode: str = "single"
+    social_provider_migration_mode: str = "disabled"
+    social_n8n_events_enabled: bool = False
+    social_n8n_delivery_worker_enabled: bool = False
+    social_n8n_delivery_worker_id: str = "social-n8n-delivery-01"
+    social_n8n_delivery_batch_size: int = 8
+    social_n8n_delivery_lease_seconds: int = 60
+    postly_polling_enabled: bool = False
+    postly_poll_interval_seconds: int = 60
+    postly_poll_lookback_seconds: int = 300
+    postly_poll_batch_size: int = 100
+    social_odoo_sync_enabled: bool = False
+    social_odoo_write_enabled: bool = False
+    social_analytics_sync_enabled: bool = False
+    social_sql_repository_enabled: bool = False
+    social_worker_enabled: bool = False
+    social_worker_id: str = "postly-social-01"
+    social_worker_concurrency: int = 1
+    social_worker_lease_seconds: int = 60
+    social_worker_poll_seconds: float = 1.0
+    social_job_max_attempts: int = 5
+    social_production_mode: bool = False
+    social_production_canary_enabled: bool = False
+    social_production_canary_account_ids: str = ""
+    social_production_canary_tenant_ids: str = ""
+    social_production_canary_campaign_ids: str = ""
+    social_production_backup_gate_verified: bool = False
+    social_production_rollback_gate_verified: bool = False
+    social_production_webhook_gate_verified: bool = False
+    social_production_monitoring_gate_verified: bool = False
+    social_automatic_provider_failover_enabled: bool = False
+    social_automatic_dual_publish_enabled: bool = False
+    social_webhook_ttl_seconds: int = 300
+    postly_webhook_secret: str = ""
+    postly_webhook_secret_file: str = ""
+    hootsuite_enabled: bool = False
+    hootsuite_client_id_file: str = ""
+    hootsuite_client_secret_file: str = ""
+    hootsuite_redirect_uri: str = ""
     pjsip_provisioning_enabled: bool = False
     webphone_session_issuer_enabled: bool = False
     telephony_reconciliation_enabled: bool = False
@@ -291,6 +375,20 @@ class Settings(BaseSettings):
     sales_scraper_hmac_secret_file: str = ""
 
     def validate_safety(self) -> None:
+        if self.social_n8n_delivery_batch_size not in range(1, 26):
+            raise ValueError("social n8n delivery batch size must be between 1 and 25")
+        if self.social_n8n_delivery_lease_seconds not in range(10, 601):
+            raise ValueError("social n8n delivery lease must be between 10 and 600 seconds")
+        if self.postly_poll_interval_seconds not in range(30, 3601):
+            raise ValueError("Postly polling interval must be between 30 and 3600 seconds")
+        if self.postly_poll_lookback_seconds not in range(60, 86401):
+            raise ValueError("Postly polling lookback must be between 60 seconds and one day")
+        if self.postly_poll_batch_size not in range(1, 501):
+            raise ValueError("Postly polling batch size must be between 1 and 500")
+        if self.social_worker_concurrency != 1:
+            raise ValueError(
+                "social worker concurrency must remain 1 in controlled staging"
+            )
         broad_event_switches = (
             self.send_events,
             self.broad_event_delivery_enabled,
@@ -318,7 +416,6 @@ class Settings(BaseSettings):
             self.telephony_command_worker_enabled,
             self.vicidial_provisioning_enabled,
             self.pjsip_provisioning_enabled,
-            self.postiz_publish_enabled,
             self.vicidial_publication_enabled,
             self.outreach_enabled,
             self.scraper_middleware_delivery_enabled,
@@ -328,9 +425,53 @@ class Settings(BaseSettings):
             self.vicidial_lead_write_enabled,
             self.n8n_lead_delivery_enabled,
             self.postly_lead_delivery_enabled,
+            self.odoo_production_writes_enabled,
+            self.social_odoo_write_enabled,
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
+        social_publish_switches = (
+            self.social_publish_enabled,
+            self.postiz_publish_enabled,
+        )
+        if any(social_publish_switches):
+            if not all(social_publish_switches):
+                raise ValueError("social and provider publish switches must agree")
+            if not all(
+                (
+                    self.social_production_mode,
+                    self.social_integration_enabled,
+                    self.social_production_canary_enabled,
+                    self.social_production_backup_gate_verified,
+                    self.social_production_rollback_gate_verified,
+                    self.social_production_webhook_gate_verified,
+                    self.social_production_monitoring_gate_verified,
+                    self.social_sql_repository_enabled,
+                    self.social_worker_enabled,
+                    self.postiz_delivery_enabled,
+                    self.social_production_canary_account_ids.strip(),
+                )
+            ):
+                raise ValueError(
+                    "production social publishing requires every canary gate"
+                )
+            if not all(
+                (
+                    self.postiz_internal_base_url.strip(),
+                    self.postiz_api_key_file.strip(),
+                    self.postly_webhook_secret_file.strip(),
+                )
+            ):
+                raise ValueError("production Postly secrets and endpoint are required")
+            self.postiz_api_key
+            self.postly_webhook_verification_secret
+        if (
+            self.social_automatic_provider_failover_enabled
+            or self.social_automatic_dual_publish_enabled
+        ):
+            raise ValueError(
+                "automatic provider failover and dual publishing are forbidden"
+            )
         if any(broad_event_switches):
             if not all(broad_event_switches):
                 raise ValueError("broad-event activation requires every canonical gate")
@@ -490,14 +631,17 @@ class Settings(BaseSettings):
     def postiz_api_key(self) -> str:
         if not self.postiz_api_key_file:
             return ""
-        path = Path(self.postiz_api_key_file)
-        if not path.is_absolute() or not path.is_file():
-            raise ValueError("Postiz API key file is unavailable")
-        value = path.read_text().strip()
-        if not value:
-            raise ValueError("Postiz API key file is empty")
+        return self._protected_secret(self.postiz_api_key_file, "Postiz API key")
 
-        return value
+    @property
+    def postly_webhook_verification_secret(self) -> str:
+        if self.postly_webhook_secret_file:
+            return self._protected_secret(
+                self.postly_webhook_secret_file, "Postly webhook"
+            )
+        if self.social_production_mode:
+            return ""
+        return self.postly_webhook_secret
 
     def load_registry_snapshot_key(self) -> bytes:
         path = Path(self.registry_snapshot_signing_key_file)

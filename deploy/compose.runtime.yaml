@@ -29,6 +29,10 @@ x-runtime: &runtime
     N8N_DELIVERY_ENABLED: "false"
     N8N_EVENT_DELIVERY_ENABLED: "false"
     N8N_PRODUCTION_WORKFLOWS_ENABLED: "false"
+    N8N_RUNTIME_ENABLED: "false"
+    REDIS_RUNTIME_ENABLED: "false"
+    N8N_RUNTIME_ENVIRONMENT: "staging"
+    REDIS_RUNTIME_ENVIRONMENT: "staging"
     AUTOMATION_ACTIONS_ENABLED: "false"
     ODOO_AUTOMATION_WRITES_ENABLED: "false"
     SALES_LEAD_INTAKE_ENABLED: "false"
@@ -58,6 +62,7 @@ x-runtime: &runtime
     PRODUCTION_WEBRTC_ENABLED: "false"
     PRODUCTION_N8N_ENABLED: "false"
     ODOO_RESULT_DELIVERY_ENABLED: "false"
+    TEST_SYN_ODOO_RESULT_DELIVERY_ENABLED: "false"
     CONTROLLED_BROAD_EVENT_ACTIVATION: "false"
     BROAD_EVENT_BUSINESS_UNIT_ALLOWLIST: ""
     BROAD_EVENT_CAMPAIGN_ALLOWLIST: ""
@@ -78,6 +83,15 @@ x-runtime: &runtime
     TELEPHONY_RECONCILIATION_ENABLED: "false"
     TELEPHONY_NOTIFICATIONS_ENABLED: "false"
     TELEPHONY_EVIDENCE_ENABLED: "false"
+    SOCIAL_INTEGRATION_ENABLED: "false"
+    SOCIAL_PUBLISH_ENABLED: "false"
+    SOCIAL_N8N_EVENTS_ENABLED: "false"
+    SOCIAL_N8N_DELIVERY_WORKER_ENABLED: "false"
+    POSTLY_POLLING_ENABLED: "false"
+    POSTIZ_DELIVERY_ENABLED: "false"
+    POSTIZ_PUBLISH_ENABLED: "false"
+    SOCIAL_ODOO_WRITE_ENABLED: "false"
+    HOOTSUITE_ENABLED: "false"
   healthcheck:
     test:
       - CMD
@@ -136,6 +150,7 @@ services:
       - provisioning_private
       - odoo_module_staging
       - codestra_internal_integration
+      - n8n_staging_control
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
       - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
@@ -147,6 +162,8 @@ services:
       - /etc/codestra/secrets/middleware-runtime/quarantine-reviewer-key:/run/secrets/quarantine-reviewer-key:ro
       - /etc/codestra/secrets/internal-n8n/middleware-client-secret:/run/secrets/middleware_n8n_client_secret:ro
       - /etc/codestra/secrets/internal-n8n/odoo-results-client-secret:/run/secrets/odoo_results_client_secret:ro
+      - /etc/codestra/secrets/internal-n8n/runtime-hmac:/run/secrets/n8n_runtime_hmac:ro
+      - /etc/codestra/secrets/middleware-staging/postly/postiz_api_key:/run/secrets/postiz_api_key:ro
       - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
     environment:
       <<: *safe-flags
@@ -166,13 +183,17 @@ services:
       N8N_SERVICE_AUDIENCE: codestra-middleware
       N8N_SERVICE_JWKS_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/certs
       N8N_SERVICE_CLIENT_ID: codestra-n8n-production
-      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/codestra/integration/v1/results
+      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/api/v1/integration/results
       ODOO_RESULTS_TOKEN_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/token
       ODOO_RESULTS_CLIENT_ID: codestra-middleware-odoo-results
       ODOO_RESULTS_CLIENT_SECRET_FILE: /run/secrets/odoo_results_client_secret
       ODOO_RESULTS_AUDIENCE: codestra-odoo
       ODOO_RESULTS_SCOPE: odoo.integration.results.write
       ODOO_RESULTS_CA_FILE: /run/secrets/internal_integration_ca
+      N8N_RUNTIME_ENABLED: "true"
+      N8N_RUNTIME_HMAC_SECRET_FILE: /run/secrets/n8n_runtime_hmac
+      POSTIZ_INTERNAL_BASE_URL: http://10.40.0.3:8443
+      POSTIZ_API_KEY_FILE: /run/secrets/postiz_api_key
 
   middleware-policy-engine:
     <<: *runtime
@@ -192,8 +213,31 @@ services:
       <<: *safe-flags
       SERVICE_NAME: middleware-sync-worker
       QUEUE_NAME: middleware.sync.odoo.v1
+      ODOO_READ_ENABLED: "false"
+      ODOO_SYNC_WORKER_ENABLED: "false"
+      ODOO_RESULT_DELIVERY_ENABLED: "false"
+      ODOO_STAGING_WRITES_ENABLED: "false"
+      ODOO_PRODUCTION_WRITES_ENABLED: "false"
+      LIVE_WRITES_ENABLED: "false"
+      ODOO_BASE_URL: http://odoo19-staging:8069
+      ODOO_TOKEN_URL: http://keycloak-staging:8080/realms/codestra/protocol/openid-connect/token
+      ODOO_CLIENT_ID: codestra-middleware-staging
+      ODOO_CLIENT_SECRET_FILE: /run/secrets/odoo_client_secret
+      ODOO_AUDIENCE: codestra-odoo-integration
+      ODOO_SCOPE: service.attest monitor.read odoo.integration.outbox.claim odoo.integration.outbox.read odoo.integration.outbox.renew odoo.integration.outbox.acknowledge odoo.integration.outbox.fail odoo.integration.outbox.release
+      ODOO_CONNECT_TIMEOUT: "5"
+      ODOO_READ_TIMEOUT: "15"
+      ODOO_MAX_RETRIES: "3"
+      ODOO_SYNC_WORKER_ID: codestra-middleware-odoo-sync-staging
+      ODOO_SYNC_BATCH_SIZE: "25"
+      ODOO_SYNC_LEASE_SECONDS: "60"
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-sync-worker-database-url:/run/secrets/database_url:ro
+      - /opt/codestra/secrets/identity-staging/middleware_client_secret:/run/secrets/odoo_client_secret:ro
+    networks:
+      - middleware_backend
+      - identity_service
+      - codestra_internal_integration
 
   middleware-notification-worker:
     <<: *worker
@@ -204,6 +248,60 @@ services:
       QUEUE_NAME: middleware.notification.v1
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-notification-worker-database-url:/run/secrets/database_url:ro
+
+  middleware-n8n-runtime-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.n8n_runtime_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-n8n-runtime-worker
+      N8N_RUNTIME_ENABLED: "true"
+      N8N_RUNTIME_BASE_URL: http://webhook:5678
+      N8N_RUNTIME_HMAC_SECRET_FILE: /run/secrets/n8n_runtime_hmac
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/internal-n8n/runtime-hmac:/run/secrets/n8n_runtime_hmac:ro
+    networks:
+      - middleware_backend
+      - n8n_staging_control
+    healthcheck: &worker-healthcheck
+      test: [CMD, python, -c, "import os; os.kill(1, 0)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  middleware-social-n8n-delivery-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.social_n8n_delivery_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-social-n8n-delivery-worker
+      N8N_RUNTIME_ENABLED: "true"
+      SOCIAL_N8N_EVENTS_ENABLED: "false"
+      SOCIAL_N8N_DELIVERY_WORKER_ENABLED: "false"
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+    healthcheck: *worker-healthcheck
+
+  middleware-postly-polling-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.postly_polling_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-postly-polling-worker
+      POSTLY_POLLING_ENABLED: "false"
+      POSTIZ_INTERNAL_BASE_URL: http://10.40.0.3:8443
+      POSTIZ_API_KEY_FILE: /run/secrets/postiz_api_key
+      SOCIAL_PUBLISH_ENABLED: "false"
+      POSTIZ_PUBLISH_ENABLED: "false"
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/middleware-staging/postly/postiz_api_key:/run/secrets/postiz_api_key:ro
+    networks:
+      - middleware_backend
+      - middleware_edge
+    healthcheck: *worker-healthcheck
 
   middleware-reconciliation-worker:
     <<: *worker
@@ -235,7 +333,7 @@ services:
       SERVICE_NAME: middleware-odoo-result-worker
       QUEUE_NAME: odoo-results
       ODOO_RESULT_DELIVERY_ENABLED: "false"
-      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/codestra/integration/v1/results
+      ODOO_RESULTS_URL: https://odoo.internal.codestra.agency/api/v1/integration/results
       ODOO_RESULTS_TOKEN_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/token
       ODOO_RESULTS_CLIENT_ID: codestra-middleware-odoo-results
       ODOO_RESULTS_CLIENT_SECRET_FILE: /run/secrets/odoo_results_client_secret
@@ -331,6 +429,9 @@ networks:
   codestra_internal_integration:
     external: true
     name: codestra-internal-integration
+  n8n_staging_control:
+    external: true
+    name: codestra-n8n-middleware-staging-control
 
 secrets:
   redis_url:

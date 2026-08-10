@@ -156,6 +156,8 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "/api/v1/n8n/executions",
             "/api/v1/n8n/executions/register",
             "/api/v1/n8n/acknowledgements",
+            "/api/v1/n8n-runtime/results",
+            "/api/v1/n8n-runtime/social-authorize",
         }
         if (
             (
@@ -223,9 +225,10 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
 def run_api(app: FastAPI, service: str) -> None:
     configure_logging()
     validate_runtime(service)
+    # Container ingress is restricted by the private Docker network.
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104
         port=int(os.getenv("PORT", "8095")),
         access_log=True,
         proxy_headers=True,
@@ -319,9 +322,10 @@ def run_worker(service: str, queue: str, cycle: Cycle) -> None:
     configure_logging()
     validate_runtime(service, queue)
     app = worker_app(service, queue, cycle)
+    # Container ingress is restricted by the private Docker network.
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104
         port=int(os.getenv("PORT", "8095")),
         access_log=False,
     )
