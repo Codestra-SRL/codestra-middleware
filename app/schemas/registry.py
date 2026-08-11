@@ -113,7 +113,9 @@ class Envelope(StrictModel):
     occurred_at: datetime
     correlation_id: str = Field(min_length=1, max_length=128)
     client_instance: str = Field(min_length=1, max_length=64)
-    business_unit: str | None = Field(default=None, max_length=64)
+    business_unit: (
+        Literal["MOY", "COD", "SCP", "MBL", "RLP", "FTP", "TRX", "CAL"] | None
+    ) = None
     source_system: str | None = Field(default=None, max_length=64)
     producer_instance_id: str | None = Field(default=None, max_length=128)
     producer_boot_id: str | None = Field(default=None, max_length=128)
