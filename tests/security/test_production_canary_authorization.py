@@ -126,10 +126,10 @@ def test_workflow_requires_separate_protected_owner_gates() -> None:
     assert "pull_request_target" not in workflow
 
 
-def test_workflow_fetches_only_exact_release_before_local_validation() -> None:
+def test_workflow_verifies_exact_release_with_authenticated_api() -> None:
     workflow = (ROOT / ".github/workflows/production-canary-authorization.yml").read_text()
     fetch = (ROOT / "scripts/security/fetch-exact-release-commit.sh").read_text()
-    assert 'fetch-exact-release-commit.sh "${SHA}" origin' in workflow
+    assert 'fetch-exact-release-commit.sh "${SHA}" origin' not in workflow
     assert 'compare/${SHA}...${GITHUB_SHA}' in workflow
     assert 'git fetch --no-tags --depth=1 "${remote}" "${release_sha}"' in fetch
     assert "fetch-depth: 0" not in workflow
