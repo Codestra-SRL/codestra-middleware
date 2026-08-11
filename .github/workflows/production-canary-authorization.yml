@@ -52,8 +52,14 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" > pr.json
           test "$(jq -r .merged_at pr.json)" != "null"
           test "$(jq -r .head.sha pr.json)" = "${SHA}"
-          git cat-file -e "${SHA}^{commit}"
-          git merge-base --is-ancestor "${SHA}" "${GITHUB_SHA}"
+          test "$(scripts/security/fetch-exact-release-commit.sh "${SHA}" origin)" = "${SHA}"
+          gh api "repos/${GITHUB_REPOSITORY}/compare/${SHA}...${GITHUB_SHA}" > comparison.json
+          jq -e --arg sha "${SHA}" --arg head "${GITHUB_SHA}" '
+            .base_commit.sha == $sha and
+            .merge_base_commit.sha == $sha and
+            .status == "ahead" and
+            .commits[-1].sha == $head
+          ' comparison.json >/dev/null
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" > reviews.json
           jq -e --arg sha "${SHA}" 'any(.[]; .user.login == "kazan555" and .state == "APPROVED" and .commit_id == $sha)' reviews.json >/dev/null
           gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/status" > status.json

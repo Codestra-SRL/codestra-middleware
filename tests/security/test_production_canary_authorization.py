@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -123,11 +124,106 @@ def test_workflow_requires_separate_protected_owner_gates() -> None:
     assert "pull_request_target" not in workflow
 
 
+def test_workflow_fetches_only_exact_release_before_local_validation() -> None:
+    workflow = (ROOT / ".github/workflows/production-canary-authorization.yml").read_text()
+    fetch = (ROOT / "scripts/security/fetch-exact-release-commit.sh").read_text()
+    assert 'fetch-exact-release-commit.sh "${SHA}" origin' in workflow
+    assert 'compare/${SHA}...${GITHUB_SHA}' in workflow
+    assert 'git fetch --no-tags --depth=1 "${remote}" "${release_sha}"' in fetch
+    assert "fetch-depth: 0" not in workflow
+
+
+def _git(path: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args], cwd=path, check=True, text=True, capture_output=True
+    )
+    return result.stdout.strip()
+
+
+def _release_repository(tmp_path: Path, marker: str = "release") -> tuple[Path, str, str]:
+    source = tmp_path / "source"
+    remote = tmp_path / "remote.git"
+    checkout = tmp_path / "checkout"
+    source.mkdir(parents=True)
+    _git(source, "init", "-b", "main")
+    _git(source, "config", "user.name", "Codestra Test")
+    _git(source, "config", "user.email", "test@example.invalid")
+    (source / "release").write_text(f"{marker}\n")
+    _git(source, "add", "release")
+    _git(source, "commit", "-m", "release")
+    release_sha = _git(source, "rev-parse", "HEAD")
+    (source / "main").write_text("main\n")
+    _git(source, "add", "main")
+    _git(source, "commit", "-m", "main")
+    main_sha = _git(source, "rev-parse", "HEAD")
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    _git(source, "remote", "add", "origin", str(remote))
+    _git(source, "push", "origin", "main")
+    subprocess.run(
+        ["git", "clone", "--depth=1", "--branch", "main", f"file://{remote}", str(checkout)],
+        check=True,
+        capture_output=True,
+    )
+    assert _git(checkout, "rev-parse", "HEAD") == main_sha
+    return checkout, release_sha, main_sha
+
+
+def _fetch_exact(checkout: Path, sha: str, remote: str = "origin") -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(ROOT / "scripts/security/fetch-exact-release-commit.sh"), sha, remote],
+        cwd=checkout,
+        text=True,
+        capture_output=True,
+    )
+
+
+def test_fetches_valid_non_head_release_sha(tmp_path: Path) -> None:
+    checkout, release_sha, main_sha = _release_repository(tmp_path)
+    assert release_sha != main_sha
+    result = _fetch_exact(checkout, release_sha)
+    assert result.returncode == 0
+    assert result.stdout.strip() == release_sha
+
+
+def test_nonexistent_release_sha_fails_closed(tmp_path: Path) -> None:
+    checkout, _, _ = _release_repository(tmp_path)
+    result = _fetch_exact(checkout, "f" * 40)
+    assert result.returncode != 0
+
+
+def test_malformed_release_sha_fails_closed(tmp_path: Path) -> None:
+    checkout, _, _ = _release_repository(tmp_path)
+    result = _fetch_exact(checkout, "not-a-sha")
+    assert result.returncode == 64
+
+
+def test_commit_from_wrong_repository_fails_closed(tmp_path: Path) -> None:
+    checkout, _, _ = _release_repository(tmp_path / "expected")
+    _, foreign_sha, _ = _release_repository(tmp_path / "foreign", "foreign")
+    result = _fetch_exact(checkout, foreign_sha)
+    assert result.returncode != 0
+
+
+def test_pr_release_mismatch_fails_closed() -> None:
+    candidate = request()
+    candidate["release_sha"] = "d" * 40
+    with pytest.raises(module.ValidationError, match="identity"):
+        validate(candidate)
+
+
+def test_exact_image_digest_mismatch_fails_closed() -> None:
+    candidate = request()
+    candidate["image_digest"] = "sha256:" + "d" * 64
+    with pytest.raises(module.ValidationError, match="identity"):
+        validate(candidate)
+
+
 def test_workflow_accepts_only_merged_exact_release_and_detached_request() -> None:
     workflow = (ROOT / ".github/workflows/production-canary-authorization.yml").read_text()
     assert 'test "$(jq -r .merged_at pr.json)" != "null"' in workflow
     assert 'test "$(jq -r .head.sha pr.json)" = "${SHA}"' in workflow
-    assert 'git merge-base --is-ancestor "${SHA}" "${GITHUB_SHA}"' in workflow
+    assert 'compare/${SHA}...${GITHUB_SHA}' in workflow
+    assert '.merge_base_commit.sha == $sha' in workflow
     assert "request_base64" in workflow
     assert "contents/${PATH_INPUT}?ref=${SHA}" not in workflow
     assert 'test "${{ github.actor }}" != "${{ vars.CODESTRA_RELEASE_OWNER_LOGIN }}"' in workflow
