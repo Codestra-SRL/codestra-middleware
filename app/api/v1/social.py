@@ -15,6 +15,7 @@ from app.db.session import get_session
 from app.social.adapters import HootsuiteProviderAdapter, PostlyProviderAdapter
 from app.social.domain import Capability, JobType
 from app.social.providers import SocialError, SocialProviderRegistry
+from app.social.production import ProductionCanaryPolicy, require_provider_health
 from app.social.service import SocialPublishingService
 from app.social.sql_repository import SqlSocialRepository
 from app.social import metrics
@@ -134,9 +135,12 @@ async def provider(
 
 @router.get("/accounts")
 async def accounts(
+    session: AsyncSession = Depends(get_session),
     x_codestra_permissions: str | None = Header(None),
 ) -> list[dict[str, Any]]:
     _require("social.accounts.read", x_codestra_permissions)
+    if settings.social_sql_repository_enabled:
+        return await SqlSocialRepository(session).list_accounts()
     return [
         {
             "id": item.id,
@@ -154,9 +158,22 @@ async def accounts(
 
 @router.get("/accounts/{account_id}")
 async def account(
-    account_id: UUID, x_codestra_permissions: str | None = Header(None)
+    account_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    x_codestra_permissions: str | None = Header(None),
 ) -> dict[str, Any]:
     _require("social.accounts.read", x_codestra_permissions)
+    if settings.social_sql_repository_enabled:
+        rows = await SqlSocialRepository(session).list_accounts(account_id)
+        if not rows:
+            raise HTTPException(
+                404,
+                {
+                    "code": "SOCIAL_ACCOUNT_NOT_FOUND",
+                    "message": "Social account was not found",
+                },
+            )
+        return rows[0]
     try:
         item = service.repository.accounts[account_id]
     except KeyError as exc:
@@ -370,10 +387,23 @@ async def _command(
     permission: str,
     supplied: str | None,
     session: AsyncSession,
+    *,
+    dry_run: bool = False,
+    content_approved: bool = False,
 ) -> dict[str, Any]:
     _require(permission, supplied)
     correlation_id, request_id = _ids(request)
     try:
+        if dry_run and (
+            action is not JobType.PUBLISH
+            or not settings.social_production_mode
+            or not settings.social_sql_repository_enabled
+        ):
+            raise SocialError(
+                "SOCIAL_PRODUCTION_CANARY_DISABLED",
+                "Production dry-run requires SQL-backed production canary mode",
+                status_code=403,
+            )
         if settings.social_sql_repository_enabled:
             if not settings.social_integration_enabled:
                 raise SocialError(
@@ -396,13 +426,62 @@ async def _command(
                     "Social publishing is disabled",
                     status_code=403,
                 )
+            if action is JobType.PUBLISH and settings.social_production_mode:
+                try:
+                    production_context = await repository.production_publish_context(
+                        post, content_approved=content_approved
+                    )
+                    metrics.production_account_connected.labels(
+                        post.provider.value, "other"
+                    ).set(
+                        1 if production_context.connection_state == "connected" else 0
+                    )
+                    ProductionCanaryPolicy(settings).validate(production_context)
+                    require_provider_health(
+                        await registry.get(post.provider).health_check()
+                    )
+                except SocialError as exc:
+                    metrics.production_canary_denied.labels(exc.code).inc()
+                    if exc.code == "SOCIAL_PROVIDER_FAILOVER_FORBIDDEN":
+                        metrics.provider_failover_attempt.labels(
+                            post.provider.value, "forbidden"
+                        ).inc()
+                    if exc.code == "SOCIAL_DUAL_PUBLISH_FORBIDDEN":
+                        metrics.dual_publish_attempt.labels(post.provider.value).inc()
+                    raise
+                metrics.production_publish_requests.labels(
+                    post.provider.value, "other", "dry_run" if dry_run else "accepted"
+                ).inc()
+                if dry_run:
+                    await repository.audit_production_dry_run(
+                        post,
+                        production_context,
+                        correlation_id=correlation_id,
+                        request_id=request_id,
+                        idempotency_key=idempotency_key,
+                    )
+                    return {
+                        "post_id": post_id,
+                        "provider": post.provider,
+                        "account_id": production_context.account_id,
+                        "dry_run": True,
+                        "validation": "PASS",
+                        "external_side_effect": False,
+                    }
             job_id, created = await repository.enqueue_command(
                 post=post,
                 action=action,
                 idempotency_key=idempotency_key,
                 correlation_id=correlation_id,
                 request_id=request_id,
+                production_context=production_context
+                if action is JobType.PUBLISH and settings.social_production_mode
+                else None,
             )
+            if not created:
+                metrics.duplicate_prevention.labels(
+                    post.provider.value, action.value
+                ).inc()
             return {
                 "post_id": post_id,
                 "job_id": job_id,
@@ -448,6 +527,8 @@ async def publish(
     session: AsyncSession = Depends(get_session),
     idempotency_key: str = Header(min_length=1, max_length=255),
     x_codestra_permissions: str | None = Header(None),
+    dry_run: bool = False,
+    x_social_content_approved: bool = Header(False),
 ) -> dict[str, Any]:
     return await _command(
         post_id,
@@ -457,6 +538,8 @@ async def publish(
         "social.publish",
         x_codestra_permissions,
         session,
+        dry_run=dry_run,
+        content_approved=x_social_content_approved,
     )
 
 

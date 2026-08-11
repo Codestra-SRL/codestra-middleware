@@ -40,3 +40,48 @@ jobs_retried = Counter(
 jobs_deadletter = Counter(
     "social_jobs_deadletter_total", "Social jobs dead-lettered", ("provider", "result")
 )
+production_publish_requests = Counter(
+    "social_production_publish_requests_total",
+    "Production canary publish requests",
+    ("provider", "network", "result"),
+)
+production_publish_success = Counter(
+    "social_production_publish_success_total",
+    "Successful production canary publishes",
+    ("provider", "network"),
+)
+production_publish_failures = Counter(
+    "social_production_publish_failures_total",
+    "Failed production canary publishes",
+    ("provider", "network", "result"),
+)
+production_canary_denied = Counter(
+    "social_production_canary_denied_total",
+    "Denied production canary requests",
+    ("reason",),
+)
+duplicate_prevention = Counter(
+    "social_duplicate_prevention_total",
+    "Duplicate social operations prevented",
+    ("provider", "action"),
+)
+unknown_result = Counter(
+    "social_unknown_result_total",
+    "Provider operations with an unknown result",
+    ("provider",),
+)
+provider_failover_attempt = Counter(
+    "social_provider_failover_attempt_total",
+    "Forbidden automatic provider failover attempts",
+    ("source_provider", "target_provider"),
+)
+dual_publish_attempt = Counter(
+    "social_dual_publish_attempt_total",
+    "Forbidden dual-publish attempts",
+    ("provider",),
+)
+production_account_connected = Gauge(
+    "social_production_account_connected",
+    "Connection state of a production canary account",
+    ("provider", "network"),
+)
