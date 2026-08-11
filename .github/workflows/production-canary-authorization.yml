@@ -49,6 +49,9 @@ jobs:
           set -euo pipefail
           test "${GITHUB_SHA}" = "$(git rev-parse HEAD)"
           [[ "${SHA}" =~ ^[0-9a-f]{40}$ ]]
+          # checkout intentionally does not persist credentials. Configure the
+          # job-scoped GitHub token only for this private-repository fetch.
+          gh auth setup-git
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" > pr.json
           test "$(jq -r .merged_at pr.json)" != "null"
           test "$(jq -r .head.sha pr.json)" = "${SHA}"
