@@ -40,9 +40,13 @@ async def _scenario(database_url: str):
     now = datetime.now(timezone.utc)
     try:
         async with factory() as session:
-            await session.execute(
-                text("TRUNCATE outbox_event, event_inbox, reconciliation_checkpoint")
-            )
+            # The deployed compatibility bridge intentionally RESTRICTs inbox
+            # deletion. Clean the disposable CI database in dependency order;
+            # do not require TRUNCATE authority from an application role.
+            await session.execute(text("DELETE FROM event_model_bridge"))
+            await session.execute(text("DELETE FROM outbox_event"))
+            await session.execute(text("DELETE FROM event_inbox"))
+            await session.execute(text("DELETE FROM reconciliation_checkpoint"))
             await session.execute(
                 text("""INSERT INTO outbox_event
                     (id, topic, payload, correlation_id, status, attempts, replay_count, created_at)
