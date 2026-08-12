@@ -117,7 +117,9 @@ async def _scenario(database_url: str):
             await session.commit()
             assert await recover_expired_leases(session) == 1
             reconciliation = await reconcile_internal_outbox(session)
-            assert event_id + "-missing" in reconciliation["missing_outbox_event_ids"]
+            missing_ids = reconciliation["missing_outbox_event_ids"]
+            assert isinstance(missing_ids, list)
+            assert event_id + "-missing" in missing_ids
             metrics = await queue_metrics(session)
             assert metrics["delivered"]["count"] == 1
             assert metrics["retry"]["count"] == 1
