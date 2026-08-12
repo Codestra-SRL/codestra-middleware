@@ -5,13 +5,18 @@ from fastapi.testclient import TestClient
 
 from app.api.v1.booking import repository
 from app.entrypoints.integration_api import app
+from app.core.config import settings
 
 
 client = TestClient(app)
 
 
+# CI intentionally has no runtime secret. Configure only this in-process test
+# client with a synthetic value; no deployment credential is loaded or logged.
+settings.middleware_secret = "synthetic-booking-test-secret-32-characters"
+
+
 def auth():
-    from app.core.config import settings
     return {"Authorization": f"Bearer {settings.middleware_secret}"}
 
 
