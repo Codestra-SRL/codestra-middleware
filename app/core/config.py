@@ -354,6 +354,9 @@ class Settings(BaseSettings):
     sales_verification_jobs_enabled: bool = False
     scraper_result_ingest_enabled: bool = False
     scraper_middleware_delivery_enabled: bool = False
+    scraper_odoo_apply_url: str = ""
+    scraper_odoo_company_key: str = "COMPANY-1"
+    scraper_odoo_business_unit_key: str = "web-mobile-ai"
     lead_verification_dry_run_only: bool = True
     lead_outreach_enabled: bool = False
     odoo_lead_write_enabled: bool = False
@@ -418,7 +421,6 @@ class Settings(BaseSettings):
             self.pjsip_provisioning_enabled,
             self.vicidial_publication_enabled,
             self.outreach_enabled,
-            self.scraper_middleware_delivery_enabled,
             not self.lead_verification_dry_run_only,
             self.lead_outreach_enabled,
             self.odoo_lead_write_enabled,
@@ -430,6 +432,19 @@ class Settings(BaseSettings):
         )
         if any(production_switches):
             raise ValueError("live writes and non-TEST_SYN campaigns are disabled")
+        if self.scraper_middleware_delivery_enabled:
+            campaigns = {
+                value.strip()
+                for value in self.sales_scraper_campaign_allowlist.split(",")
+                if value.strip()
+            }
+            if (
+                self.environment not in {"test", "staging"}
+                or campaigns != {"TEST_SYN"}
+                or not self.scraper_odoo_apply_url.startswith(("http://", "https://"))
+                or not self.lead_automation_hmac_secret
+            ):
+                raise ValueError("scraper delivery requires isolated TEST_SYN staging")
         social_publish_switches = (
             self.social_publish_enabled,
             self.postiz_publish_enabled,

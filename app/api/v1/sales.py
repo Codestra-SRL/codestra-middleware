@@ -21,12 +21,17 @@ from app.sales.contracts import (
     VerificationJobRequest,
 )
 from app.sales.odoo import DisabledOdooReadOnlyAdapter
+from app.sales.odoo import SyntheticCanaryOdooReadOnlyAdapter
 from app.sales.repository import SalesRepository
 from app.sales.service import SalesError, SalesLeadService
 
 
 router = APIRouter(prefix="/api/v1/sales", tags=["sales-lead-foundation"])
-service = SalesLeadService(DisabledOdooReadOnlyAdapter())
+service = SalesLeadService(
+    SyntheticCanaryOdooReadOnlyAdapter()
+    if settings.scraper_middleware_delivery_enabled
+    else DisabledOdooReadOnlyAdapter()
+)
 repository: SalesRepository | None = SalesRepository()
 scraper_nonces = NonceLedger()
 

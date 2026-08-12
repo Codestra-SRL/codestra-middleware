@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import AuditEvent
+from app.core.config import settings
 from app.db.session import SessionFactory
 
 from .contracts import Decision, LeadCandidate, LeadResolution
@@ -240,6 +241,60 @@ class SalesRepository:
                     decision=resolution.decision,
                     redacted_payload=redacted,
                 )
+            )
+        if (
+            settings.scraper_middleware_delivery_enabled
+            and resolution.decision == Decision.ACCEPTED
+            and candidate.campaign_id == "TEST_SYN"
+        ):
+            event_id = f"LAE-{resolution.candidate_id.removeprefix('LDC-')}"
+            delivery_key = hashlib.sha256(
+                f"{candidate.tenant_id}:{candidate.source.request_id}".encode()
+            ).hexdigest()
+            now = datetime.now(UTC).isoformat()
+            contact_reference = "CONTACT-" + hashlib.sha256(
+                f"{candidate.tenant_id}:{resolution.candidate_id}".encode()
+            ).hexdigest()[:32]
+            payload = {
+                "contract_version": "1.1",
+                "automation_event_id": event_id,
+                "idempotency_key": delivery_key,
+                "environment": settings.environment,
+                "company_key": settings.scraper_odoo_company_key,
+                "business_unit_key": settings.scraper_odoo_business_unit_key,
+                "campaign_key": candidate.campaign_id,
+                "automation_action": "CREATE_LEAD",
+                "policy_version": resolution.policy_version,
+                "correlation_id": resolution.correlation_id,
+                "attributes_schema_key": "web-mobile-ai-lead-v1",
+                "attributes": {"contact_reference": contact_reference},
+                "consent_snapshot": {
+                    "consent_status": "granted",
+                    "consent_purpose": candidate.source_claims.consent_source
+                    or "synthetic-canary",
+                    "consent_source": candidate.source.provider,
+                    "consent_updated_at": now,
+                    "dnc_status": False,
+                    "dnc_updated_at": now,
+                    "jurisdiction": candidate.company.country_code,
+                    "source_system": "odoo",
+                },
+                "workflow_execution_id": f"N8N-{resolution.candidate_id.removeprefix('LDC-')}",
+                "result_code": "SCRAPER_VALIDATED",
+                "source_reference": f"SRC-{hashlib.sha256(candidate.source.request_id.encode()).hexdigest()}",
+            }
+            await session.execute(
+                text(
+                    "INSERT INTO outbox_event "
+                    "(id,topic,payload,correlation_id,status,attempts) "
+                    "VALUES (:id,'sales.lead.odoo.apply',CAST(:payload AS jsonb),"
+                    ":correlation,'pending',0)"
+                ),
+                {
+                    "id": uuid4(),
+                    "payload": json.dumps(payload),
+                    "correlation": resolution.correlation_id,
+                },
             )
 
     async def persist_job(self, job: VerificationJob) -> None:
