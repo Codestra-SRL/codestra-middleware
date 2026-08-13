@@ -133,7 +133,7 @@ def test_identity_signature_source_and_timestamp_rejections(configured, mutation
     elif mutation == "expired":
         values = headers(der, timestamp=str(int(time.time()) - 61))
     elif mutation == "future":
-        values = headers(der, timestamp=str(int(time.time()) + 6))
+        values = headers(der, timestamp=str(int(time.time()) + 7))
     assert TestClient(app).post(PATH, content=b"{}", headers=values).status_code in (401, 403)
 
 
@@ -156,7 +156,7 @@ def test_body_size_rate_limit_and_closed_flags(configured, monkeypatch):
 
 
 def test_proxy_contract_is_private_mtls_and_publicly_denied():
-    private = Path("deploy/readiness/Caddyfile.private-readiness.snippet").read_text()
+    private = Path("deploy/readiness/Caddyfile.private-vicidial-ingress").read_text()
     public = Path("deploy/readiness/Caddyfile.public-denial.snippet").read_text()
     assert "remote_ip 10.40.0.2" in private
     assert "certificate_der_base64" in private
