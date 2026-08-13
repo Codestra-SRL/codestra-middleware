@@ -19,6 +19,8 @@ def test_post_merge_mode_is_restricted_to_protected_main_history() -> None:
     assert '(.status == "ahead" or .status == "identical")' in source
     assert '.context == "codestra/required-ci" and .state == "success"' in source
     assert '.state == "APPROVED" and .commit_id == $head' in source
+    build_permissions = source[source.index("  build:"):source.index("    outputs:")]
+    assert "statuses: read" in build_permissions
 
 
 def test_candidate_still_builds_exact_source_non_root() -> None:
