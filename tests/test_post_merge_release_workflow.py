@@ -38,3 +38,13 @@ def test_release_evidence_is_scoped_to_requested_pr() -> None:
     assert '--expected-pr-number "${{ inputs.pr_number }}"' in source
     assert ".pr_number == $pr_number" in source
     assert "pr68" not in source
+
+
+def test_private_candidate_is_authenticated_before_signing() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    sign = source.index("- name: Sign decision, candidate digest, SBOM and provenance")
+    verify = source.index("- name: Independently verify exact workflow identity", sign)
+    block = source[sign:verify]
+    assert "GH_TOKEN: ${{ github.token }}" in block
+    assert "docker login ghcr.io" in block
+    assert block.index("docker login ghcr.io") < block.index('cosign\" sign --yes')

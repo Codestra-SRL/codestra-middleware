@@ -548,10 +548,13 @@ jobs:
 
       - name: Sign decision, candidate digest, SBOM and provenance
         env:
+          GH_TOKEN: ${{ github.token }}
           IMAGE_DIGEST: ${{ inputs.image_digest }}
         run: |
           set -euo pipefail
           subject="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          printf '%s' "${GH_TOKEN}" | docker login ghcr.io \
+            --username "${GITHUB_ACTOR}" --password-stdin
           "${RUNNER_TEMP}/cosign" sign-blob --yes --bundle decision/security-owner-decision.sigstore.json decision/security-owner-decision.json
           "${RUNNER_TEMP}/cosign" sign --yes --bundle candidate/image-signature.sigstore.json "${subject}"
           "${RUNNER_TEMP}/cosign" attest --yes --type cyclonedx --predicate candidate/candidate.cdx.json --bundle candidate/sbom-attestation.sigstore.json "${subject}"
