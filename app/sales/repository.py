@@ -43,6 +43,8 @@ class SalesRepository:
         idempotency_key: str,
         correlation_id: str,
         engine: SalesLeadService,
+        *,
+        source_identity: str = "middleware-api",
     ) -> tuple[LeadResolution, bool]:
         key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
         payload_hash = canonical_hash(candidate)
@@ -56,6 +58,7 @@ class SalesRepository:
                 key_hash,
                 payload_hash,
                 operation,
+                source_identity,
             )
         except SQLAlchemyError as exc:
             raise SalesDependencyUnavailable(
@@ -71,6 +74,7 @@ class SalesRepository:
         key_hash: str,
         payload_hash: str,
         operation: str,
+        source_identity: str,
     ) -> tuple[LeadResolution, bool]:
         async with self.sessions() as session:
             await session.execute(
@@ -104,7 +108,12 @@ class SalesRepository:
                 candidate, idempotency_key, correlation_id
             )
             await self._persist_resolution(
-                session, candidate, resolution, payload_hash, key_hash
+                session,
+                candidate,
+                resolution,
+                payload_hash,
+                key_hash,
+                source_identity=source_identity,
             )
             await session.commit()
             return resolution, False
@@ -116,6 +125,8 @@ class SalesRepository:
         resolution: LeadResolution,
         payload_hash: str,
         key_hash: str,
+        *,
+        source_identity: str,
     ) -> None:
         phone = normalized_phone(
             candidate.contact.business_phone, candidate.contact.country_code
@@ -220,6 +231,44 @@ class SalesRepository:
             },
         )
         reasons = reason_codes or ["NET_NEW"]
+        delivery_queued = (
+            settings.scraper_middleware_delivery_enabled
+            and resolution.decision == Decision.ACCEPTED
+            and candidate.campaign_id == "TEST_SYN"
+        )
+        inbox_status = (
+            "queued"
+            if delivery_queued
+            else "eligible"
+            if resolution.decision == Decision.ACCEPTED
+            else "rejected"
+        )
+        await session.execute(
+            text(
+                "INSERT INTO sales_scraper_inbox "
+                "(id,event_id,schema_version,tenant_id,source_identity,campaign_id,"
+                "payload_hash,idempotency_key_hash,correlation_id,status,rejection_code) "
+                "VALUES (:id,:event,:schema,:tenant,:source,:campaign,:payload_hash,"
+                ":key_hash,:correlation,:status,:rejection_code)"
+            ),
+            {
+                "id": uuid4(),
+                "event": candidate.source.request_id,
+                "schema": candidate.schema_version,
+                "tenant": candidate.tenant_id,
+                "source": source_identity,
+                "campaign": candidate.campaign_id,
+                "payload_hash": payload_hash,
+                "key_hash": key_hash,
+                "correlation": resolution.correlation_id,
+                "status": inbox_status,
+                "rejection_code": (
+                    None
+                    if inbox_status in {"eligible", "queued"}
+                    else resolution.decision_code
+                ),
+            },
+        )
         redacted = {
             "tenant_id": candidate.tenant_id,
             "campaign_id": candidate.campaign_id,
@@ -242,11 +291,7 @@ class SalesRepository:
                     redacted_payload=redacted,
                 )
             )
-        if (
-            settings.scraper_middleware_delivery_enabled
-            and resolution.decision == Decision.ACCEPTED
-            and candidate.campaign_id == "TEST_SYN"
-        ):
+        if delivery_queued:
             event_id = f"LAE-{resolution.candidate_id.removeprefix('LDC-')}"
             delivery_key = hashlib.sha256(
                 f"{candidate.tenant_id}:{candidate.source.request_id}".encode()

@@ -193,7 +193,13 @@ async def scraper_results(
     try:
         candidate = LeadCandidate.model_validate_json(raw)
         result, replay = await (
-            repository.resolve(candidate, idempotency_key, correlation_id, service)
+            repository.resolve(
+                candidate,
+                idempotency_key,
+                correlation_id,
+                service,
+                source_identity=scraper_id,
+            )
             if repository
             else service.resolve(candidate, idempotency_key, correlation_id)
         )

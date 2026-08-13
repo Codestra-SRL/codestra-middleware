@@ -105,7 +105,7 @@ canary or replay.
 ## Release binding
 
 - Release commit: `PENDING_PROTECTED_MAIN_MERGE`
-- Migration: `PENDING_SCRAPER_INBOX_MIGRATION`
+- Migration: `0043_scraper_durable_inbox` (release candidate; not deployed)
 - Effective date: `PENDING_SERVER_A_CANARY_PASS`
 - Rollback: disable `SCRAPER_RESULT_INGEST_ENABLED`, freeze canary processing,
   restore the prior immutable image/config, and reconcile accepted canary IDs
