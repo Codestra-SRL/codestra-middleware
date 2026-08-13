@@ -130,6 +130,7 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
                 "/api/v1/n8n/acknowledgements",
                 "/api/v1/sales/scraper-results",
                 "/api/v1/readiness/server-a/challenge",
+                "/api/v1/integrations/breero/events",
             }
             or N8N_TRANSITION_PATH.fullmatch(request.url.path) is not None
         )
@@ -171,6 +172,7 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "/api/v1/n8n-runtime/social-authorize",
             "/api/v1/sales/scraper-results",
             "/api/v1/readiness/server-a/challenge",
+            "/api/v1/integrations/breero/events",
         }
         if (
             (
