@@ -8,7 +8,10 @@ COMPOSE = Path("deploy/compose.runtime.yaml")
 
 def test_private_listener_is_bound_to_server_a_and_requires_mtls():
     source = PRIVATE.read_text()
-    assert "bind 10.40.0.1" in source
+    compose = Path("deploy/readiness/compose.private-vicidial-ingress.yaml").read_text()
+    assert '"10.40.0.1:443:443"' in compose
+    assert '"65.109.65.169:443:443"' in compose
+    assert "ports: !override" in compose
     assert "mode require_and_verify" in source
     assert "trust_pool file /run/secrets/middleware-private-ingress/client-ca.crt" in source
     assert "remote_ip 10.40.0.2" in source
@@ -52,3 +55,13 @@ def test_no_administrative_or_general_gateway_route_is_exposed():
     source = PRIVATE.read_text()
     for forbidden in ("/docs", "/openapi", "/metrics", "/dependencies", "handle_path /*"):
         assert forbidden not in source
+
+
+def test_private_proxy_is_isolated_and_event_gate_stays_false():
+    compose = Path("deploy/readiness/compose.private-vicidial-ingress.yaml").read_text()
+    assert "read_only: true" in compose
+    assert "cap_drop: [ALL]" in compose
+    assert "no-new-privileges:true" in compose
+    assert 'VICIDIAL_EVENT_INGRESS_ROUTING_ENABLED: "false"' in compose
+    assert "networks: [middleware_edge]" in compose
+    assert "codestra_backend" not in compose
