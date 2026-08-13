@@ -266,6 +266,12 @@ class Settings(BaseSettings):
     environment: str = "preproduction"
     publisher_hmac_keys_file: str = ""
     publisher_canary_enabled: bool = False
+    breero_ingress_enabled: bool = False
+    breero_odoo_delivery_enabled: bool = False
+    breero_hmac_identities_file: str = ""
+    breero_rate_limit_per_minute: int = 30
+    breero_signature_ttl_seconds: int = 300
+    breero_request_max_bytes: int = 32768
     readiness_server_identity: str = "server-a-middleware"
     readiness_approved_source_ip: str = "10.40.0.2"
     readiness_publisher_key_id: str = ""
