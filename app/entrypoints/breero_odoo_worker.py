@@ -1,15 +1,40 @@
-"""Disabled-by-default BREERO Odoo outbox worker."""
+"""Disabled-by-default BREERO Odoo delivery worker."""
 
-import asyncio
+from app.core.config import settings
+from app.db.session import SessionFactory
+from app.entrypoints.runtime import run_worker
+from app.workers.breero_odoo import (
+    RestrictedOdooTransport,
+    claim,
+    process,
+    recover_stale,
+)
 
-from app.entrypoints.runtime import configure_logging, validate_runtime
-from app.workers.breero_odoo_delivery import run_forever
+SERVICE = "middleware-breero-odoo-worker"
+QUEUE = "breero-odoo"
+
+
+async def cycle() -> dict[str, object]:
+    if not settings.breero_odoo_delivery_enabled:
+        return {"claimed": 0, "delivered": 0}
+    async with SessionFactory() as session:
+        await recover_stale(session)
+        items = await claim(
+            session,
+            settings.breero_worker_batch_size,
+            settings.breero_worker_lease_seconds,
+        )
+    delivered = 0
+    for item in items:
+        async with SessionFactory() as session:
+            delivered += int(
+                await process(session, item, RestrictedOdooTransport()) == "delivered"
+            )
+    return {"claimed": len(items), "delivered": delivered}
 
 
 def main() -> None:
-    configure_logging()
-    validate_runtime("middleware-breero-odoo-worker")
-    asyncio.run(run_forever())
+    run_worker(SERVICE, QUEUE, cycle)
 
 
 if __name__ == "__main__":

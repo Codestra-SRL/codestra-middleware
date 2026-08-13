@@ -276,10 +276,9 @@ class Settings(BaseSettings):
     breero_odoo_database: str = ""
     breero_odoo_username: str = ""
     breero_odoo_api_key_file: str = ""
-    breero_odoo_ca_file: str = ""
-    breero_odoo_max_attempts: int = 8
-    breero_odoo_batch_size: int = 10
-    breero_odoo_lease_seconds: int = 60
+    breero_worker_batch_size: int = 8
+    breero_worker_lease_seconds: int = 60
+    breero_worker_max_attempts: int = 8
     readiness_server_identity: str = "server-a-middleware"
     readiness_approved_source_ip: str = "10.40.0.2"
     readiness_publisher_key_id: str = ""

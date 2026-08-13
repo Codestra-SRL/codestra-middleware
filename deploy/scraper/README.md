@@ -24,3 +24,10 @@ Rollback begins by setting `SCRAPER_RESULT_INGEST_ENABLED=false` and recreating
 only `middleware-integration-api`. Preserve the PostgreSQL inbox and audit rows;
 do not delete or replay accepted events. Removing an old HMAC key is allowed
 only after its bounded overlap window and accepted-request reconciliation.
+
+`scraper-middleware-offserver.sh` and its systemd units provide the bounded
+daily online logical backup for the middleware database. Install the script as
+root-owned mode `0750`, validate the existing pinned SSH alias and GPG recipient,
+run the service once, and enable the timer only after local checksum, off-server
+copy, remote checksum, and readback equality all pass. The job never pauses a
+production service and retains 14 successful local encrypted snapshots.

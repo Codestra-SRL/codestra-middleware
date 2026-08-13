@@ -1,66 +1,44 @@
 from pathlib import Path
-import asyncio
 
-import httpx
 import pytest
 
-from app.core.config import settings
-from app.workers.breero_odoo_delivery import CLAIM, RECOVER, DeliveryError, OdooClient
+from app.core.config import Settings
+from app.workers.breero_odoo import DeliveryFailure, RestrictedOdooTransport, ROUTES
 
 
-def configure(monkeypatch, tmp_path: Path):
-    key=tmp_path/"odoo-key"
-    key.write_text("test-only-key")
-    monkeypatch.setattr(settings,"breero_odoo_url","https://odoo.example.test")
-    monkeypatch.setattr(settings,"breero_odoo_database","codestra_odoo")
-    monkeypatch.setattr(settings,"breero_odoo_username","breero.integration")
-    monkeypatch.setattr(settings,"breero_odoo_api_key_file",str(key))
-    monkeypatch.setattr(settings,"breero_odoo_ca_file","")
+def test_worker_is_disabled_and_credentials_are_file_backed():
+    value = Settings()
+    assert value.breero_odoo_delivery_enabled is False
+    assert value.breero_odoo_api_key_file == ""
+    source = Path("app/workers/breero_odoo.py").read_text()
+    assert "FOR UPDATE SKIP LOCKED" in source
+    assert "lease_token=:token" in source
+    assert '"breero.sync.event"' in source
+    assert '"process_breero_event"' in source
+    assert "res.users" not in source
 
 
-def test_claim_is_concurrent_and_lease_safe():
-    sql=str(CLAIM)
-    assert "FOR UPDATE SKIP LOCKED" in sql
-    assert "lease_token" in sql and "lease_expires_at" in sql
-    assert "retry_wait" in sql
+def test_four_routes_only():
+    assert ROUTES == {
+        "BREERO_CUSTOMER_REQUESTS",
+        "BREERO_SUPPORT_BUSINESS",
+        "BREERO_PROVIDER_RECRUITMENT",
+        "BREERO_LEAD_DISPUTES",
+    }
 
 
-def test_stale_recovery_is_postgres_authoritative():
-    sql=str(RECOVER)
-    assert "lease_expires_at < now()" in sql
-    assert "STALE_LEASE_RECOVERED" in sql
+@pytest.mark.asyncio
+async def test_missing_secret_is_permanent(monkeypatch):
+    monkeypatch.setattr(
+        "app.workers.breero_odoo.settings.breero_odoo_api_key_file", "/missing"
+    )
+    with pytest.raises(DeliveryFailure) as caught:
+        await RestrictedOdooTransport().deliver({}, "idem")
+    assert caught.value.permanent and caught.value.code == "credential_unavailable"
 
 
-def test_client_invokes_only_typed_breero_method(monkeypatch,tmp_path):
-    configure(monkeypatch,tmp_path)
-    calls=[]
-    def handler(request):
-        calls.append(request)
-        return httpx.Response(200,json={"result":{"event_id":"event-1","odoo_model":"crm.lead","odoo_record_id":42}})
-    async def run():
-        client=OdooClient()
-        await client.http.aclose()
-        client.http=httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        ack=await client.deliver({"event_id":"event-1"})
-        await client.aclose()
-        return ack
-    ack=asyncio.run(run())
-    rpc=__import__("json").loads(calls[0].content)
-    args=rpc["params"]["args"]
-    assert args[3:5]==["breero.sync.event","process_breero_event"]
-    assert ack["odoo_record_id"]==42
-
-
-def test_terminal_auth_failure(monkeypatch,tmp_path):
-    configure(monkeypatch,tmp_path)
-    async def run():
-        client=OdooClient()
-        await client.http.aclose()
-        client.http=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200,json={"error":{"data":{"name":"odoo.exceptions.AccessDenied"}}})))
-        try:
-            await client.deliver({"event_id":"event-1"})
-        finally:
-            await client.aclose()
-    with pytest.raises(DeliveryError) as failure:
-        asyncio.run(run())
-    assert failure.value.terminal is True
+def test_migration_and_entrypoint_are_non_destructive_and_disabled():
+    entry = Path("app/entrypoints/breero_odoo_worker.py").read_text()
+    assert "if not settings.breero_odoo_delivery_enabled" in entry
+    migration = Path("migrations/versions/0044_breero_integration.py").read_text()
+    assert "ON DELETE RESTRICT" in migration

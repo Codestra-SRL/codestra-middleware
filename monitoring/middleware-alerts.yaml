@@ -4,27 +4,27 @@ groups:
       - alert: CodestraScraperInboxBacklog
         expr: sum(codestra_delivery_queue_depth{target="scraper"}) > 50
         for: 10m
-        labels: {severity: warning, owner: integration-operations, service: middleware, component: scraper}
+        labels: {severity: warning, owner: integration-operations, service: middleware, component: scraper, environment: production-readiness}
         annotations: {summary: "Scraper inbox backlog exceeds the bounded threshold", runbook_url: "https://monitoring.codestra.co/runbooks/scraper-pipeline"}
       - alert: CodestraScraperOldestPending
         expr: codestra_delivery_oldest_seconds{target="scraper"} > 900
         for: 10m
-        labels: {severity: warning, owner: integration-operations, service: middleware, component: scraper}
+        labels: {severity: warning, owner: integration-operations, service: middleware, component: scraper, environment: production-readiness}
         annotations: {summary: "Oldest scraper event exceeds 15 minutes", runbook_url: "https://monitoring.codestra.co/runbooks/scraper-pipeline"}
       - alert: CodestraScraperDeadLetter
         expr: codestra_dlq_depth{target="scraper"} > 0
         for: 1m
-        labels: {severity: critical, owner: integration-operations, service: middleware, component: scraper}
+        labels: {severity: critical, owner: integration-operations, service: middleware, component: scraper, environment: production-readiness}
         annotations: {summary: "A scraper event entered dead letter", runbook_url: "https://monitoring.codestra.co/runbooks/scraper-pipeline"}
       - alert: CodestraScraperAuthenticationFailures
         expr: sum(increase(codestra_auth_failures_total{kind=~"scraper.*"}[5m])) > 5
         for: 2m
-        labels: {severity: warning, owner: security-operations, service: middleware, component: scraper}
+        labels: {severity: warning, owner: security-operations, service: middleware, component: scraper, environment: production-readiness}
         annotations: {summary: "Scraper authentication or replay failures increased", runbook_url: "https://monitoring.codestra.co/runbooks/scraper-authentication"}
       - alert: CodestraScraperRedisErrors
         expr: sum(increase(redis_errors_total{operation=~"scraper.*"}[5m])) > 0
         for: 2m
-        labels: {severity: warning, owner: integration-operations, service: redis, component: scraper}
+        labels: {severity: warning, owner: integration-operations, service: redis, component: scraper, environment: production-readiness}
         annotations: {summary: "Scraper Redis signaling is degraded to PostgreSQL recovery", runbook_url: "https://monitoring.codestra.co/runbooks/scraper-redis-recovery"}
   - name: codestra-middleware-fast-ack
     rules:

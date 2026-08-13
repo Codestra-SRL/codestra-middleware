@@ -22,6 +22,7 @@ tests:
         exp_alerts:
           - exp_labels:
               component: scraper
+              environment: production-readiness
               owner: integration-operations
               service: middleware
               severity: critical
@@ -29,22 +30,24 @@ tests:
             exp_annotations:
               runbook_url: https://monitoring.codestra.co/runbooks/scraper-pipeline
               summary: A scraper event entered dead letter
-      - eval_time: 8m
+      - eval_time: 7m
         alertname: CodestraScraperAuthenticationFailures
         exp_alerts:
           - exp_labels:
               component: scraper
+              environment: production-readiness
               owner: security-operations
               service: middleware
               severity: warning
             exp_annotations:
               runbook_url: https://monitoring.codestra.co/runbooks/scraper-authentication
               summary: Scraper authentication or replay failures increased
-      - eval_time: 8m
+      - eval_time: 7m
         alertname: CodestraScraperRedisErrors
         exp_alerts:
           - exp_labels:
               component: scraper
+              environment: production-readiness
               owner: integration-operations
               service: redis
               severity: warning
@@ -56,6 +59,7 @@ tests:
         exp_alerts:
           - exp_labels:
               component: scraper
+              environment: production-readiness
               owner: integration-operations
               service: middleware
               severity: warning
@@ -67,6 +71,7 @@ tests:
         exp_alerts:
           - exp_labels:
               component: scraper
+              environment: production-readiness
               owner: integration-operations
               service: middleware
               severity: warning

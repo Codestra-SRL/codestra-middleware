@@ -13,6 +13,7 @@ def test_scraper_alerts_have_threshold_owner_and_runbook() -> None:
         block = alerts.split(f"alert: {name}", 1)[1].split("- alert:", 1)[0]
         assert "for:" in block
         assert "owner:" in block
+        assert "environment: production-readiness" in block
         assert "runbook_url:" in block
 
 
