@@ -6,7 +6,7 @@
     "environment": "staging",
     "scope": "breero.crm.events.submit",
     "tenant": "breero",
-    "source_ip": "49.12.145.107",
+    "source_ip": "10.40.0.3",
     "secret_file": "/run/secrets/breero-staging-hmac"
   },
   "breero-production-key-v1": {
@@ -16,7 +16,7 @@
     "environment": "production",
     "scope": "breero.crm.events.submit",
     "tenant": "breero",
-    "source_ip": "49.12.145.107",
+    "source_ip": "10.40.0.3",
     "secret_file": "/run/secrets/breero-production-hmac"
   }
 }
