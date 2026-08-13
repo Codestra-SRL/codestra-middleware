@@ -148,7 +148,11 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
                 else settings.quarantine_rate_limit_per_minute
             )
             if len(window) >= limit:
-                return JSONResponse({"detail": "rate limit exceeded"}, status_code=429)
+                return JSONResponse(
+                    {"detail": "rate limit exceeded"},
+                    status_code=429,
+                    headers={"Retry-After": "60"},
+                )
             window.append(now)
         correlation_id = str(uuid4())
         client_correlation = request.headers.get("x-correlation-id", "").strip()

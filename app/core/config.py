@@ -385,7 +385,15 @@ class Settings(BaseSettings):
     sales_scraper_identity: str = ""
     sales_scraper_tenant_id: str = ""
     sales_scraper_campaign_allowlist: str = ""
-    sales_scraper_hmac_secret_file: str = ""
+    sales_scraper_hmac_key_ids: str = ""
+    sales_scraper_hmac_keys_directory: str = ""
+    sales_scraper_jwt_issuer: str = ""
+    sales_scraper_jwt_audience: str = "codestra-scraper-ingress"
+    sales_scraper_jwt_jwks_url: str = ""
+    sales_scraper_jwt_authorized_parties: str = ""
+    sales_scraper_jwt_required_scope: str = "scraper.events.write"
+    sales_scraper_jwt_required_role: str = "scraper-publisher"
+    sales_scraper_rate_limit_per_minute: int = 60
 
     def validate_safety(self) -> None:
         if self.social_n8n_delivery_batch_size not in range(1, 26):
@@ -455,6 +463,34 @@ class Settings(BaseSettings):
                 or not self.lead_automation_hmac_secret
             ):
                 raise ValueError("scraper delivery requires isolated TEST_SYN staging")
+        if self.scraper_result_ingest_enabled:
+            key_ids = {
+                value.strip()
+                for value in self.sales_scraper_hmac_key_ids.split(",")
+                if value.strip()
+            }
+            authorized_parties = {
+                value.strip()
+                for value in self.sales_scraper_jwt_authorized_parties.split(",")
+                if value.strip()
+            }
+            if (
+                not self.sales_scraper_identity
+                or not self.sales_scraper_tenant_id
+                or not self.sales_scraper_campaign_allowlist
+                or not self.sales_scraper_hmac_keys_directory
+                or not 1 <= len(key_ids) <= 3
+                or not self.sales_scraper_jwt_issuer
+                or not self.sales_scraper_jwt_audience
+                or not self.sales_scraper_jwt_jwks_url
+                or self.sales_scraper_identity not in authorized_parties
+                or not self.sales_scraper_jwt_required_scope
+                or not self.sales_scraper_jwt_required_role
+                or self.sales_scraper_rate_limit_per_minute not in range(1, 601)
+            ):
+                raise ValueError("scraper ingress authentication is incomplete")
+            if set(self.sales_scraper_hmac_keys) != key_ids:
+                raise ValueError("scraper HMAC key enrollment is inconsistent")
         social_publish_switches = (
             self.social_publish_enabled,
             self.postiz_publish_enabled,
@@ -549,14 +585,34 @@ class Settings(BaseSettings):
                 setattr(self, attribute, value)
 
     @property
-    def sales_scraper_hmac_secret(self) -> bytes:
-        path = self._protected_secret_path(
-            self.sales_scraper_hmac_secret_file, "sales scraper HMAC"
-        )
-        value = path.read_bytes().strip()
-        if len(value) < 32:
-            raise ValueError("sales scraper HMAC secret is too short")
-        return value
+    def sales_scraper_hmac_keys(self) -> dict[str, bytes]:
+        directory = Path(self.sales_scraper_hmac_keys_directory)
+        if (
+            not directory.is_absolute()
+            or directory.is_symlink()
+            or not directory.is_dir()
+            or directory.stat().st_mode & 0o077
+        ):
+            raise ValueError("sales scraper HMAC key directory is unavailable or unsafe")
+        key_ids = [
+            value.strip()
+            for value in self.sales_scraper_hmac_key_ids.split(",")
+            if value.strip()
+        ]
+        if not 1 <= len(key_ids) <= 3 or len(key_ids) != len(set(key_ids)):
+            raise ValueError("sales scraper HMAC trusted-key set is invalid")
+        keys: dict[str, bytes] = {}
+        for key_id in key_ids:
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", key_id):
+                raise ValueError("sales scraper HMAC key ID is invalid")
+            path = self._protected_secret_path(
+                str(directory / f"{key_id}.key"), "sales scraper HMAC"
+            )
+            value = path.read_bytes().strip()
+            if len(value) < 32:
+                raise ValueError("sales scraper HMAC secret is too short")
+            keys[key_id] = value
+        return keys
 
     @staticmethod
     def _optional_secret(filename: str, label: str) -> str:

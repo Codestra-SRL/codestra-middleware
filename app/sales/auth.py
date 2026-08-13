@@ -15,6 +15,7 @@ class ScraperIdentity:
     scraper_id: str
     tenant_id: str
     campaigns: frozenset[str]
+    key_id: str
     secret: bytes
 
 
@@ -38,12 +39,13 @@ def signature(
     timestamp: str,
     nonce: str,
     body: bytes,
-    version: str = "hmac-sha256-v1",
+    version: str = "hmac-sha256-v2",
 ) -> str:
     digest = hashlib.sha256(body).hexdigest()
     canonical = "\n".join(
         [
             version,
+            identity.key_id,
             identity.scraper_id,
             tenant_id,
             campaign_id,
@@ -59,6 +61,7 @@ def signature(
 def verify(
     *,
     identity: ScraperIdentity | None,
+    key_id: str,
     scraper_id: str,
     tenant_id: str,
     campaign_id: str,
@@ -73,9 +76,13 @@ def verify(
     now: int | None = None,
     ttl: int = 300,
 ) -> None:
-    if identity is None or identity.scraper_id != scraper_id:
+    if (
+        identity is None
+        or identity.scraper_id != scraper_id
+        or identity.key_id != key_id
+    ):
         raise ScraperAuthenticationError("UNKNOWN_SCRAPER_IDENTITY")
-    if version != "hmac-sha256-v1" or not supplied_signature:
+    if version != "hmac-sha256-v2" or not supplied_signature:
         raise ScraperAuthenticationError("MISSING_OR_INVALID_SIGNATURE")
     try:
         signed_at = int(timestamp)

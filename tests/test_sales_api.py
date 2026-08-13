@@ -3,11 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1 import sales
-from app.core.config import settings
+from app.core.config import Settings, settings
+from app.core.jwt_auth import JWTAuthError
 from app.main import app
 from app.sales.auth import NonceLedger, ScraperIdentity, signature
 from app.sales.compliance import ComplianceSnapshot
@@ -17,6 +20,18 @@ from tests.test_sales_lead_foundation import candidate
 
 
 client = TestClient(app)
+
+
+def synthetic_scraper_validator(**_):
+    def validate(token):
+        if token == "invalid":
+            raise JWTAuthError("synthetic invalid token")
+        return {
+            "azp": "scraper-c",
+            "tenant_id": "tenant-b" if token == "wrong-tenant" else "tenant-a",
+        }
+
+    return SimpleNamespace(validate=validate)
 
 
 def configure(monkeypatch):
@@ -37,6 +52,8 @@ def configure(monkeypatch):
     )
     sales.repository = None
     sales.scraper_nonces = NonceLedger()
+    sales.scraper_rate_windows.clear()
+    monkeypatch.setattr(sales, "KeycloakValidator", synthetic_scraper_validator)
 
 
 def auth():
@@ -148,7 +165,9 @@ def test_valid_invalid_and_replayed_scraper_webhook(monkeypatch, tmp_path):
     # The production property requires a protected absolute file; API auth semantics
     # are exercised by substituting the already-loaded protected value.
     monkeypatch.setattr(
-        type(settings), "sales_scraper_hmac_secret", property(lambda _: b"z" * 32)
+        type(settings),
+        "sales_scraper_hmac_keys",
+        property(lambda _: {"scraper-key-2026-08": b"z" * 32}),
     )
     monkeypatch.setattr(settings, "sales_scraper_identity", "scraper-c")
     monkeypatch.setattr(settings, "sales_scraper_tenant_id", "tenant-a")
@@ -158,15 +177,21 @@ def test_valid_invalid_and_replayed_scraper_webhook(monkeypatch, tmp_path):
     ).encode()
     timestamp = str(int(time.time()))
     identity = ScraperIdentity(
-        "scraper-c", "tenant-a", frozenset({"campaign-a"}), b"z" * 32
+        "scraper-c",
+        "tenant-a",
+        frozenset({"campaign-a"}),
+        "scraper-key-2026-08",
+        b"z" * 32,
     )
     headers = {
         "Content-Type": "application/json",
+        "Authorization": "Bearer synthetic-service-jwt",
         "Idempotency-Key": "scraper-idempotency-0001",
         "X-Codestra-Scraper-ID": "scraper-c",
+        "X-Codestra-Key-ID": "scraper-key-2026-08",
         "X-Codestra-Timestamp": timestamp,
         "X-Codestra-Nonce": "nonce-api-1",
-        "X-Codestra-Signature-Version": "hmac-sha256-v1",
+        "X-Codestra-Signature-Version": "hmac-sha256-v2",
         "X-Codestra-Content-SHA256": hashlib.sha256(raw).hexdigest(),
         "X-Codestra-Signature": signature(
             identity=identity,
@@ -178,6 +203,20 @@ def test_valid_invalid_and_replayed_scraper_webhook(monkeypatch, tmp_path):
             body=raw,
         ),
     }
+    missing_jwt = dict(headers)
+    missing_jwt.pop("Authorization")
+    denied = client.post(
+        "/api/v1/sales/scraper-results", content=raw, headers=missing_jwt
+    )
+    assert denied.status_code == 401 and denied.json()["code"] == "SCRAPER_JWT_INVALID"
+    for token in ("invalid", "wrong-tenant"):
+        denied = client.post(
+            "/api/v1/sales/scraper-results",
+            content=raw,
+            headers={**headers, "Authorization": f"Bearer {token}"},
+        )
+        assert denied.status_code == 401
+        assert denied.json()["code"] == "SCRAPER_JWT_INVALID"
     accepted = client.post(
         "/api/v1/sales/scraper-results", content=raw, headers=headers
     )
@@ -194,6 +233,55 @@ def test_valid_invalid_and_replayed_scraper_webhook(monkeypatch, tmp_path):
         },
     )
     assert invalid.status_code == 401
+    changed = candidate().model_dump(mode="json")
+    changed["company"]["name"] = "Conflicting synthetic company"
+    conflicting_raw = json.dumps(changed, separators=(",", ":")).encode()
+    conflicting_headers = {
+        **headers,
+        "X-Codestra-Nonce": "nonce-api-conflict",
+        "X-Codestra-Content-SHA256": hashlib.sha256(conflicting_raw).hexdigest(),
+        "X-Codestra-Signature": signature(
+            identity=identity,
+            tenant_id="tenant-a",
+            campaign_id="campaign-a",
+            request_id="request-1",
+            timestamp=timestamp,
+            nonce="nonce-api-conflict",
+            body=conflicting_raw,
+        ),
+    }
+    conflict = client.post(
+        "/api/v1/sales/scraper-results",
+        content=conflicting_raw,
+        headers=conflicting_headers,
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "IDEMPOTENCY_PAYLOAD_CONFLICT"
+    monkeypatch.setattr(settings, "sales_scraper_rate_limit_per_minute", 1)
+    sales.scraper_rate_windows.clear()
+    rate_headers = {
+        **headers,
+        "X-Codestra-Nonce": "nonce-api-rate",
+        "X-Codestra-Signature": signature(
+            identity=identity,
+            tenant_id="tenant-a",
+            campaign_id="campaign-a",
+            request_id="request-1",
+            timestamp=timestamp,
+            nonce="nonce-api-rate",
+            body=raw,
+        ),
+    }
+    identical = client.post(
+        "/api/v1/sales/scraper-results", content=raw, headers=rate_headers
+    )
+    assert identical.status_code == 200
+    assert identical.headers["X-Idempotent-Replay"] == "true"
+    throttled = client.post(
+        "/api/v1/sales/scraper-results", content=raw, headers=rate_headers
+    )
+    assert throttled.status_code == 429
+    assert throttled.headers["Retry-After"] == "60"
 
 
 def test_all_phase_one_flags_default_false():
@@ -214,3 +302,29 @@ def test_all_phase_one_flags_default_false():
         "outreach_enabled",
     ):
         assert getattr(configured, name) is False
+
+
+def test_scraper_ingress_requires_jwt_and_bounded_trusted_key_set(tmp_path):
+    key_directory = tmp_path / "scraper-keys"
+    key_directory.mkdir(mode=0o700)
+    for key_id in ("current", "next"):
+        key_file = key_directory / f"{key_id}.key"
+        key_file.write_bytes(key_id.encode().ljust(32, b"x"))
+        key_file.chmod(0o600)
+    configured = Settings(
+        scraper_result_ingest_enabled=True,
+        sales_scraper_identity="scraper-c",
+        sales_scraper_tenant_id="tenant-a",
+        sales_scraper_campaign_allowlist="campaign-a",
+        sales_scraper_hmac_key_ids="current,next",
+        sales_scraper_hmac_keys_directory=str(key_directory),
+        sales_scraper_jwt_issuer="https://auth.example.invalid/realms/codestra",
+        sales_scraper_jwt_audience="codestra-scraper-ingress",
+        sales_scraper_jwt_jwks_url="https://auth.example.invalid/certs",
+        sales_scraper_jwt_authorized_parties="scraper-c",
+    )
+    configured.validate_safety()
+    assert set(configured.sales_scraper_hmac_keys) == {"current", "next"}
+    configured.sales_scraper_hmac_key_ids = "one,two,three,four"
+    with pytest.raises(ValueError, match="authentication is incomplete"):
+        configured.validate_safety()

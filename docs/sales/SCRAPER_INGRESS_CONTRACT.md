@@ -1,6 +1,6 @@
 # SCRAPER_INGRESS_CONTRACT
 
-Contract version: `codestra.scraper-ingress.v1-rc1`
+Contract version: `codestra.scraper-ingress.v1-rc2`
 
 Status: release candidate; external delivery remains disabled until the exact
 protected-main commit, credential enrollment, migration, and Server A canary
@@ -32,15 +32,31 @@ evidence are attached.
 
 ## Authentication and tenant binding
 
-The receiver uses the approved raw-body signing pattern. There is no anonymous,
-development, or shared bearer fallback.
+The receiver requires both a short-lived Keycloak service JWT and the approved
+raw-body signing pattern. There is no anonymous, development, HMAC-v1, or
+shared static-bearer fallback.
+
+JWT requirements:
+
+- issuer: `https://auth.codestra.agency/realms/codestra`
+- audience: `codestra-scraper-ingress`
+- scope: `scraper.events.write`
+- realm role: `scraper-publisher`
+- authorized party: the exact enrolled scraper service client
+- `tenant_id`, `environment`, and `campaigns` claims must match the signed body,
+  Server A runtime environment, and configured scraper allowlist
+- algorithm: `RS256`; `exp`, `iat`, `iss`, and `aud` are mandatory
+- validation keys: the internal Keycloak JWKS endpoint; keys are cached for at
+  most five minutes and unknown signing keys fail closed
 
 Required headers:
 
 ```text
 Idempotency-Key
+Authorization: Bearer <short-lived Keycloak client-credentials JWT>
 X-Codestra-Scraper-ID
-X-Codestra-Signature-Version: hmac-sha256-v1
+X-Codestra-Key-ID
+X-Codestra-Signature-Version: hmac-sha256-v2
 X-Codestra-Timestamp: Unix seconds
 X-Codestra-Nonce
 X-Codestra-Content-SHA256
@@ -48,10 +64,11 @@ X-Codestra-Signature
 X-Correlation-ID
 ```
 
-The HMAC-SHA256 input is eight newline-separated UTF-8 values:
+The HMAC-SHA256 input is nine newline-separated UTF-8 values:
 
 ```text
-hmac-sha256-v1
+hmac-sha256-v2
+<key-id>
 <scraper-id>
 <tenant-id>
 <campaign-id>
@@ -61,9 +78,11 @@ hmac-sha256-v1
 <lowercase SHA-256 of exact body bytes>
 ```
 
-The selected key is the protected key enrolled for `X-Codestra-Scraper-ID`.
-The service identity is bound to an exact tenant and campaign allowlist. An
-unknown identity/key, cross-tenant request, or out-of-scope campaign is rejected.
+The selected key must be one of at most three protected keys enrolled in the
+trusted-key directory for `X-Codestra-Scraper-ID`; this permits a bounded
+overlapping rotation window. The key ID is signed and an unknown, duplicated,
+unsafe, or absent key fails closed. The JWT authorized party, scraper header,
+configured service identity, tenant, environment, and campaign must agree.
 The timestamp acceptance window is 300 seconds. Every HTTP attempt uses a fresh
 cryptographically random nonce and signature. Nonces are durably single-use;
 the same idempotency key and exact body may be retried with a fresh nonce.
@@ -77,7 +96,7 @@ process and never through this contract or an evidence bundle.
 - `200`: accepted and durably committed, or an identical idempotent duplicate;
   inspect `X-Idempotent-Replay` (`false` or `true`)
 - `409`: the idempotency key was reused with a different payload; permanent
-- `401`/`403`: authentication, replay, tenant, or scope rejection; permanent
+- `401`/`403`: JWT, HMAC, replay, tenant, role, or scope rejection; permanent
 - `413`/`415`/`422`: size, media-type, or schema rejection; permanent
 - `429`: throttled; honor `Retry-After` when present and use exponential backoff
 - `503`: authoritative persistence unavailable; retry with bounded exponential
@@ -92,6 +111,8 @@ Redis is recoverable coordination and cannot turn a failed commit into success.
 Recommended retry policy: at most 8 attempts, exponential backoff with jitter,
 1 second base, 60 second cap. Preserve exact body bytes and the idempotency key;
 generate a new nonce, timestamp, and signature for every attempt.
+The default authenticated identity-and-tenant limit is 60 requests per minute;
+`429` responses include `Retry-After: 60`.
 
 ## Canary and automation boundary
 

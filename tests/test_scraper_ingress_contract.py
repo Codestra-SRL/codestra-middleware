@@ -23,5 +23,24 @@ def test_ingress_contract_is_secret_free_and_fail_closed() -> None:
     assert SCHEMA_SHA256 in contract
     assert "PENDING_PROTECTED_MAIN_MERGE" in contract
     assert "ZZ_CDX_SCRAPER_CANARY_" in contract
+    assert "codestra.scraper-ingress.v1-rc2" in contract
+    assert "https://auth.codestra.agency/realms/codestra" in contract
+    assert "scraper.events.write" in contract
+    assert "scraper-publisher" in contract
+    assert "hmac-sha256-v2" in contract
+    assert "X-Codestra-Key-ID" in contract
+    assert "hmac-sha256-v1" not in contract
     assert "Direct access to Odoo" in contract
     assert "password=" not in contract.lower()
+
+
+def test_ingress_deployment_overlay_is_disabled_and_credential_free() -> None:
+    overlay = Path("deploy/scraper/compose.ingress.yaml").read_text()
+    assert "SCRAPER_RESULT_INGEST_ENABLED:-false" in overlay
+    assert "codestra-scraper-ingress" in overlay
+    assert "scraper.events.write" in overlay
+    assert "scraper-publisher" in overlay
+    assert "/run/secrets/scraper-ingress/hmac-keys" in overlay
+    assert "read_only: true" in overlay
+    assert "password" not in overlay.lower()
+    assert "client_secret" not in overlay.lower()

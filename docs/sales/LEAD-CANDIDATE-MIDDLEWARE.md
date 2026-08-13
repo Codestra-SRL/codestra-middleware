@@ -117,8 +117,10 @@ signature material, complete Odoo records, and unnecessary payload data.
 
 ## Scraper authentication
 
-Scraper ingestion verifies HMAC-SHA256 over the exact raw body with timestamp,
-nonce/event identity, and key identity. It applies a clock-skew window,
+Scraper ingestion requires a Keycloak service JWT with exact issuer, audience,
+authorized party, role, scope, environment, tenant, and campaign claims, then
+verifies HMAC-SHA256 v2 over the exact raw body with timestamp, nonce/event
+identity, and signed key identity. It applies a clock-skew window,
 constant-time comparison, durable single-use replay protection, key rotation,
 scraper/tenant/campaign binding, contract version validation, and request-size
 limits. Missing, altered, expired, future, replayed, unknown-key, or cross-scope
