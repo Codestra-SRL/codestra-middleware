@@ -45,6 +45,7 @@ class SalesRepository:
         engine: SalesLeadService,
         *,
         source_identity: str = "middleware-api",
+        persist_scraper_inbox: bool = False,
     ) -> tuple[LeadResolution, bool]:
         key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
         payload_hash = canonical_hash(candidate)
@@ -59,6 +60,7 @@ class SalesRepository:
                 payload_hash,
                 operation,
                 source_identity,
+                persist_scraper_inbox,
             )
         except SQLAlchemyError as exc:
             raise SalesDependencyUnavailable(
@@ -75,6 +77,7 @@ class SalesRepository:
         payload_hash: str,
         operation: str,
         source_identity: str,
+        persist_scraper_inbox: bool,
     ) -> tuple[LeadResolution, bool]:
         async with self.sessions() as session:
             await session.execute(
@@ -114,6 +117,7 @@ class SalesRepository:
                 payload_hash,
                 key_hash,
                 source_identity=source_identity,
+                persist_scraper_inbox=persist_scraper_inbox,
             )
             await session.commit()
             return resolution, False
@@ -127,6 +131,7 @@ class SalesRepository:
         key_hash: str,
         *,
         source_identity: str,
+        persist_scraper_inbox: bool,
     ) -> None:
         phone = normalized_phone(
             candidate.contact.business_phone, candidate.contact.country_code
@@ -243,32 +248,33 @@ class SalesRepository:
             if resolution.decision == Decision.ACCEPTED
             else "rejected"
         )
-        await session.execute(
-            text(
-                "INSERT INTO sales_scraper_inbox "
-                "(id,event_id,schema_version,tenant_id,source_identity,campaign_id,"
-                "payload_hash,idempotency_key_hash,correlation_id,status,rejection_code) "
-                "VALUES (:id,:event,:schema,:tenant,:source,:campaign,:payload_hash,"
-                ":key_hash,:correlation,:status,:rejection_code)"
-            ),
-            {
-                "id": uuid4(),
-                "event": candidate.source.request_id,
-                "schema": candidate.schema_version,
-                "tenant": candidate.tenant_id,
-                "source": source_identity,
-                "campaign": candidate.campaign_id,
-                "payload_hash": payload_hash,
-                "key_hash": key_hash,
-                "correlation": resolution.correlation_id,
-                "status": inbox_status,
-                "rejection_code": (
-                    None
-                    if inbox_status in {"eligible", "queued"}
-                    else resolution.decision_code
+        if persist_scraper_inbox:
+            await session.execute(
+                text(
+                    "INSERT INTO sales_scraper_inbox "
+                    "(id,event_id,schema_version,tenant_id,source_identity,campaign_id,"
+                    "payload_hash,idempotency_key_hash,correlation_id,status,rejection_code) "
+                    "VALUES (:id,:event,:schema,:tenant,:source,:campaign,:payload_hash,"
+                    ":key_hash,:correlation,:status,:rejection_code)"
                 ),
-            },
-        )
+                {
+                    "id": uuid4(),
+                    "event": candidate.source.request_id,
+                    "schema": candidate.schema_version,
+                    "tenant": candidate.tenant_id,
+                    "source": source_identity,
+                    "campaign": candidate.campaign_id,
+                    "payload_hash": payload_hash,
+                    "key_hash": key_hash,
+                    "correlation": resolution.correlation_id,
+                    "status": inbox_status,
+                    "rejection_code": (
+                        None
+                        if inbox_status in {"eligible", "queued"}
+                        else resolution.decision_code
+                    ),
+                },
+            )
         redacted = {
             "tenant_id": candidate.tenant_id,
             "campaign_id": candidate.campaign_id,

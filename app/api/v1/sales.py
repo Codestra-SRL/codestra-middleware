@@ -199,6 +199,7 @@ async def scraper_results(
                 correlation_id,
                 service,
                 source_identity=scraper_id,
+                persist_scraper_inbox=True,
             )
             if repository
             else service.resolve(candidate, idempotency_key, correlation_id)
