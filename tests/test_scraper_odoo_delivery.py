@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.odoo.lead_automation import PermanentApplyError
 from app.core.reliability import RetryPolicy
+from app.entrypoints import scraper_odoo_delivery_worker
 from app.sales.queue import ScraperRedisQueue
 from app.workers import scraper_odoo_delivery
 from app.workers.outbox import record_failure
@@ -153,3 +154,41 @@ async def test_disabled_worker_loop_does_not_consume_signals(monkeypatch) -> Non
 
     with pytest.raises(_StopLoop):
         await scraper_odoo_delivery.run_forever()
+
+
+def test_worker_exposes_internal_metrics_before_processing(monkeypatch) -> None:
+    calls: list[object] = []
+
+    async def no_op_worker() -> None:
+        return None
+
+    def run(coroutine) -> None:
+        calls.append("run")
+        coroutine.close()
+
+    monkeypatch.setattr(
+        scraper_odoo_delivery_worker,
+        "configure_logging",
+        lambda: calls.append("logging"),
+    )
+    monkeypatch.setattr(
+        scraper_odoo_delivery_worker,
+        "validate_runtime",
+        lambda service: calls.append(("validate", service)),
+    )
+    monkeypatch.setattr(
+        scraper_odoo_delivery_worker,
+        "start_http_server",
+        lambda port, addr: calls.append(("metrics", port, addr)),
+    )
+    monkeypatch.setattr(scraper_odoo_delivery_worker, "run_forever", no_op_worker)
+    monkeypatch.setattr(scraper_odoo_delivery_worker.asyncio, "run", run)
+
+    scraper_odoo_delivery_worker.main()
+
+    assert calls == [
+        "logging",
+        ("validate", "middleware-scraper-odoo-delivery"),
+        ("metrics", scraper_odoo_delivery_worker.METRICS_PORT, "0.0.0.0"),
+        "run",
+    ]
