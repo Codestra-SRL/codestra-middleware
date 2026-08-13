@@ -277,8 +277,21 @@ def test_valid_invalid_and_replayed_scraper_webhook(monkeypatch, tmp_path):
     )
     assert identical.status_code == 200
     assert identical.headers["X-Idempotent-Replay"] == "true"
+    throttled_headers = {
+        **headers,
+        "X-Codestra-Nonce": "nonce-api-rate-2",
+        "X-Codestra-Signature": signature(
+            identity=identity,
+            tenant_id="tenant-a",
+            campaign_id="campaign-a",
+            request_id="request-1",
+            timestamp=timestamp,
+            nonce="nonce-api-rate-2",
+            body=raw,
+        ),
+    }
     throttled = client.post(
-        "/api/v1/sales/scraper-results", content=raw, headers=rate_headers
+        "/api/v1/sales/scraper-results", content=raw, headers=throttled_headers
     )
     assert throttled.status_code == 429
     assert throttled.headers["Retry-After"] == "60"
