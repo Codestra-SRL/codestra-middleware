@@ -8,12 +8,10 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-
 revision = "0043_scraper_durable_inbox"
 down_revision = "0042_merge_gateway_trust"
 branch_labels = None
 depends_on = None
-
 
 STATES = (
     "received",
