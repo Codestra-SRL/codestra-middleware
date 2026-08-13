@@ -9,6 +9,7 @@ import httpx
 from sqlalchemy import text
 
 from app.adapters.odoo.lead_automation import (
+    OdooApplyError,
     OdooLeadApplyClient,
     TransportResponse,
 )
@@ -31,6 +32,11 @@ UPDATE outbox_event AS item SET status='processing', locked_at=now(),
 FROM claimable WHERE item.id=claimable.id
 RETURNING item.id,item.payload,item.attempts
 """)
+
+
+def _permanent_failure(exc: Exception) -> bool:
+    """Contract, authentication, and acknowledgement failures must not retry."""
+    return isinstance(exc, OdooApplyError)
 
 
 def _transport(
@@ -69,6 +75,7 @@ async def deliver_once(*, limit: int = 8, lease_seconds: int = 60) -> int:
                     int(row["attempts"]),
                     type(exc).__name__,
                     RetryPolicy(max_attempts=8, base_seconds=1, max_seconds=60),
+                    permanent=_permanent_failure(exc),
                 )
         else:
             async with SessionFactory() as session:
