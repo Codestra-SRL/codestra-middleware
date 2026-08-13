@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app.core.config import settings
+from app.metrics import AUTH_FAILURES, IDEMPOTENCY_CONFLICTS, IDEMPOTENT_REPLAYS
 from app.sales.auth import (
     NonceLedger,
     ScraperAuthenticationError,
@@ -172,6 +173,7 @@ async def scraper_results(
             nonces=scraper_nonces,
         )
     except ScraperAuthenticationError as exc:
+        AUTH_FAILURES.labels(kind=f"scraper_{str(exc).lower()}").inc()
         return _error(str(exc), "scraper authentication failed", correlation_id, 401)
     if repository:
         try:
@@ -187,6 +189,7 @@ async def scraper_results(
                 exc.retryable,
             )
         if not consumed:
+            AUTH_FAILURES.labels(kind="scraper_replayed_nonce").inc()
             return _error(
                 "REPLAYED_NONCE", "scraper authentication failed", correlation_id, 401
             )
@@ -212,6 +215,8 @@ async def scraper_results(
             422,
         )
     except SalesError as exc:
+        if exc.code == "IDEMPOTENCY_PAYLOAD_CONFLICT":
+            IDEMPOTENCY_CONFLICTS.inc()
         return _error(
             exc.code,
             "scraper result was rejected",
@@ -219,6 +224,8 @@ async def scraper_results(
             exc.status,
             exc.retryable,
         )
+    if replay:
+        IDEMPOTENT_REPLAYS.inc()
     return JSONResponse(
         result.model_dump(mode="json"),
         headers={

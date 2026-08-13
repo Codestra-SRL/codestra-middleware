@@ -18,6 +18,7 @@ from app.adapters.odoo.lead_automation import (
 from app.core.config import settings
 from app.core.reliability import RetryPolicy
 from app.db.session import SessionFactory
+from app.metrics import DLQ_DEPTH, OLDEST_AGE, QUEUE_DEPTH, REDIS_ERRORS
 from app.sales.queue import ScraperRedisQueue
 from app.workers.outbox import acknowledge, record_failure, recover_expired_leases
 
@@ -42,6 +43,12 @@ WHERE topic='sales.lead.odoo.apply'
   AND status IN ('pending','retry')
   AND (next_attempt_at IS NULL OR next_attempt_at <= now())
 ORDER BY created_at,id LIMIT :limit
+""")
+
+SCRAPER_METRICS = text("""
+SELECT status,count(*) AS count,
+       EXTRACT(EPOCH FROM (now()-min(received_at)))::bigint AS oldest
+FROM sales_scraper_inbox GROUP BY status
 """)
 
 INBOX_RESULT = text("""
@@ -142,6 +149,17 @@ async def deliver_once(*, limit: int = 8, lease_seconds: int = 60) -> int:
 async def recover_and_signal(queue: ScraperRedisQueue, *, limit: int = 100) -> int:
     async with SessionFactory() as session:
         rows = (await session.execute(SIGNALABLE, {"limit": limit})).mappings().all()
+        metrics = (await session.execute(SCRAPER_METRICS)).mappings().all()
+    oldest = 0
+    dead_letters = 0
+    for row in metrics:
+        QUEUE_DEPTH.labels(target="scraper", status=row["status"]).set(row["count"])
+        if row["status"] in {"received", "eligible", "queued", "processing", "retry_wait"}:
+            oldest = max(oldest, int(row["oldest"] or 0))
+        if row["status"] == "dead_letter":
+            dead_letters = int(row["count"])
+    OLDEST_AGE.labels(target="scraper").set(oldest)
+    DLQ_DEPTH.labels(target="scraper").set(dead_letters)
     signaled = 0
     for row in rows:
         signaled += int(await queue.enqueue(row["id"], row["correlation_id"]))
@@ -158,6 +176,7 @@ async def run_forever() -> None:
                 signal = await queue.claim(timeout_seconds=1)
             except RedisError:
                 # PostgreSQL scanning is the safe recovery path during Redis loss.
+                REDIS_ERRORS.labels(operation="scraper_signal").inc()
                 signal = {"degraded": True}
             if signal is not None:
                 await deliver_once()
