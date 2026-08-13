@@ -1,12 +1,19 @@
-# Canonical Server B -> Server A listener. Import this as a complete site block.
-# Event routing is present but fail-closed until its independent canary gate is set.
+# Canonical Server B -> Server A listener for the dedicated private proxy.
+{
+	admin off
+}
+
 middleware.internal.codestra.agency {
-	bind 10.40.0.1
 	tls /run/secrets/middleware-private-ingress/server.crt /run/secrets/middleware-private-ingress/server.key {
 		client_auth {
 			mode require_and_verify
 			trust_pool file /run/secrets/middleware-private-ingress/client-ca.crt
 		}
+	}
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
 	}
 	route {
 		@server_b_readiness {
@@ -43,5 +50,11 @@ middleware.internal.codestra.agency {
 			}
 		}
 		respond 403
+	}
+	log {
+		output file /var/log/caddy/private-vicidial-access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
 	}
 }
