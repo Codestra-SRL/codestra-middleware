@@ -338,6 +338,10 @@ def test_scraper_ingress_requires_jwt_and_bounded_trusted_key_set(tmp_path):
     )
     configured.validate_safety()
     assert set(configured.sales_scraper_hmac_keys) == {"current", "next"}
+    (key_directory / "current.key").chmod(0o644)
+    with pytest.raises(ValueError, match="unavailable or unsafe"):
+        configured.validate_safety()
+    (key_directory / "current.key").chmod(0o600)
     configured.sales_scraper_hmac_key_ids = "one,two,three,four"
     with pytest.raises(ValueError, match="authentication is incomplete"):
         configured.validate_safety()

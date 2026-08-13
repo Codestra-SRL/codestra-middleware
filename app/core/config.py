@@ -592,6 +592,7 @@ class Settings(BaseSettings):
             or directory.is_symlink()
             or not directory.is_dir()
             or directory.stat().st_mode & 0o077
+            or directory.stat().st_uid != os.geteuid()
         ):
             raise ValueError("sales scraper HMAC key directory is unavailable or unsafe")
         key_ids = [
@@ -608,6 +609,8 @@ class Settings(BaseSettings):
             path = self._protected_secret_path(
                 str(directory / f"{key_id}.key"), "sales scraper HMAC"
             )
+            if path.stat().st_uid != os.geteuid():
+                raise ValueError("sales scraper HMAC secret has an unsafe owner")
             value = path.read_bytes().strip()
             if len(value) < 32:
                 raise ValueError("sales scraper HMAC secret is too short")
