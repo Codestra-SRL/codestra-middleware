@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import yaml
-
 
 def test_scraper_alerts_have_threshold_owner_and_runbook() -> None:
     alerts = Path("monitoring/middleware-alerts.yaml").read_text()
@@ -19,8 +17,7 @@ def test_scraper_alerts_have_threshold_owner_and_runbook() -> None:
 
 
 def test_scraper_alert_transition_matrix_is_present() -> None:
-    matrix = yaml.safe_load(Path("monitoring/scraper-alerts.test.yaml").read_text())
-    cases = matrix["tests"][0]["alert_rule_test"]
+    matrix = Path("monitoring/scraper-alerts.test.yaml").read_text()
     for name in (
         "CodestraScraperInboxBacklog",
         "CodestraScraperOldestPending",
@@ -28,6 +25,10 @@ def test_scraper_alert_transition_matrix_is_present() -> None:
         "CodestraScraperAuthenticationFailures",
         "CodestraScraperRedisErrors",
     ):
-        matching = [case for case in cases if case["alertname"] == name]
-        assert any(case["exp_alerts"] for case in matching), name
-        assert any(not case["exp_alerts"] for case in matching), name
+        matching = [
+            block.split("- eval_time:", 1)[0]
+            for block in matrix.split(f"alertname: {name}")[1:]
+        ]
+        assert len(matching) == 2, name
+        assert any("exp_alerts:\n          -" in block for block in matching), name
+        assert any("exp_alerts: []" in block for block in matching), name
