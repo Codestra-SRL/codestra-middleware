@@ -69,6 +69,10 @@ def fixture(tmp_path: Path) -> dict[str, Path]:
     for name, path in files.items():
         if name != "matrix.csv":
             path.write_text(json.dumps({"name": name}), encoding="utf-8")
+    files["manifest.json"].write_text(
+        json.dumps({"pr_number": 214, "head_sha": HEAD, "image_digest": DIGEST}),
+        encoding="utf-8",
+    )
     with files["matrix.csv"].open("w", newline="", encoding="utf-8") as stream:
         write_test_vulnerability_matrix(stream)
     return files
@@ -99,7 +103,42 @@ def test_exact_same_run_decision_passes(tmp_path: Path) -> None:
     common, files, output, _ = command(tmp_path)
     assert validate(common, output).returncode == 0
     decision = json.loads(output.read_text(encoding="utf-8"))
+    assert decision["pr_number"] == 214
     assert decision["matrix_sha256"] == hashlib.sha256(files["matrix.csv"].read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize(
+    "manifest_update,error",
+    [
+        ({"pr_number": 0}, "PR number"),
+        ({"head_sha": "c" * 40}, "source SHA"),
+        ({"image_digest": "sha256:" + "d" * 64}, "image digest"),
+    ],
+)
+def test_generator_rejects_invalid_manifest_binding(
+    tmp_path: Path, manifest_update: dict[str, object], error: str
+) -> None:
+    files = fixture(tmp_path)
+    manifest = json.loads(files["manifest.json"].read_text(encoding="utf-8"))
+    manifest.update(manifest_update)
+    files["manifest.json"].write_text(json.dumps(manifest), encoding="utf-8")
+    output = tmp_path / "decision.json"
+    authority_sha = hashlib.sha256(AUTHORITY.read_bytes()).hexdigest()
+    result = subprocess.run(
+        [
+            "python3", str(GENERATOR), "--source-sha", HEAD,
+            "--image-digest", DIGEST, "--run-id", "12345", "--run-attempt", "1",
+            "--authority", str(AUTHORITY), "--authority-sha256", authority_sha,
+            "--authority-run-id", "9876", "--authority-artifact",
+            "security-owner-authority-9876-1", "--manifest", str(files["manifest.json"]),
+            "--matrix", str(files["matrix.csv"]), "--sbom", str(files["sbom.json"]),
+            "--trivy", str(files["trivy.json"]), "--grype", str(files["grype.json"]),
+            "--provenance", str(files["provenance.json"]), "--output", str(output),
+        ],
+        check=False, capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert error in result.stderr
 
 
 def test_default_vulnerability_matrix_has_two_unique_runtime_rows(tmp_path: Path) -> None:
