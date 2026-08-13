@@ -40,7 +40,7 @@ def test_fail_closed_defaults_and_private_proxy_contract():
     assert config.breero_odoo_delivery_enabled is False
     source = Path("deploy/breero/Caddyfile.private-route").read_text()
     assert PATH in source
-    assert "remote_ip 49.12.145.107" in source
+    assert "remote_ip 10.40.0.3" in source
     assert "header_up -X-Codestra-Verified-Source-IP" in source
     identities = json.loads(Path("deploy/breero/identities.example.json").read_text())
     assert identities and all(item["enabled"] is False for item in identities.values())
