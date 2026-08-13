@@ -50,4 +50,3 @@ class ScraperRedisQueue:
         signal = json.loads(item[1])
         await self.redis.delete(f"{self.signal_prefix}:{signal['outbox_id']}")
         return signal
-

@@ -122,4 +122,3 @@ def downgrade() -> None:
     for table in TABLES:
         op.execute(f"DROP TABLE {table} CASCADE")
     op.execute("DROP FUNCTION deny_social_append_only_mutation()")
-

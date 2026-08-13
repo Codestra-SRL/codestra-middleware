@@ -19,4 +19,3 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Lineage-only merge; downgrading restores both parent heads."""
-

@@ -150,4 +150,3 @@ def downgrade() -> None:
     op.execute("DROP TABLE website_submission")
     op.execute("DROP TABLE website_site_credential")
     op.execute("DROP TABLE website_site")
-

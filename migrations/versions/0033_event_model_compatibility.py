@@ -72,4 +72,3 @@ def downgrade() -> None:
     op.execute("ALTER TABLE event_inbox DROP COLUMN idempotency_key")
     op.execute("ALTER TABLE event_inbox DROP COLUMN schema_version")
     op.execute("ALTER TABLE event_inbox DROP COLUMN organization_id")
-
