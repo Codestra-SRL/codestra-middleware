@@ -272,6 +272,13 @@ class Settings(BaseSettings):
     breero_rate_limit_per_minute: int = 30
     breero_signature_ttl_seconds: int = 300
     breero_request_max_bytes: int = 32768
+    breero_odoo_url: str = ""
+    breero_odoo_database: str = ""
+    breero_odoo_username: str = ""
+    breero_odoo_api_key_file: str = ""
+    breero_worker_batch_size: int = 8
+    breero_worker_lease_seconds: int = 60
+    breero_worker_max_attempts: int = 8
     readiness_server_identity: str = "server-a-middleware"
     readiness_approved_source_ip: str = "10.40.0.2"
     readiness_publisher_key_id: str = ""
