@@ -125,8 +125,9 @@ canary or replay.
 
 ## Release binding
 
-- Release commit: `PENDING_PROTECTED_MAIN_MERGE`
-- Migration: `0043_scraper_durable_inbox` (release candidate; not deployed)
+- Receiver release commit: `4780bd72d1c574af4aed62d374ec50b208e8ea4c`
+- Receiver image: `codestra/middleware@sha256:dc97c48f3a29690635bf28de9f3d2562fac2dadb74b8744ea6e99c1bd4ffcda1`
+- Migration: `0043_scraper_durable_inbox` (deployed fail-closed 2026-08-13)
 - Effective date: `PENDING_SERVER_A_CANARY_PASS`
 - Rollback: disable `SCRAPER_RESULT_INGEST_ENABLED`, freeze canary processing,
   restore the prior immutable image/config, and reconcile accepted canary IDs

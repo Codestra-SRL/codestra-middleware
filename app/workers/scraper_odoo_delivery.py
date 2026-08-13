@@ -65,6 +65,17 @@ UPDATE sales_scraper_inbox SET status='processing',updated_at=now()
 WHERE correlation_id=:correlation_id AND status IN ('queued','retry_wait')
 """)
 
+INBOX_STATES = (
+    "received",
+    "eligible",
+    "rejected",
+    "queued",
+    "processing",
+    "retry_wait",
+    "delivered",
+    "dead_letter",
+)
+
 
 def _permanent_failure(exc: Exception) -> bool:
     """Contract, authentication, and acknowledgement failures must not retry."""
@@ -150,16 +161,21 @@ async def recover_and_signal(queue: ScraperRedisQueue, *, limit: int = 100) -> i
     async with SessionFactory() as session:
         rows = (await session.execute(SIGNALABLE, {"limit": limit})).mappings().all()
         metrics = (await session.execute(SCRAPER_METRICS)).mappings().all()
+    counts = dict.fromkeys(INBOX_STATES, 0)
     oldest = 0
     dead_letters = 0
     for row in metrics:
-        QUEUE_DEPTH.labels(target="scraper", status=row["status"]).set(row["count"])
+        counts[row["status"]] = int(row["count"])
         if row["status"] in {"received", "eligible", "queued", "processing", "retry_wait"}:
             oldest = max(oldest, int(row["oldest"] or 0))
         if row["status"] == "dead_letter":
             dead_letters = int(row["count"])
+    for status, count in counts.items():
+        QUEUE_DEPTH.labels(target="scraper", status=status).set(count)
     OLDEST_AGE.labels(target="scraper").set(oldest)
     DLQ_DEPTH.labels(target="scraper").set(dead_letters)
+    if not settings.scraper_middleware_delivery_enabled:
+        return 0
     signaled = 0
     for row in rows:
         signaled += int(await queue.enqueue(row["id"], row["correlation_id"]))
@@ -173,6 +189,9 @@ async def run_forever() -> None:
         while True:
             try:
                 await recover_and_signal(queue)
+                if not settings.scraper_middleware_delivery_enabled:
+                    await asyncio.sleep(1)
+                    continue
                 signal = await queue.claim(timeout_seconds=1)
             except RedisError:
                 # PostgreSQL scanning is the safe recovery path during Redis loss.
