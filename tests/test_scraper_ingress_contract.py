@@ -44,3 +44,22 @@ def test_ingress_deployment_overlay_is_disabled_and_credential_free() -> None:
     assert "read_only: true" in overlay
     assert "password" not in overlay.lower()
     assert "client_secret" not in overlay.lower()
+
+
+def test_scraper_keycloak_client_is_least_privilege_and_not_self_approved() -> None:
+    client = json.loads(Path("deploy/scraper/keycloak-service-client.json").read_text())
+    assert client["status"] == "ENROLLMENT_REQUIRED"
+    assert client["client_id"] == "codestra-scraper-production"
+    assert client["service_accounts_enabled"] is True
+    assert client["interactive_flows_enabled"] is False
+    assert client["direct_access_grants_enabled"] is False
+    assert client["public_client"] is False
+    assert client["audience"] == "codestra-scraper-ingress"
+    assert client["realm_roles"] == ["scraper-publisher"]
+    assert client["scopes"] == ["scraper.events.write"]
+    assert client["claims"] == {
+        "environment": "production",
+        "tenant_id": "TENANT-SYNTHETIC",
+        "campaigns": ["TEST_SYN"],
+    }
+    assert set(client) & {"secret", "password", "token", "private_key"} == set()

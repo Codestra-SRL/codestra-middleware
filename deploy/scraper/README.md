@@ -15,6 +15,10 @@ Before setting `SCRAPER_RESULT_INGEST_ENABLED=true`, verify that the JWT client
 has audience `codestra-scraper-ingress`, scope `scraper.events.write`, realm
 role `scraper-publisher`, and exact environment, tenant, and campaign claims.
 The configured authorized party must equal `SALES_SCRAPER_IDENTITY`.
+`keycloak-service-client.json` is the non-secret desired-state declaration; its
+`ENROLLMENT_REQUIRED` status is a hard external gate. It must not be changed to
+an enrolled/approved state unless the authenticated Keycloak administration
+path and protected credential reference have both been verified.
 
 Rollback begins by setting `SCRAPER_RESULT_INGEST_ENABLED=false` and recreating
 only `middleware-integration-api`. Preserve the PostgreSQL inbox and audit rows;
