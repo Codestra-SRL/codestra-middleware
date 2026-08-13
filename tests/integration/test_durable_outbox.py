@@ -41,7 +41,10 @@ async def _scenario(database_url: str):
     try:
         async with factory() as session:
             await session.execute(
-                text("TRUNCATE outbox_event, event_inbox, reconciliation_checkpoint")
+                text(
+                    "TRUNCATE event_model_bridge, outbox_event, event_inbox, "
+                    "reconciliation_checkpoint"
+                )
             )
             await session.execute(
                 text("""INSERT INTO outbox_event
