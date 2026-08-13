@@ -1,0 +1,16 @@
+# Import only into the approved private listener after private routing exists.
+# The proxy must overwrite identity evidence; client-supplied values are removed.
+@breero_events {
+	remote_ip 49.12.145.107
+	method POST
+	path /api/v1/integrations/breero/events
+}
+handle @breero_events {
+	request_body {
+		max_size 32KB
+	}
+	reverse_proxy middleware-event-gateway:8095 {
+		header_up -X-Codestra-Verified-Source-IP
+		header_up X-Codestra-Verified-Source-IP "{http.request.remote.host}"
+	}
+}
