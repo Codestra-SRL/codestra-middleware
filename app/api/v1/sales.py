@@ -193,16 +193,6 @@ async def scraper_results(
         return _error(
             "SCRAPER_JWT_INVALID", "scraper authentication failed", correlation_id, 401
         )
-    if not _scraper_rate_allowed(scraper_id, tenant_id):
-        response = _error(
-            "SCRAPER_RATE_LIMITED",
-            "scraper request rate exceeded",
-            correlation_id,
-            429,
-            True,
-        )
-        response.headers["Retry-After"] = "60"
-        return response
     key_id = request.headers.get("X-Codestra-Key-ID", "")
     identity = None
     try:
@@ -240,6 +230,16 @@ async def scraper_results(
     except ScraperAuthenticationError as exc:
         AUTH_FAILURES.labels(kind=f"scraper_{str(exc).lower()}").inc()
         return _error(str(exc), "scraper authentication failed", correlation_id, 401)
+    if not _scraper_rate_allowed(scraper_id, tenant_id):
+        response = _error(
+            "SCRAPER_RATE_LIMITED",
+            "scraper request rate exceeded",
+            correlation_id,
+            429,
+            True,
+        )
+        response.headers["Retry-After"] = "60"
+        return response
     if repository:
         try:
             consumed = await repository.consume_scraper_nonce(
