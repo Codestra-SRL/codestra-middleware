@@ -21,7 +21,10 @@ def test_published_scraper_schema_checksum_matches_runtime_contract() -> None:
 def test_ingress_contract_is_secret_free_and_fail_closed() -> None:
     contract = Path("docs/sales/SCRAPER_INGRESS_CONTRACT.md").read_text()
     assert SCHEMA_SHA256 in contract
-    assert "PENDING_PROTECTED_MAIN_MERGE" in contract
+    assert "PENDING_PROTECTED_MAIN_MERGE" not in contract
+    assert "4780bd72d1c574af4aed62d374ec50b208e8ea4c" in contract
+    assert "dc97c48f3a29690635bf28de9f3d2562fac2dadb74b8744ea6e99c1bd4ffcda1" in contract
+    assert "deployed fail-closed 2026-08-13" in contract
     assert "ZZ_CDX_SCRAPER_CANARY_" in contract
     assert "codestra.scraper-ingress.v1-rc2" in contract
     assert "https://auth.codestra.agency/realms/codestra" in contract
