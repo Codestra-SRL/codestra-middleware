@@ -42,6 +42,10 @@ def test_fail_closed_defaults_and_private_proxy_contract():
     assert PATH in source
     assert "remote_ip 10.40.0.3" in source
     assert "header_up -X-Codestra-Verified-Source-IP" in source
+    listener = Path("deploy/readiness/Caddyfile.private-vicidial-ingress").read_text()
+    compose = Path("deploy/readiness/compose.private-vicidial-ingress.yaml").read_text()
+    assert "import /etc/caddy/snippets/breero-private-route" in listener
+    assert "/etc/caddy/snippets/breero-private-route:ro" in compose
     identities = json.loads(Path("deploy/breero/identities.example.json").read_text())
     assert identities and all(item["enabled"] is False for item in identities.values())
     assert all("secret" not in item for item in identities.values())
