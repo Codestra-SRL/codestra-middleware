@@ -94,10 +94,12 @@ async def record_failure(
     current_attempts: int,
     error: str,
     policy: RetryPolicy,
+    *,
+    permanent: bool = False,
 ) -> str:
     attempts = current_attempts + 1
     now = datetime.now(timezone.utc)
-    dead = attempts >= policy.max_attempts
+    dead = permanent or attempts >= policy.max_attempts
     status = "dead_letter" if dead else "retry"
     next_attempt_at = None if dead else now + timedelta(seconds=policy.delay(attempts))
     sanitized_error = str(redact({"last_error": error})["last_error"])

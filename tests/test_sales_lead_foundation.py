@@ -410,11 +410,16 @@ def test_scraper_signature_matrix_and_replay():
         candidate().model_dump(mode="json"), sort_keys=True, separators=(",", ":")
     ).encode()
     identity = ScraperIdentity(
-        "scraper-c", "tenant-a", frozenset({"campaign-a"}), b"s" * 32
+        "scraper-c",
+        "tenant-a",
+        frozenset({"campaign-a"}),
+        "scraper-key-2026-08",
+        b"s" * 32,
     )
     timestamp = "1786190400"
     kwargs = dict(
         identity=identity,
+        key_id="scraper-key-2026-08",
         scraper_id="scraper-c",
         tenant_id="tenant-a",
         campaign_id="campaign-a",
@@ -423,7 +428,7 @@ def test_scraper_signature_matrix_and_replay():
         nonce="nonce-1",
         body=body,
         supplied_hash=hashlib.sha256(body).hexdigest(),
-        version="hmac-sha256-v1",
+        version="hmac-sha256-v2",
         now=1786190400,
     )
     supplied = signature(
@@ -440,6 +445,11 @@ def test_scraper_signature_matrix_and_replay():
     with pytest.raises(ScraperAuthenticationError, match="REPLAYED_NONCE"):
         verify(**kwargs, supplied_signature=supplied, nonces=ledger)
     for changed in (
+        {
+            "key_id": "unknown-key",
+            "supplied_signature": supplied,
+            "nonces": NonceLedger(),
+        },
         {"supplied_signature": "0" * 64, "nonces": NonceLedger()},
         {
             "supplied_hash": "0" * 64,
@@ -452,10 +462,42 @@ def test_scraper_signature_matrix_and_replay():
             "nonces": NonceLedger(),
         },
         {"identity": None, "supplied_signature": supplied, "nonces": NonceLedger()},
+        {
+            "version": "hmac-sha256-v1",
+            "supplied_signature": supplied,
+            "nonces": NonceLedger(),
+        },
     ):
         current = {**kwargs, **changed}
         with pytest.raises(ScraperAuthenticationError):
             verify(**current)
+    rotated = ScraperIdentity(
+        "scraper-c",
+        "tenant-a",
+        frozenset({"campaign-a"}),
+        "scraper-key-next",
+        b"n" * 32,
+    )
+    rotated_kwargs = {
+        **kwargs,
+        "identity": rotated,
+        "key_id": rotated.key_id,
+        "nonce": "nonce-rotated",
+    }
+    rotated_signature = signature(
+        identity=rotated,
+        tenant_id="tenant-a",
+        campaign_id="campaign-a",
+        request_id="request-1",
+        timestamp=timestamp,
+        nonce="nonce-rotated",
+        body=body,
+    )
+    verify(
+        **rotated_kwargs,
+        supplied_signature=rotated_signature,
+        nonces=NonceLedger(),
+    )
 
 
 def test_provider_interfaces_are_disabled_and_never_fabricate():

@@ -45,6 +45,8 @@ def test_api_surfaces_are_narrow_and_cover_existing_routes():
     assert "/api/v1/telephony/results/{result_public_id}" in integration_paths
     assert "/api/v1/telephony/reconciliation/runs" in integration_paths
     assert "/api/v1/telephony/reconciliation/runs/{run_public_id}" in integration_paths
+    assert "/api/v1/lead-automation/results" in integration_paths
+    assert "/api/v1/lead-automation/events/{automation_event_id}" in integration_paths
     assert "/webphone-api/v1/session" in integration_paths
     assert route_paths(policy_engine.app) >= {
         "/api/v1/policy/decisions",
