@@ -134,9 +134,17 @@ async def receive_breero_event(request: Request, db: AsyncSession = Depends(get_
         raise HTTPException(409, "replayed nonce")
     receipt_id, outbox_id = f"BRR-{uuid4()}", uuid4()
     await db.execute(text("""INSERT INTO breero_event_receipt
-      (public_id,event_id,event_type,aggregate_id,aggregate_version,identity,tenant,environment,scope,payload_hash,idempotency_key_hash,payload,status,route_key)
-      VALUES (:p,:e,:t,:a,:v,:i,:tenant,:env,:scope,:ph,:ih,CAST(:payload AS jsonb),'queued',:route)"""),
-      {"p": receipt_id,"e":str(event.event_id),"t":event.event_type,"a":str(event.aggregate_id),"v":event.aggregate_version,"i":identity["identity"],"tenant":identity["tenant"],"env":identity["environment"],"scope":identity["scope"],"ph":payload_hash,"ih":idem_hash,"payload":json.dumps(event.payload),"route":ALLOWED_EVENTS[event.event_type]})
+      (public_id,event_id,event_type,schema_version,aggregate_id,aggregate_version,occurred_at,
+       idempotency_key,source,identity,tenant,environment,scope,payload_hash,idempotency_key_hash,
+       payload,status,route_key)
+      VALUES (:p,:e,:t,:sv,:a,:v,:occurred,:idem,:source,:i,:tenant,:env,:scope,:ph,:ih,
+              CAST(:payload AS jsonb),'queued',:route)"""),
+      {"p": receipt_id,"e":str(event.event_id),"t":event.event_type,"sv":event.schema_version,
+       "a":str(event.aggregate_id),"v":event.aggregate_version,"occurred":event.occurred_at,
+       "idem":event.idempotency_key,"source":event.source,"i":identity["identity"],
+       "tenant":identity["tenant"],"env":identity["environment"],"scope":identity["scope"],
+       "ph":payload_hash,"ih":idem_hash,"payload":json.dumps(event.payload),
+       "route":ALLOWED_EVENTS[event.event_type]})
     await db.execute(text("INSERT INTO breero_odoo_outbox(id,receipt_public_id,status,next_attempt_at) VALUES (:id,:r,'pending',now())"), {"id": outbox_id,"r":receipt_id})
     await db.execute(text("INSERT INTO breero_integration_audit(receipt_public_id,action,outcome,safe_detail) VALUES (:r,'event.accepted','accepted',:d)"), {"r":receipt_id,"d":ALLOWED_EVENTS[event.event_type]})
     await db.commit()

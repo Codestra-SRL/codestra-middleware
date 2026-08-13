@@ -19,6 +19,7 @@ services:
       - "10.40.0.1:443:443"
     volumes:
       - ${MIDDLEWARE_RELEASE_ROOT:?exact release root required}/deploy/readiness/Caddyfile.private-vicidial-ingress:/etc/caddy/Caddyfile:ro
+      - ${MIDDLEWARE_RELEASE_ROOT:?exact release root required}/deploy/breero/Caddyfile.private-route:/etc/caddy/snippets/breero-private-route:ro
       - /etc/codestra/pki/middleware-private-ingress:/run/secrets/middleware-private-ingress:ro
       - /opt/codestra/logs/caddy:/var/log/caddy
     tmpfs:

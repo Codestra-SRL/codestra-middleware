@@ -23,8 +23,9 @@ FROM c WHERE o.id=c.id RETURNING o.id,o.receipt_public_id,o.lease_token,o.attemp
 RECOVER = text("""UPDATE breero_odoo_outbox SET status='retry_wait',lease_token=NULL,
  lease_expires_at=NULL,next_attempt_at=now(),last_safe_error='lease_expired',updated_at=now()
 WHERE status='leased' AND lease_expires_at<=now() RETURNING id""")
-RECEIPT = text("""SELECT public_id,event_id,event_type,aggregate_id,aggregate_version,
- payload,route_key FROM breero_event_receipt WHERE public_id=:receipt""")
+RECEIPT = text("""SELECT public_id,event_id,event_type,schema_version,aggregate_id,
+ aggregate_version,occurred_at,idempotency_key,source,payload,route_key
+ FROM breero_event_receipt WHERE public_id=:receipt""")
 ACK = text("""UPDATE breero_odoo_outbox SET status='delivered',odoo_model=:model,
  odoo_record_id=:record,lease_token=NULL,lease_expires_at=NULL,last_safe_error=NULL,updated_at=now()
 WHERE id=:id AND status='leased' AND lease_token=:token RETURNING id""")
@@ -41,6 +42,24 @@ ROUTES = {
     "BREERO_PROVIDER_RECRUITMENT",
     "BREERO_LEAD_DISPUTES",
 }
+
+
+def build_odoo_envelope(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Reconstruct the complete, validated BREERO contract for Odoo."""
+    occurred_at = receipt["occurred_at"]
+    if hasattr(occurred_at, "isoformat"):
+        occurred_at = occurred_at.isoformat()
+    return {
+        "event_id": str(receipt["event_id"]),
+        "event_type": receipt["event_type"],
+        "schema_version": receipt["schema_version"],
+        "aggregate_id": str(receipt["aggregate_id"]),
+        "aggregate_version": receipt["aggregate_version"],
+        "occurred_at": occurred_at,
+        "idempotency_key": receipt["idempotency_key"],
+        "source": receipt["source"],
+        "payload": receipt["payload"],
+    }
 
 
 class DeliveryFailure(RuntimeError):
@@ -74,26 +93,49 @@ class RestrictedOdooTransport:
             )
         ):
             raise DeliveryFailure("odoo_not_configured", permanent=True)
-        rpc = {
-            "jsonrpc": "2.0",
-            "method": "call",
-            "id": idempotency_key,
-            "params": {
-                "service": "object",
-                "method": "execute_kw",
-                "args": [
-                    settings.breero_odoo_database,
-                    settings.breero_odoo_username,
-                    key,
-                    "breero.sync.event",
-                    "process_breero_event",
-                    [envelope],
-                    {},
-                ],
-            },
-        }
         try:
             async with httpx.AsyncClient(timeout=20) as client:
+                authentication = await client.post(
+                    settings.breero_odoo_url.rstrip("/") + "/jsonrpc",
+                    json={
+                        "jsonrpc": "2.0",
+                        "method": "call",
+                        "id": f"{idempotency_key}:authenticate",
+                        "params": {
+                            "service": "common",
+                            "method": "authenticate",
+                            "args": [
+                                settings.breero_odoo_database,
+                                settings.breero_odoo_username,
+                                key,
+                                {},
+                            ],
+                        },
+                    },
+                )
+                authentication.raise_for_status()
+                authentication_body = authentication.json()
+                uid = authentication_body.get("result")
+                if not isinstance(uid, int) or uid < 1:
+                    raise DeliveryFailure("odoo_authentication_rejected", permanent=True)
+                rpc = {
+                    "jsonrpc": "2.0",
+                    "method": "call",
+                    "id": idempotency_key,
+                    "params": {
+                        "service": "object",
+                        "method": "execute_kw",
+                        "args": [
+                            settings.breero_odoo_database,
+                            uid,
+                            key,
+                            "breero.sync.event",
+                            "process_breero_event",
+                            [envelope],
+                            {},
+                        ],
+                    },
+                }
                 response = await client.post(
                     settings.breero_odoo_url.rstrip("/") + "/jsonrpc", json=rpc
                 )
@@ -152,14 +194,7 @@ async def process(
     if receipt["route_key"] not in ROUTES:
         failure = DeliveryFailure("unknown_route", permanent=True)
     else:
-        envelope = {
-            "event_id": str(receipt["event_id"]),
-            "event_type": receipt["event_type"],
-            "aggregate_id": str(receipt["aggregate_id"]),
-            "aggregate_version": receipt["aggregate_version"],
-            "route_key": receipt["route_key"],
-            "payload": receipt["payload"],
-        }
+        envelope = build_odoo_envelope(dict(receipt))
         try:
             ack = await transport.deliver(envelope, receipt["public_id"])
         except DeliveryFailure as exc:
