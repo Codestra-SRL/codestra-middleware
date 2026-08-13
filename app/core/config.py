@@ -266,6 +266,16 @@ class Settings(BaseSettings):
     environment: str = "preproduction"
     publisher_hmac_keys_file: str = ""
     publisher_canary_enabled: bool = False
+    readiness_server_identity: str = "server-a-middleware"
+    readiness_approved_source_ip: str = "10.40.0.2"
+    readiness_publisher_key_id: str = ""
+    readiness_publisher_cert_sha256: str = ""
+    readiness_ttl_seconds: int = 60
+    readiness_clock_skew_seconds: int = 5
+    readiness_request_max_bytes: int = 4096
+    readiness_rate_limit_per_minute: int = 10
+    deployed_source_sha: str = ""
+    runtime_artifact_checksum: str = ""
     quarantine_encryption_key_file: str = ""
     quarantine_encryption_key_version: str = "v1"
     quarantine_fingerprint_secret_file: str = ""
