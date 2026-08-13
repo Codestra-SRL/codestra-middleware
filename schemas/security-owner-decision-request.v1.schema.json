@@ -22,7 +22,7 @@
     "decision_status": {"const": "pending_security_owner_environment_approval"},
     "company": {"const": "Codestra LLC"},
     "repository": {"const": "Codestra-SRL/codestra-middleware"},
-    "pr_number": {"const": 68},
+    "pr_number": {"type": "integer", "minimum": 1},
     "pr_head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "image_repository": {"const": "ghcr.io/codestra-srl/codestra-middleware"},
     "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},

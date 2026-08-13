@@ -37,6 +37,14 @@ def main() -> None:
     authority = json.loads(args.authority.read_text())
     if sha(args.authority) != args.authority_sha256:
         raise SystemExit("authority checksum mismatch")
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    pr_number = manifest.get("pr_number")
+    if not isinstance(pr_number, int) or isinstance(pr_number, bool) or pr_number < 1:
+        raise SystemExit("candidate manifest PR number is invalid")
+    if manifest.get("head_sha") != args.source_sha:
+        raise SystemExit("candidate manifest source SHA mismatch")
+    if manifest.get("image_digest") != args.image_digest:
+        raise SystemExit("candidate manifest image digest mismatch")
     rows = list(csv.DictReader(args.matrix.open(newline="", encoding="utf-8")))
     grouped: dict[tuple[str, str, str], list[dict[str, str]]] = {}
     for row in rows:
@@ -82,7 +90,7 @@ def main() -> None:
         "decision_status": "pending_security_owner_environment_approval",
         "company": "Codestra LLC",
         "repository": "Codestra-SRL/codestra-middleware",
-        "pr_number": 68,
+        "pr_number": pr_number,
         "pr_head_sha": args.source_sha,
         "image_repository": "ghcr.io/codestra-srl/codestra-middleware",
         "image_digest": args.image_digest,

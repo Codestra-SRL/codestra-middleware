@@ -72,6 +72,24 @@ def test_valid_repository_pr_head_and_digest_bindings_pass(tmp_path: Path) -> No
     assert validate(tmp_path, valid_manifest()).returncode == 0
 
 
+def test_schema_accepts_non_historical_positive_pr_number(tmp_path: Path) -> None:
+    manifest = valid_manifest()
+    manifest["pr_number"] = 214
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    result = subprocess.run(
+        [
+            "python3", str(VALIDATOR), "--manifest", str(path), "--schema", str(SCHEMA),
+            "--expected-company", "Codestra LLC", "--expected-repository",
+            "Codestra-SRL/codestra-middleware", "--expected-pr-number", "214",
+            "--expected-head-sha", HEAD, "--expected-image-repository",
+            "ghcr.io/codestra-srl/codestra-middleware", "--expected-image-digest", DIGEST,
+        ],
+        check=False, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+
+
 @pytest.mark.parametrize("field", ["repository", "pr_number"])
 def test_missing_identity_field_fails(tmp_path: Path, field: str) -> None:
     manifest = valid_manifest()
