@@ -200,6 +200,29 @@ services:
       POSTIZ_INTERNAL_BASE_URL: http://10.40.0.3:8443
       POSTIZ_API_KEY_FILE: /run/secrets/postiz_api_key
 
+  middleware-scraper-odoo-delivery-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.scraper_odoo_delivery_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-scraper-odoo-delivery
+      SCRAPER_MIDDLEWARE_DELIVERY_ENABLED: "false"
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+    expose: ["8095"]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8095/metrics', timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   middleware-policy-engine:
     <<: *runtime
     command: [python, -m, app.entrypoints.policy_engine]
