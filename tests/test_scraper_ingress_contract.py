@@ -63,3 +63,16 @@ def test_scraper_keycloak_client_is_least_privilege_and_not_self_approved() -> N
         "campaigns": ["TEST_SYN"],
     }
     assert set(client) & {"secret", "password", "token", "private_key"} == set()
+
+
+def test_runtime_declares_disabled_hardened_scraper_worker_metrics() -> None:
+    runtime = Path("deploy/compose.runtime.yaml").read_text()
+    block = runtime.split(
+        "  middleware-scraper-odoo-delivery-worker:", 1
+    )[1].split("\n  middleware-policy-engine:", 1)[0]
+    assert "app.entrypoints.scraper_odoo_delivery_worker" in block
+    assert 'SCRAPER_MIDDLEWARE_DELIVERY_ENABLED: "false"' in block
+    assert "middleware-integration-api-database-url" in block
+    assert "http://127.0.0.1:8095/metrics" in block
+    assert "lead_automation_hmac" not in block
+    assert "n8n" not in block.lower()
