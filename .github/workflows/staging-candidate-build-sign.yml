@@ -81,6 +81,7 @@ jobs:
       contents: read
       packages: write
       pull-requests: read
+      statuses: read
     outputs:
       image_digest: ${{ steps.identity.outputs.image_digest }}
     steps:
