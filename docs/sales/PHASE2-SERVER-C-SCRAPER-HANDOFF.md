@@ -9,9 +9,11 @@ Required headers are:
 
 ```text
 Content-Type: application/json
+Authorization: Bearer <short-lived Keycloak client-credentials JWT>
 Idempotency-Key: stable per tenant/request/payload
 X-Codestra-Scraper-ID: assigned service identity
-X-Codestra-Signature-Version: hmac-sha256-v1
+X-Codestra-Key-ID: enrolled trusted-key identifier
+X-Codestra-Signature-Version: hmac-sha256-v2
 X-Codestra-Timestamp: Unix seconds
 X-Codestra-Nonce: cryptographically random one-time value
 X-Codestra-Content-SHA256: lowercase SHA-256 of exact transmitted bytes
@@ -19,10 +21,11 @@ X-Codestra-Signature: lowercase HMAC-SHA256
 X-Correlation-ID: stable request trace
 ```
 
-The canonical HMAC input is eight newline-separated values:
+The canonical HMAC input is nine newline-separated values:
 
 ```text
-hmac-sha256-v1
+hmac-sha256-v2
+<key-id>
 <scraper-id>
 <tenant-id>
 <campaign-id>
@@ -40,7 +43,8 @@ protected file mechanism and must not appear in logs, workflow exports,
 fixtures or error reports.
 
 Before activation Phase 2 needs: approved private connectivity, assigned
-scraper identity/tenant/campaign scopes, protected HMAC delivery, middleware
+Keycloak client with exact JWT audience/role/scope/tenant/campaign claims,
+scraper identity, protected rotating HMAC delivery, middleware
 and Odoo read-only service health, one synthetic contract test, replay/clock
 skew testing, rate and concurrency limits, monitoring, and an independent
 governance decision. Production writes, VICIdial publication and outreach

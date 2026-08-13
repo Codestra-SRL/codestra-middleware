@@ -36,9 +36,10 @@ SECRET = b"synthetic-runtime-secret"
 
 def event() -> dict:
     return {
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "event_id": "EVT-synthetic01",
         "environment": "staging",
+        "company_key": "COMPANY-1",
         "business_unit_key": "web-mobile-ai",
         "campaign_key": "TEST_LEADS",
         "automation_action": "UPDATE_ALLOWLISTED_FIELDS",
@@ -71,7 +72,7 @@ def apply_payload() -> dict:
 
 def ack(result: str = "APPLIED", **changes: object) -> dict:
     value = {
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "automation_event_id": "LAE-synthetic01",
         "automation_action": "UPDATE_ALLOWLISTED_FIELDS",
         "lead_uid": "LEAD-synthetic01",
@@ -80,6 +81,7 @@ def ack(result: str = "APPLIED", **changes: object) -> dict:
         "applied_fields": ["solution_type"] if result == "APPLIED" else [],
         "unchanged_fields": ["solution_type"] if result == "NO_CHANGE" else [],
         "rejected_fields": [],
+        "company_key": "COMPANY-1",
         "business_unit_key": "web-mobile-ai",
         "campaign_key": "TEST_LEADS",
         "policy_version": "1.0",

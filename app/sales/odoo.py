@@ -57,6 +57,34 @@ class DisabledOdooReadOnlyAdapter:
         raise OdooReadUnavailable("authoritative Odoo lookup is disabled")
 
 
+class SyntheticCanaryOdooReadOnlyAdapter:
+    """Empty staging registry with fail-closed consent for TEST_SYN canaries only."""
+
+    create_count = 0
+    update_count = 0
+    delete_count = 0
+
+    async def lookup(self, candidate: LeadCandidate, *, limit: int = 100) -> OdooLookup:
+        if (
+            candidate.campaign_id != "TEST_SYN"
+            or candidate.metadata.get("synthetic_canary") is not True
+        ):
+            raise OdooReadUnavailable("synthetic staging lookup scope mismatch")
+        consent = "GRANTED" if candidate.source_claims.consent_claimed else "UNKNOWN"
+        return OdooLookup(
+            compliance=ComplianceSnapshot(
+                candidate.tenant_id,
+                candidate.campaign_id,
+                consent=consent,
+                channel_eligible=consent == "GRANTED",
+            )
+        )
+
+    async def verification_page(
+        self, tenant_id: str, campaign_id: str | None, *, offset: int, limit: int
+    ) -> list[LeadCandidate]:
+        return []
+
 class FakeOdooReadOnlyAdapter:
     """Bounded test double with explicit zero-mutation counters."""
 

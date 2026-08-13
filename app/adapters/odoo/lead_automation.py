@@ -50,6 +50,7 @@ REQUIRED_APPLY_FIELDS = frozenset(
         "automation_event_id",
         "idempotency_key",
         "environment",
+        "company_key",
         "business_unit_key",
         "campaign_key",
         "automation_action",
@@ -74,6 +75,7 @@ REQUIRED_ACK_FIELDS = frozenset(
         "applied_fields",
         "unchanged_fields",
         "rejected_fields",
+        "company_key",
         "business_unit_key",
         "campaign_key",
         "policy_version",
@@ -381,7 +383,7 @@ def validate_apply(payload: Mapping[str, Any]) -> None:
         or keys - REQUIRED_APPLY_FIELDS - OPTIONAL_APPLY_FIELDS
     ):
         raise ApplySchemaError("apply fields do not match contract")
-    if payload["contract_version"] != "1.0":
+    if payload["contract_version"] != "1.1":
         raise ApplySchemaError("contract version mismatch")
     _bounded_string(payload["automation_event_id"], "automation_event_id", 68, "LAE-")
     idem = _bounded_string(payload["idempotency_key"], "idempotency_key", 64)
@@ -393,6 +395,7 @@ def validate_apply(payload: Mapping[str, Any]) -> None:
     ):
         raise ApplySchemaError("invalid apply enum")
     for field, maximum in (
+        ("company_key", 18),
         ("business_unit_key", 63),
         ("campaign_key", 64),
         ("policy_version", 32),
@@ -400,6 +403,8 @@ def validate_apply(payload: Mapping[str, Any]) -> None:
         ("result_code", 48),
     ):
         _bounded_string(payload[field], field, maximum)
+    if not re.fullmatch(r"COMPANY-[1-9][0-9]{0,9}", payload["company_key"]):
+        raise ApplySchemaError("invalid company_key")
     try:
         UUID(str(payload["correlation_id"]))
     except ValueError as exc:
@@ -441,10 +446,11 @@ def build_apply_payload(
 ) -> dict[str, Any]:
     """Build and validate only the PII-free Odoo mutation contract."""
     payload = {
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "automation_event_id": automation_event_id,
         "idempotency_key": event["idempotency_key"],
         "environment": event["environment"],
+        "company_key": event["company_key"],
         "business_unit_key": event["business_unit_key"],
         "campaign_key": event["campaign_key"],
         "automation_action": event["automation_action"],
@@ -470,11 +476,12 @@ def validate_ack(ack: Mapping[str, Any], request: Mapping[str, Any]) -> None:
         or keys - REQUIRED_ACK_FIELDS - ACK_OPTIONAL_FIELDS
     ):
         raise AckValidationError("ack fields do not match contract")
-    if ack["contract_version"] != "1.0" or ack["result"] not in ACK_RESULTS:
+    if ack["contract_version"] != "1.1" or ack["result"] not in ACK_RESULTS:
         raise AckValidationError("unknown acknowledgement contract or result")
     for field in (
         "automation_event_id",
         "automation_action",
+        "company_key",
         "business_unit_key",
         "campaign_key",
         "policy_version",

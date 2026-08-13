@@ -129,6 +129,11 @@ services:
       VICIDIAL_CALLBACK_HMAC_SECRET_FILE: /run/secrets/vicidial-callback-hmac
       PUBLISHER_HMAC_KEYS_FILE: /run/secrets/telephony-publisher-keys.json
       PUBLISHER_CANARY_ENABLED: "false"
+      VICIDIAL_EVENT_INGRESS_ROUTING_ENABLED: "false"
+      READINESS_PUBLISHER_KEY_ID: ${READINESS_PUBLISHER_KEY_ID:-}
+      READINESS_PUBLISHER_CERT_SHA256: ${READINESS_PUBLISHER_CERT_SHA256:-}
+      DEPLOYED_SOURCE_SHA: ${DEPLOYED_SOURCE_SHA:-}
+      RUNTIME_ARTIFACT_CHECKSUM: ${RUNTIME_ARTIFACT_CHECKSUM:-}
       QUARANTINE_ENCRYPTION_KEY_FILE: /run/secrets/quarantine-encryption-key
       QUARANTINE_FINGERPRINT_SECRET_FILE: /run/secrets/quarantine-fingerprint-key
     volumes:

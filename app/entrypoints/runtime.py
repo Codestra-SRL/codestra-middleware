@@ -128,6 +128,8 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
                 "/api/v1/n8n/executions",
                 "/api/v1/n8n/executions/register",
                 "/api/v1/n8n/acknowledgements",
+                "/api/v1/sales/scraper-results",
+                "/api/v1/readiness/server-a/challenge",
             }
             or N8N_TRANSITION_PATH.fullmatch(request.url.path) is not None
         )
@@ -140,8 +142,17 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
                 _RATE_WINDOWS.popitem(last=False)
             while window and window[0] < now - 60:
                 window.popleft()
-            if len(window) >= settings.quarantine_rate_limit_per_minute:
-                return JSONResponse({"detail": "rate limit exceeded"}, status_code=429)
+            limit = (
+                settings.readiness_rate_limit_per_minute
+                if request.url.path == "/api/v1/readiness/server-a/challenge"
+                else settings.quarantine_rate_limit_per_minute
+            )
+            if len(window) >= limit:
+                return JSONResponse(
+                    {"detail": "rate limit exceeded"},
+                    status_code=429,
+                    headers={"Retry-After": "60"},
+                )
             window.append(now)
         correlation_id = str(uuid4())
         client_correlation = request.headers.get("x-correlation-id", "").strip()
@@ -158,6 +169,8 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "/api/v1/n8n/acknowledgements",
             "/api/v1/n8n-runtime/results",
             "/api/v1/n8n-runtime/social-authorize",
+            "/api/v1/sales/scraper-results",
+            "/api/v1/readiness/server-a/challenge",
         }
         if (
             (

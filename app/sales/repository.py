@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import AuditEvent
+from app.core.config import settings
 from app.db.session import SessionFactory
 
 from .contracts import Decision, LeadCandidate, LeadResolution
@@ -42,6 +43,9 @@ class SalesRepository:
         idempotency_key: str,
         correlation_id: str,
         engine: SalesLeadService,
+        *,
+        source_identity: str = "middleware-api",
+        persist_scraper_inbox: bool = False,
     ) -> tuple[LeadResolution, bool]:
         key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
         payload_hash = canonical_hash(candidate)
@@ -55,6 +59,8 @@ class SalesRepository:
                 key_hash,
                 payload_hash,
                 operation,
+                source_identity,
+                persist_scraper_inbox,
             )
         except SQLAlchemyError as exc:
             raise SalesDependencyUnavailable(
@@ -70,6 +76,8 @@ class SalesRepository:
         key_hash: str,
         payload_hash: str,
         operation: str,
+        source_identity: str,
+        persist_scraper_inbox: bool,
     ) -> tuple[LeadResolution, bool]:
         async with self.sessions() as session:
             await session.execute(
@@ -103,7 +111,13 @@ class SalesRepository:
                 candidate, idempotency_key, correlation_id
             )
             await self._persist_resolution(
-                session, candidate, resolution, payload_hash, key_hash
+                session,
+                candidate,
+                resolution,
+                payload_hash,
+                key_hash,
+                source_identity=source_identity,
+                persist_scraper_inbox=persist_scraper_inbox,
             )
             await session.commit()
             return resolution, False
@@ -115,6 +129,9 @@ class SalesRepository:
         resolution: LeadResolution,
         payload_hash: str,
         key_hash: str,
+        *,
+        source_identity: str,
+        persist_scraper_inbox: bool,
     ) -> None:
         phone = normalized_phone(
             candidate.contact.business_phone, candidate.contact.country_code
@@ -219,6 +236,45 @@ class SalesRepository:
             },
         )
         reasons = reason_codes or ["NET_NEW"]
+        delivery_queued = (
+            settings.scraper_middleware_delivery_enabled
+            and resolution.decision == Decision.ACCEPTED
+            and candidate.campaign_id == "TEST_SYN"
+        )
+        inbox_status = (
+            "queued"
+            if delivery_queued
+            else "eligible"
+            if resolution.decision == Decision.ACCEPTED
+            else "rejected"
+        )
+        if persist_scraper_inbox:
+            await session.execute(
+                text(
+                    "INSERT INTO sales_scraper_inbox "
+                    "(id,event_id,schema_version,tenant_id,source_identity,campaign_id,"
+                    "payload_hash,idempotency_key_hash,correlation_id,status,rejection_code) "
+                    "VALUES (:id,:event,:schema,:tenant,:source,:campaign,:payload_hash,"
+                    ":key_hash,:correlation,:status,:rejection_code)"
+                ),
+                {
+                    "id": uuid4(),
+                    "event": candidate.source.request_id,
+                    "schema": candidate.schema_version,
+                    "tenant": candidate.tenant_id,
+                    "source": source_identity,
+                    "campaign": candidate.campaign_id,
+                    "payload_hash": payload_hash,
+                    "key_hash": key_hash,
+                    "correlation": resolution.correlation_id,
+                    "status": inbox_status,
+                    "rejection_code": (
+                        None
+                        if inbox_status in {"eligible", "queued"}
+                        else resolution.decision_code
+                    ),
+                },
+            )
         redacted = {
             "tenant_id": candidate.tenant_id,
             "campaign_id": candidate.campaign_id,
@@ -240,6 +296,56 @@ class SalesRepository:
                     decision=resolution.decision,
                     redacted_payload=redacted,
                 )
+            )
+        if delivery_queued:
+            event_id = f"LAE-{resolution.candidate_id.removeprefix('LDC-')}"
+            delivery_key = hashlib.sha256(
+                f"{candidate.tenant_id}:{candidate.source.request_id}".encode()
+            ).hexdigest()
+            now = datetime.now(UTC).isoformat()
+            contact_reference = "CONTACT-" + hashlib.sha256(
+                f"{candidate.tenant_id}:{resolution.candidate_id}".encode()
+            ).hexdigest()[:32]
+            payload = {
+                "contract_version": "1.1",
+                "automation_event_id": event_id,
+                "idempotency_key": delivery_key,
+                "environment": settings.environment,
+                "company_key": settings.scraper_odoo_company_key,
+                "business_unit_key": settings.scraper_odoo_business_unit_key,
+                "campaign_key": candidate.campaign_id,
+                "automation_action": "CREATE_LEAD",
+                "policy_version": resolution.policy_version,
+                "correlation_id": resolution.correlation_id,
+                "attributes_schema_key": "web-mobile-ai-lead-v1",
+                "attributes": {"contact_reference": contact_reference},
+                "consent_snapshot": {
+                    "consent_status": "granted",
+                    "consent_purpose": candidate.source_claims.consent_source
+                    or "synthetic-canary",
+                    "consent_source": candidate.source.provider,
+                    "consent_updated_at": now,
+                    "dnc_status": False,
+                    "dnc_updated_at": now,
+                    "jurisdiction": candidate.company.country_code,
+                    "source_system": "odoo",
+                },
+                "workflow_execution_id": f"N8N-{resolution.candidate_id.removeprefix('LDC-')}",
+                "result_code": "SCRAPER_VALIDATED",
+                "source_reference": f"SRC-{hashlib.sha256(candidate.source.request_id.encode()).hexdigest()}",
+            }
+            await session.execute(
+                text(
+                    "INSERT INTO outbox_event "
+                    "(id,topic,payload,correlation_id,status,attempts) "
+                    "VALUES (:id,'sales.lead.odoo.apply',CAST(:payload AS jsonb),"
+                    ":correlation,'pending',0)"
+                ),
+                {
+                    "id": uuid4(),
+                    "payload": json.dumps(payload),
+                    "correlation": resolution.correlation_id,
+                },
             )
 
     async def persist_job(self, job: VerificationJob) -> None:
