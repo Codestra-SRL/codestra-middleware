@@ -40,12 +40,13 @@ async def _scenario(database_url: str):
     now = datetime.now(timezone.utc)
     try:
         async with factory() as session:
-            await session.execute(
-                text(
-                    "TRUNCATE event_model_bridge, outbox_event, event_inbox, "
-                    "reconciliation_checkpoint"
-                )
-            )
+            # The deployed compatibility bridge intentionally RESTRICTs inbox
+            # deletion. Clean the disposable CI database in dependency order;
+            # do not require TRUNCATE authority from an application role.
+            await session.execute(text("DELETE FROM event_model_bridge"))
+            await session.execute(text("DELETE FROM outbox_event"))
+            await session.execute(text("DELETE FROM event_inbox"))
+            await session.execute(text("DELETE FROM reconciliation_checkpoint"))
             await session.execute(
                 text("""INSERT INTO outbox_event
                     (id, topic, payload, correlation_id, status, attempts, replay_count, created_at)
@@ -116,7 +117,9 @@ async def _scenario(database_url: str):
             await session.commit()
             assert await recover_expired_leases(session) == 1
             reconciliation = await reconcile_internal_outbox(session)
-            assert event_id + "-missing" in reconciliation["missing_outbox_event_ids"]
+            missing_ids = reconciliation["missing_outbox_event_ids"]
+            assert isinstance(missing_ids, list)
+            assert event_id + "-missing" in missing_ids
             metrics = await queue_metrics(session)
             assert metrics["delivered"]["count"] == 1
             assert metrics["retry"]["count"] == 1
