@@ -21,6 +21,9 @@ The deterministic routes are:
 deployment defaults. Identity examples are disabled and contain no secrets.
 Secrets must be distinct between staging and production, root-owned, mounted
 read-only, and absent from environment variables and Compose rendering.
+The private listener and identity registry bind BREERO's private VLAN source
+`10.40.0.3`; the public address must not be accepted as proxy-supplied identity
+evidence.
 
 Activation requires private routing, CA distribution, independent review,
 exact-SHA CI, migration backup/restore, authenticated denial tests, four
