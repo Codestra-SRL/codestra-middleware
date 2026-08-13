@@ -198,4 +198,4 @@ def test_decision_generation_and_validation_precede_both_uploads() -> None:
     assert evidence_validation < decision_generation < evidence_upload < decision_upload
     assert "decision-SHA256SUMS" in workflow[decision_generation:decision_upload]
     assert "test \"${EVIDENCE_RUN_ID}\" = \"${DECISION_RUN_ID}\"" in workflow
-    assert "pr68-security-owner-decision-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
+    assert "pr${{ inputs.pr_number }}-security-owner-decision-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
