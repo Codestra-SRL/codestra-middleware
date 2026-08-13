@@ -16,6 +16,7 @@ middleware.internal.codestra.agency {
 		Referrer-Policy no-referrer
 	}
 	route {
+		import /etc/caddy/snippets/breero-private-route
 		@server_b_readiness {
 			remote_ip 10.40.0.2
 			method POST
