@@ -27,3 +27,12 @@ def test_candidate_still_builds_exact_source_non_root() -> None:
     assert 'test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"' in source
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
     assert "USER 10001:10001" in dockerfile
+
+
+def test_release_evidence_is_scoped_to_requested_pr() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert 'pr${{ inputs.pr_number }}-candidate-evidence-' in source
+    assert 'pr${{ inputs.pr_number }}-security-owner-decision-' in source
+    assert '--expected-pr-number "${{ inputs.pr_number }}"' in source
+    assert ".pr_number == $pr_number" in source
+    assert "pr68" not in source

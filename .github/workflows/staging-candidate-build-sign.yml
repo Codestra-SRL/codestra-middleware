@@ -336,6 +336,8 @@ jobs:
           sha256sum candidate.cdx.json trivy.json trivy-version.txt grype.json vulnerability-matrix.csv vulnerability-summary.json provenance.json candidate-image-manifest.json image-digest.txt candidate-tag.txt reconcile-helper.sha256 > SHA256SUMS
 
       - name: Validate complete candidate evidence
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
         shell: bash
         run: |
           set -euo pipefail
@@ -355,10 +357,10 @@ jobs:
           jq -e --arg image "${IMAGE_AT_DIGEST}" \
             '.ArtifactName == $image and (.Results | type == "array")' \
             trivy.json >/dev/null
-          jq -e --arg source "${{ inputs.source_sha }}" \
+          jq -e --arg source "${{ inputs.source_sha }}" --argjson pr_number "${PR_NUMBER}" \
             --arg digest "$(cat image-digest.txt)" \
             '.repository == "Codestra-SRL/codestra-middleware" and
-             .pr_number == 68 and
+             .pr_number == $pr_number and
              .head_sha == $source and
              .image_repository == "ghcr.io/codestra-srl/codestra-middleware" and
              .image_digest == $digest' \
@@ -402,7 +404,7 @@ jobs:
       - name: Upload exact run-scoped candidate evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: pr68-candidate-evidence-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: pr${{ inputs.pr_number }}-candidate-evidence-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           overwrite: false
           retention-days: 30
@@ -423,7 +425,7 @@ jobs:
       - name: Upload exact run-scoped Security Owner decision
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: pr68-security-owner-decision-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: pr${{ inputs.pr_number }}-security-owner-decision-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           overwrite: false
           retention-days: 30
@@ -453,6 +455,7 @@ jobs:
       - name: Validate immutable sign inputs
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
           IMAGE_DIGEST: ${{ inputs.image_digest }}
           EVIDENCE_RUN_ID: ${{ inputs.evidence_run_id }}
           EVIDENCE_RUN_ATTEMPT: ${{ inputs.evidence_run_attempt }}
@@ -468,7 +471,9 @@ jobs:
           [[ "${EVIDENCE_RUN_ATTEMPT}" =~ ^[1-9][0-9]*$ ]]
           [[ "${DECISION_RUN_ID}" =~ ^[0-9]+$ ]]
           test "${EVIDENCE_RUN_ID}" = "${DECISION_RUN_ID}"
-          [[ "${DECISION_ARTIFACT}" =~ ^pr68-security-owner-decision-${SOURCE_SHA}-${DECISION_RUN_ID}-${EVIDENCE_RUN_ATTEMPT}$ ]]
+          [[ "${PR_NUMBER}" =~ ^[1-9][0-9]*$ ]]
+          expected_decision_artifact="pr${PR_NUMBER}-security-owner-decision-${SOURCE_SHA}-${DECISION_RUN_ID}-${EVIDENCE_RUN_ATTEMPT}"
+          test "${DECISION_ARTIFACT}" = "${expected_decision_artifact}"
 
       - name: Download exact candidate evidence and unsigned owner decision
         env:
@@ -476,7 +481,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir candidate decision
-          gh run download "${{ inputs.evidence_run_id }}" --repo "${GITHUB_REPOSITORY}" --name "pr68-candidate-evidence-${{ inputs.source_sha }}-${{ inputs.evidence_run_id }}-${{ inputs.evidence_run_attempt }}" --dir candidate
+          gh run download "${{ inputs.evidence_run_id }}" --repo "${GITHUB_REPOSITORY}" --name "pr${{ inputs.pr_number }}-candidate-evidence-${{ inputs.source_sha }}-${{ inputs.evidence_run_id }}-${{ inputs.evidence_run_attempt }}" --dir candidate
           gh run download "${{ inputs.decision_run_id }}" --repo "${GITHUB_REPOSITORY}" --name "${{ inputs.decision_artifact }}" --dir decision
           (cd candidate && sha256sum -c SHA256SUMS)
           (cd decision && sha256sum -c decision-SHA256SUMS)
@@ -493,7 +498,7 @@ jobs:
             --schema schemas/candidate-image-manifest.v1.schema.json \
             --expected-company "Codestra LLC" \
             --expected-repository "${GITHUB_REPOSITORY}" \
-            --expected-pr-number 68 \
+            --expected-pr-number "${{ inputs.pr_number }}" \
             --expected-head-sha "${SOURCE_SHA}" \
             --expected-image-repository "${IMAGE_REPOSITORY}" \
             --expected-image-digest "${IMAGE_DIGEST}"
@@ -567,7 +572,7 @@ jobs:
       - name: Upload signing bundles
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: pr68-candidate-signing-${{ github.run_id }}-${{ github.run_attempt }}
+          name: pr${{ inputs.pr_number }}-candidate-signing-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           overwrite: false
           retention-days: 90
