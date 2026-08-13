@@ -13,9 +13,15 @@ on:
         required: true
         type: string
       source_sha:
-        description: Exact 40-character reviewed PR head
+        description: Exact 40-character reviewed PR head or protected-main merge SHA
         required: true
         type: string
+      source_mode:
+        description: Source identity policy
+        required: true
+        default: reviewed_pr_head
+        type: choice
+        options: [reviewed_pr_head, protected_main_merge]
       authority_run_id:
         description: Exact protected authority-signing run
         required: false
@@ -83,6 +89,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ inputs.pr_number }}
           SOURCE_SHA: ${{ inputs.source_sha }}
+          SOURCE_MODE: ${{ inputs.source_mode }}
           AUTHORITY_RUN_ID: ${{ inputs.authority_run_id }}
           AUTHORITY_ARTIFACT: ${{ inputs.authority_artifact }}
           AUTHORITY_DOCUMENT_SHA256: ${{ inputs.authority_document_sha256 }}
@@ -95,9 +102,39 @@ jobs:
           [[ "${AUTHORITY_RUN_ID}" =~ ^[0-9]+$ ]]
           [[ "${AUTHORITY_ARTIFACT}" =~ ^security-owner-authority-${AUTHORITY_RUN_ID}-[1-9][0-9]*$ ]]
           [[ "${AUTHORITY_DOCUMENT_SHA256}" =~ ^[0-9a-f]{64}$ ]]
-          test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .state)" = open
-          test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)" = "${SOURCE_SHA}"
-          test "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.ref)" = main
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > pr.json
+          test "$(jq -r .base.ref pr.json)" = main
+          pr_head="$(jq -r .head.sha pr.json)"
+          [[ "${pr_head}" =~ ^[0-9a-f]{40}$ ]]
+          case "${SOURCE_MODE}" in
+            reviewed_pr_head)
+              test "$(jq -r .state pr.json)" = open
+              test "${pr_head}" = "${SOURCE_SHA}"
+              ;;
+            protected_main_merge)
+              test "$(jq -r .state pr.json)" = closed
+              test "$(jq -r .merged_at pr.json)" != null
+              test "$(jq -r .merge_commit_sha pr.json)" = "${SOURCE_SHA}"
+              main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+              gh api "repos/${GITHUB_REPOSITORY}/compare/${SOURCE_SHA}...${main_sha}" > ancestry.json
+              jq -e --arg source "${SOURCE_SHA}" '
+                .merge_base_commit.sha == $source and
+                (.status == "ahead" or .status == "identical")
+              ' ancestry.json >/dev/null
+              ;;
+            *)
+              echo "unsupported source mode" >&2
+              exit 1
+              ;;
+          esac
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" > reviews.json
+          jq -e --arg head "${pr_head}" '
+            any(.[]; .state == "APPROVED" and .commit_id == $head)
+          ' reviews.json >/dev/null
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${pr_head}/status" > status.json
+          jq -e 'any(.statuses[];
+            .context == "codestra/required-ci" and .state == "success")
+          ' status.json >/dev/null
 
       - name: Check out trusted reconciliation helper
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
