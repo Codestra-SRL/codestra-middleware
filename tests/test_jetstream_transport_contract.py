@@ -11,6 +11,7 @@ from app.eventing.jetstream import (
     read_nats_url,
     scoped_subject,
     forward_max_delivery_advisory,
+    process_next_dead_letter_advisory,
 )
 
 
@@ -99,3 +100,59 @@ def test_dlq_worker_deployment_is_explicit_and_disabled() -> None:
     assert "app.entrypoints.jetstream_dlq_worker" in text
     assert 'JETSTREAM_DLQ_WORKER_ENABLED: "false"' in text
     assert "profiles: [jetstream-dlq-worker]" in text
+
+
+@pytest.mark.asyncio
+async def test_durable_advisory_is_acked_only_after_forwarding() -> None:
+    class Message:
+        data = json.dumps({
+            "stream": "CODESTRA_PROCESSING",
+            "consumer": "middleware-processor-v1",
+            "stream_seq": 42,
+            "deliveries": 5,
+        }).encode()
+        acked = False
+        nacked = False
+
+        async def ack(self):
+            self.acked = True
+
+        async def nak(self):
+            self.nacked = True
+
+    class Original:
+        data = json.dumps(event()).encode()
+
+    class Ack:
+        duplicate = False
+
+    class Subscription:
+        def __init__(self, message):
+            self.message = message
+
+        async def fetch(self, count, timeout):
+            assert (count, timeout) == (1, 2)
+            return [self.message]
+
+    class FakeJetStream:
+        def __init__(self, message):
+            self.message = message
+
+        async def pull_subscribe(self, subject, durable, stream):
+            assert subject.startswith("$JS.EVENT.ADVISORY")
+            assert durable == "middleware-dlq-advisory-v1"
+            assert stream == "CODESTRA_DLQ_ADVISORIES_V1"
+            return Subscription(self.message)
+
+        async def get_msg(self, stream, seq):
+            return Original()
+
+        async def publish(self, subject, data, headers):
+            return Ack()
+
+    message = Message()
+    assert await process_next_dead_letter_advisory(
+        FakeJetStream(message), timeout=2
+    ) == "forwarded"
+    assert message.acked is True
+    assert message.nacked is False
