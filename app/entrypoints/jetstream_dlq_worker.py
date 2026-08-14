@@ -11,7 +11,11 @@ import ssl
 import nats
 
 from app.entrypoints.runtime import configure_logging, validate_runtime
-from app.eventing.jetstream import process_next_dead_letter_advisory, read_nats_url
+from app.eventing.jetstream import (
+    bind_dead_letter_advisory_consumer,
+    process_next_dead_letter_advisory,
+    read_nats_url,
+)
 
 logger = logging.getLogger("codestra.jetstream-dlq")
 
@@ -44,6 +48,7 @@ async def run() -> None:
         reconnect_time_wait=2,
     )
     jetstream = connection.jetstream()
+    subscription = await bind_dead_letter_advisory_consumer(jetstream)
 
     stopped = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -53,7 +58,7 @@ async def run() -> None:
         while not stopped.is_set():
             try:
                 result = await process_next_dead_letter_advisory(
-                    jetstream, timeout=1
+                    jetstream, subscription, timeout=1
                 )
                 logger.info(
                     "maximum-delivery advisory handled", extra={"result": result}

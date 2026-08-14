@@ -11,6 +11,7 @@ from app.eventing.jetstream import (
     read_nats_url,
     scoped_subject,
     forward_max_delivery_advisory,
+    bind_dead_letter_advisory_consumer,
     process_next_dead_letter_advisory,
 )
 
@@ -150,8 +151,10 @@ async def test_durable_advisory_is_acked_only_after_forwarding() -> None:
             return Ack()
 
     message = Message()
+    js = FakeJetStream(message)
+    subscription = await bind_dead_letter_advisory_consumer(js)
     assert await process_next_dead_letter_advisory(
-        FakeJetStream(message), timeout=2
+        js, subscription, timeout=2
     ) == "forwarded"
     assert message.acked is True
     assert message.nacked is False

@@ -104,12 +104,18 @@ async def forward_max_delivery_advisory(js, advisory_payload: bytes) -> str:
     return "duplicate" if acknowledgement.duplicate else "forwarded"
 
 
-async def process_next_dead_letter_advisory(js, timeout: float = 1.0) -> str:
-    """Forward and ACK one advisory from the durable platform consumer."""
-    subscription = await js.pull_subscribe_bind(
+async def bind_dead_letter_advisory_consumer(js):
+    """Bind the preprovisioned durable consumer once per worker process."""
+    return await js.pull_subscribe_bind(
         durable=DLQ_ADVISORY_CONSUMER,
         stream=DLQ_ADVISORY_STREAM,
     )
+
+
+async def process_next_dead_letter_advisory(
+    js, subscription, timeout: float = 1.0
+) -> str:
+    """Forward and ACK one advisory from the durable platform consumer."""
     message = (await subscription.fetch(1, timeout=timeout))[0]
     try:
         result = await forward_max_delivery_advisory(js, message.data)
