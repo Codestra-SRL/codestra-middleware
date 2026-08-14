@@ -12,6 +12,7 @@ dependencies = [
   "cryptography==50.0.0",
   "fastapi==0.139.2",
   "httpx==0.28.1",
+  "nats-py==2.15.0",
   "phonenumbers==9.0.10",
   "prometheus-client==0.22.1",
   "pydantic-settings==2.10.1",
