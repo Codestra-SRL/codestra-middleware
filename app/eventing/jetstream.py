@@ -16,7 +16,6 @@ class JetStreamContractError(RuntimeError):
 
 
 SUBJECT_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-DLQ_ADVISORY_SUBJECT = "$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>"
 DLQ_ADVISORY_STREAM = "CODESTRA_DLQ_ADVISORIES_V1"
 DLQ_ADVISORY_CONSUMER = "middleware-dlq-advisory-v1"
 
@@ -107,8 +106,7 @@ async def forward_max_delivery_advisory(js, advisory_payload: bytes) -> str:
 
 async def process_next_dead_letter_advisory(js, timeout: float = 1.0) -> str:
     """Forward and ACK one advisory from the durable platform consumer."""
-    subscription = await js.pull_subscribe(
-        DLQ_ADVISORY_SUBJECT,
+    subscription = await js.pull_subscribe_bind(
         durable=DLQ_ADVISORY_CONSUMER,
         stream=DLQ_ADVISORY_STREAM,
     )

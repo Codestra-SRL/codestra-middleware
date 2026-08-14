@@ -138,8 +138,7 @@ async def test_durable_advisory_is_acked_only_after_forwarding() -> None:
         def __init__(self, message):
             self.message = message
 
-        async def pull_subscribe(self, subject, durable, stream):
-            assert subject.startswith("$JS.EVENT.ADVISORY")
+        async def pull_subscribe_bind(self, durable, stream):
             assert durable == "middleware-dlq-advisory-v1"
             assert stream == "CODESTRA_DLQ_ADVISORIES_V1"
             return Subscription(self.message)
