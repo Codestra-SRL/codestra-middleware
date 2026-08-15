@@ -143,10 +143,11 @@ jobs:
             if length == 1 then .[0] else error("one independent approval required") end
           ' approvals.json > approval.json
           approver="$(jq -er .user.login approval.json)"
-          approval_id="$(jq -er .id approval.json)"
+          approver_user_id="$(jq -er '.user.id | tostring' approval.json)"
+          approval_record="run:${GITHUB_RUN_ID}:environment:security-owner-authority:approver:${approver}:user:${approver_user_id}"
           python3 scripts/generate_production_security_owner_authority.py \
             --source-sha "${SOURCE_SHA}" --approver "${approver}" \
-            --approval-record "${approval_id}" --output security-owner-authority.json
+            --approval-record "${approval_record}" --output security-owner-authority.json
           python3 scripts/validate_production_security_owner_authority.py \
             --authority security-owner-authority.json --source-sha "${SOURCE_SHA}"
 
