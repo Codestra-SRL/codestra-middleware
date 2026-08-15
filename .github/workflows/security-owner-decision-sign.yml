@@ -3,40 +3,64 @@ name: Sign security-owner decision
 on:
   workflow_dispatch:
     inputs:
+      evidence_kind:
+        description: Evidence contract to sign
+        required: true
+        default: staging_decision
+        type: choice
+        options:
+          - staging_decision
+          - production_openvex
       pr_number:
         description: Pull request number containing inert decision evidence
-        required: true
+        required: false
         type: string
       pr_head_sha:
         description: Exact reviewed pull request head SHA
-        required: true
+        required: false
         type: string
       decision_request_path:
         description: Repository-relative path to canonical decision request JSON
-        required: true
+        required: false
         type: string
       decision_request_sha256:
         description: SHA-256 of the exact decision request bytes
-        required: true
+        required: false
         type: string
       image_manifest_path:
         description: Repository-relative path to canonical image manifest JSON
-        required: true
+        required: false
         type: string
       image_manifest_sha256:
         description: SHA-256 of the exact image manifest bytes
-        required: true
+        required: false
+        type: string
+      production_source_sha:
+        description: Exact protected-main production revision SHA
+        required: false
+        type: string
+      production_image_digest:
+        description: Immutable exact-revision candidate image digest
+        required: false
+        type: string
+      openvex_base64:
+        description: Base64 of canonical independently reviewed OpenVEX JSON
+        required: false
+        type: string
+      openvex_sha256:
+        description: SHA-256 of exact canonical OpenVEX bytes
+        required: false
         type: string
 
 permissions: {}
 
 concurrency:
-  group: security-owner-decision-${{ inputs.pr_number }}-${{ inputs.pr_head_sha }}
+  group: security-owner-decision-${{ inputs.evidence_kind }}-${{ inputs.pr_head_sha || inputs.production_source_sha }}
   cancel-in-progress: false
 
 jobs:
   sign-decision:
-    if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
+    if: inputs.evidence_kind == 'staging_decision' && github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: security-owner-signing
     timeout-minutes: 15
@@ -264,4 +288,87 @@ jobs:
             security-owner-approval-audit.json
             security-owner-approval-audit.sha256
             verification-result.txt
+            SHA256SUMS
+
+  sign-production-openvex:
+    if: inputs.evidence_kind == 'production_openvex' && github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: security-owner-signing
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    env:
+      SOURCE_SHA: ${{ inputs.production_source_sha }}
+      IMAGE_DIGEST: ${{ inputs.production_image_digest }}
+      OPENVEX_BASE64: ${{ inputs.openvex_base64 }}
+      OPENVEX_SHA256: ${{ inputs.openvex_sha256 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out protected main validator
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate exact revision and reviewed OpenVEX
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "${OPENVEX_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          git merge-base --is-ancestor "${SOURCE_SHA}" "${GITHUB_SHA}"
+          printf '%s' "${OPENVEX_BASE64}" | base64 --decode > openvex.json
+          test "$(sha256sum openvex.json | cut -d' ' -f1)" = "${OPENVEX_SHA256}"
+          jq -cS . openvex.json > canonical.json
+          cmp --silent openvex.json canonical.json
+          python3 scripts/security/validate-production-openvex.py \
+            --openvex openvex.json --source-sha "${SOURCE_SHA}" \
+            --image-digest "${IMAGE_DIGEST}"
+
+      - name: Audit independent Security Owner environment approval
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/environments/security-owner-signing" > environment.json
+          jq -e '
+            .can_admins_bypass == false and
+            any(.protection_rules[]?;
+              .type == "required_reviewers" and .prevent_self_review == true)
+          ' environment.json >/dev/null
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/approvals" > approvals.json
+          jq -e --arg actor "${GITHUB_ACTOR}" '
+            any(.[]; .state == "approved" and .user.login != $actor and
+              any(.environments[]?; .name == "security-owner-signing"))
+          ' approvals.json >/dev/null
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.2
+
+      - name: Sign and verify exact production OpenVEX
+        run: |
+          set -euo pipefail
+          identity="https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/security-owner-decision-sign.yml@refs/heads/main"
+          issuer="https://token.actions.githubusercontent.com"
+          cosign sign-blob --yes --bundle openvex.sigstore.json openvex.json
+          cosign verify-blob --bundle openvex.sigstore.json \
+            --certificate-identity "${identity}" \
+            --certificate-oidc-issuer "${issuer}" openvex.json
+          sha256sum openvex.json openvex.sigstore.json > SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
+
+      - name: Upload immutable production OpenVEX
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: production-openvex-${{ inputs.production_source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 90
+          path: |
+            openvex.json
+            openvex.sigstore.json
             SHA256SUMS

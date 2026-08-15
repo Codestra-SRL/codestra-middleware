@@ -23,6 +23,15 @@ def test_production_authority_is_signed_and_explicit() -> None:
     assert 'index("production_deployment")' in value
     assert 'index("external_delivery_synthetic_only")' in value
     assert ".communications.calls == false" in value
+    assert "validate_production_security_owner_authority.py" in value
+
+
+def test_release_consumes_the_vex_authorized_digest() -> None:
+    value = source()
+    assert "production-openvex-${SOURCE_SHA}-${VEX_RUN_ID}" in value
+    assert 'subject="${IMAGE_REPOSITORY}@${vex_digest}"' in value
+    assert "validate-production-openvex.py" in value
+    assert 'test "$(jq -er .metadata.image_digest vex/openvex.json)" = "${digest}"' in value
 
 
 def test_image_is_non_root_scanned_signed_and_pulled_by_digest() -> None:
@@ -41,3 +50,15 @@ def test_release_is_separate_from_staging_candidate_workflow() -> None:
     value = source()
     assert "staging-candidate-build-sign.yml" not in value
     assert "exact-main-middleware-production" in value
+
+
+def test_release_uses_protected_production_environment() -> None:
+    value = source()
+    assert "environment: production-release" in value
+    spec = Path("docs/security/PRODUCTION-RELEASE-ENVIRONMENT.md").read_text()
+    assert "`appolon1908-hue`" in spec
+    assert "prevent self-review: enabled" in spec
+    assert "administrator bypass: disabled" in spec
+    assert "protected branches only (`main`)" in spec
+    assert "environment secrets: none" in spec
+    assert "environment variables: none" in spec
