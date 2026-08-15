@@ -91,3 +91,10 @@ def test_workflow_preserves_staging_and_adds_production_contract() -> None:
     assert "scripts/validate_security_owner_authority.py" in workflow
     assert "scripts/validate_production_security_owner_authority.py" in workflow
     assert "security-owner-authority.sigstore.json" in workflow
+
+
+def test_workflow_uses_fields_returned_by_environment_approvals_api() -> None:
+    workflow = (ROOT / ".github/workflows/security-owner-authority-sign.yml").read_text()
+    assert "approver_user_id=\"$(jq -er '.user.id | tostring' approval.json)\"" in workflow
+    assert "run:${GITHUB_RUN_ID}:environment:security-owner-authority" in workflow
+    assert "jq -er .id approval.json" not in workflow
