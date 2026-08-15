@@ -73,8 +73,10 @@ jobs:
           [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${MERGED_PR_NUMBER}" =~ ^[1-9][0-9]*$ ]]
           [[ "${AUTHORITY_RUN_ID}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${AUTHORITY_ARTIFACT}" =~ ^security-owner-authority-${AUTHORITY_RUN_ID}-[1-9][0-9]*$ ]]
           [[ "${AUTHORITY_DOCUMENT_SHA256}" =~ ^[0-9a-f]{64}$ ]]
           [[ "${VEX_RUN_ID}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${VEX_ARTIFACT}" =~ ^production-openvex-${SOURCE_SHA}-${VEX_RUN_ID}-[1-9][0-9]*$ ]]
           main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${MERGED_PR_NUMBER}" > pr.json
           test "$(jq -r .merged pr.json)" = true
@@ -145,6 +147,8 @@ jobs:
             (.communications.calls == false) and (.communications.sms == false) and
             (.communications.email == false) and (.communications.callbacks == false)
           ' authority/security-owner-authority.json >/dev/null
+          python3 scripts/validate_production_security_owner_authority.py \
+            --authority authority/security-owner-authority.json --source-sha "${SOURCE_SHA}"
 
       - name: Run exact-source tests
         env:
@@ -161,16 +165,29 @@ jobs:
           ruff check --select E9,F63,F7,F82 app tests
           python -m pytest -q tests
 
-      - name: Build exact non-root image
+      - name: Verify VEX and pull its immutable exact-source candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          created="$(git show -s --format=%cI "${SOURCE_SHA}")"
-          docker build --target runtime --platform linux/amd64 \
-            --build-arg "VCS_REF=${SOURCE_SHA}" \
-            --build-arg "BUILD_REVISION=${SOURCE_SHA}" \
-            --build-arg "BUILD_CREATED=${created}" \
-            --build-arg "BUILD_VERSION=middleware-${SOURCE_SHA}" \
-            --tag "middleware:${SOURCE_SHA}" .
+          mkdir vex
+          gh run download "${VEX_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "${VEX_ARTIFACT}" --dir vex
+          (cd vex && sha256sum -c SHA256SUMS)
+          "${RUNNER_TEMP}/cosign" verify-blob \
+            --bundle vex/openvex.sigstore.json \
+            --certificate-identity "https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/security-owner-decision-sign.yml@refs/heads/main" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            vex/openvex.json
+          vex_digest="$(jq -er .metadata.image_digest vex/openvex.json)"
+          python3 scripts/security/validate-production-openvex.py \
+            --openvex vex/openvex.json --source-sha "${SOURCE_SHA}" \
+            --image-digest "${vex_digest}"
+          printf '%s' "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          subject="${IMAGE_REPOSITORY}@${vex_digest}"
+          docker pull --platform linux/amd64 "${subject}"
+          test "$(docker image inspect "${subject}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${SOURCE_SHA}"
+          docker tag "${subject}" "middleware:${SOURCE_SHA}"
           test "$(docker image inspect "middleware:${SOURCE_SHA}" --format '{{.Config.User}}')" = 10001:10001
           test "$(docker image inspect "middleware:${SOURCE_SHA}" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
           docker run --rm --network none --read-only --cap-drop ALL \
@@ -204,23 +221,6 @@ jobs:
           output-file: grype-raw.json
           severity-cutoff: high
 
-      - name: Verify independently signed exact-image VEX
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir vex
-          gh run download "${VEX_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
-            --name "${VEX_ARTIFACT}" --dir vex
-          (cd vex && sha256sum -c SHA256SUMS)
-          "${RUNNER_TEMP}/cosign" verify-blob \
-            --bundle vex/openvex.sigstore.json \
-            --certificate-identity "https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/security-owner-decision-sign.yml@refs/heads/main" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            vex/openvex.json
-          test "$(jq -r '.author // empty' vex/openvex.json)" != ""
-          jq -e --arg sha "${SOURCE_SHA}" '.metadata.source_sha == $sha' vex/openvex.json >/dev/null
-
       - name: Run VEX-applied Grype
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2
         with:
@@ -249,6 +249,7 @@ jobs:
           docker push "${tag}"
           digest="$(docker buildx imagetools inspect "${tag}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
           [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$(jq -er .metadata.image_digest vex/openvex.json)" = "${digest}"
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
           echo "reference=${IMAGE_REPOSITORY}@${digest}" >> "${GITHUB_OUTPUT}"
 

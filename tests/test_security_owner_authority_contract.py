@@ -54,7 +54,7 @@ def test_authority_tampering_fails(tmp_path: Path, field: str, value: object) ->
 def test_authority_workflow_is_protected_and_keyless() -> None:
     workflow = (ROOT / ".github/workflows/security-owner-authority-sign.yml").read_text()
     assert "environment: security-owner-authority" in workflow
-    assert workflow.count("id-token: write") == 1
+    assert workflow.count("id-token: write") == 2
     assert "packages: write" not in workflow
     assert "deployments: write" not in workflow
     assert "security-owner-authority-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
