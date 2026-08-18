@@ -19,6 +19,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--image-digest", required=True)
+    parser.add_argument("--image-repository")
+    parser.add_argument(
+        "--signer-identity",
+        default="https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/staging-candidate-build-sign.yml@refs/heads/main",
+    )
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--run-attempt", required=True)
     parser.add_argument("--authority", type=Path, required=True)
@@ -45,6 +50,10 @@ def main() -> None:
         raise SystemExit("candidate manifest source SHA mismatch")
     if manifest.get("image_digest") != args.image_digest:
         raise SystemExit("candidate manifest image digest mismatch")
+    if args.image_repository is None:
+        args.image_repository = manifest.get("image_repository", "ghcr.io/codestra-srl/codestra-middleware")
+    if manifest.get("image_repository", args.image_repository) != args.image_repository:
+        raise SystemExit("candidate manifest image repository mismatch")
     rows = list(csv.DictReader(args.matrix.open(newline="", encoding="utf-8")))
     grouped: dict[tuple[str, str, str], list[dict[str, str]]] = {}
     for row in rows:
@@ -92,7 +101,7 @@ def main() -> None:
         "repository": "Codestra-SRL/codestra-middleware",
         "pr_number": pr_number,
         "pr_head_sha": args.source_sha,
-        "image_repository": "ghcr.io/codestra-srl/codestra-middleware",
+        "image_repository": args.image_repository,
         "image_digest": args.image_digest,
         "candidate_manifest_sha256": sha(args.manifest),
         "matrix_sha256": sha(args.matrix),
@@ -108,7 +117,7 @@ def main() -> None:
         "authority_run_id": args.authority_run_id,
         "authority_artifact": args.authority_artifact,
         "oidc_issuer": "https://token.actions.githubusercontent.com",
-        "signer_identity": "https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/staging-candidate-build-sign.yml@refs/heads/main",
+        "signer_identity": args.signer_identity,
         "issued_utc": now.isoformat().replace("+00:00", "Z"),
         "expires_utc": expires.isoformat().replace("+00:00", "Z"),
         "production_deployment_gate": "blocked",

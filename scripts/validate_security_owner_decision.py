@@ -62,6 +62,8 @@ def main() -> None:
     for field, rules in properties.items():
         if "const" in rules and decision[field] != rules["const"]:
             fail(f"{field} violates schema constant")
+        if "enum" in rules and decision[field] not in rules["enum"]:
+            fail(f"{field} violates schema enum")
         if isinstance(decision[field], str) and (not decision[field] or PLACEHOLDER.search(decision[field])):
             fail(f"{field} is blank or a placeholder")
     exact = {
