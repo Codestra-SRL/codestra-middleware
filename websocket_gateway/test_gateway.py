@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from fastapi import HTTPException
@@ -23,7 +24,7 @@ class Socket:
 
 
 def scope(**overrides: object) -> dict:
-    value = {
+    value: dict[str, Any] = {
         "tenant_id": "tenant-a",
         "business_unit_id": "unit-a",
         "user_id": "user-a",
@@ -35,7 +36,7 @@ def scope(**overrides: object) -> dict:
 
 
 def event(**overrides: object) -> dict:
-    value = {
+    value: dict[str, Any] = {
         "tenant_id": "tenant-a",
         "business_unit_id": "unit-a",
         "user_id": "user-a",
@@ -47,7 +48,7 @@ def event(**overrides: object) -> dict:
 
 
 def test_agent_tenant_business_unit_and_campaign_isolation() -> None:
-    connection = gateway.Connection(Socket(), scope())
+    connection = gateway.Connection(cast(Any, Socket()), scope())
     assert connection.allows(event())
     assert not connection.allows(event(agent_id="agent-b"))
     assert not connection.allows(event(tenant_id="tenant-b"))
@@ -72,9 +73,9 @@ def test_authentication_roles_are_combined_and_required(monkeypatch: pytest.Monk
             get_signing_key_from_jwt=lambda _token: SimpleNamespace(key="synthetic-public-key")
         ))),
     )
-    assert gateway.decode_access_token(request)["campaigns"] == ["TEST_SYN"]
+    assert gateway.decode_access_token(cast(Any, request))["campaigns"] == ["TEST_SYN"]
     with pytest.raises(HTTPException) as denied:
-        gateway.decode_access_token(SimpleNamespace(headers={}, app=request.app))
+        gateway.decode_access_token(cast(Any, SimpleNamespace(headers={}, app=request.app)))
     assert denied.value.status_code == 401
 
 
@@ -99,7 +100,7 @@ def test_screen_pop_recording_reconnect_and_durable_replay_contracts() -> None:
 
 def test_health_handler_and_backpressure_contract() -> None:
     assert asyncio.run(gateway.healthz()) == {"status": "healthy"}
-    connection = gateway.Connection(Socket(), scope())
+    connection = gateway.Connection(cast(Any, Socket()), scope())
     assert connection.queue.maxsize == gateway.settings.max_pending
     source = Path(gateway.__file__).read_text(encoding="utf-8")
     assert "BACKPRESSURE.inc()" in source
