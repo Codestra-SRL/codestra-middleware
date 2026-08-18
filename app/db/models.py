@@ -1468,6 +1468,60 @@ class TelephonyCallLifecycleEvent(Base):
     )
 
 
+class AgentCallState(Base):
+    __tablename__ = "agent_call_state"
+    call_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    business_unit_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    extension: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    asterisk_uniqueid: Mapped[str] = mapped_column(String(128), nullable=False)
+    linkedid: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    state_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    context_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint("extension", "sequence", name="uq_agent_call_state_extension_sequence"),
+        CheckConstraint("sequence >= 0", name="ck_agent_call_state_sequence"),
+    )
+
+
+class AgentCallEvent(Base):
+    __tablename__ = "agent_call_event"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    schema_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    call_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    business_unit_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    extension: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    asterisk_uniqueid: Mapped[str] = mapped_column(String(128), nullable=False)
+    linkedid: Mapped[str] = mapped_column(String(128), nullable=False)
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    transition_applied: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint("call_id", "sequence", name="uq_agent_call_event_call_sequence"),
+        CheckConstraint("sequence >= 0", name="ck_agent_call_event_sequence"),
+    )
+
+
 class IntegrationService(Base):
     __tablename__ = "integration_service"
     service_id: Mapped[UUID] = mapped_column(

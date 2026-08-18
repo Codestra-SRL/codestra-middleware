@@ -27,8 +27,8 @@ MODERN_HEADERS = {
 
 def payload():
     return {
-        "campaign_id": "TRANSFER_TEST",
-        "endpoint": "6197",
+        "campaign_id": "TEST_SYN",
+        "endpoint": "6101",
         "browser_session_id": str(uuid4()),
     }
 
@@ -40,13 +40,13 @@ def test_desktop_response_rejects_non_string_role():
         "temporary_sip_authorization_username": "6101",
         "temporary_sip_credential": "short-lived",
         "endpoint": 6101,
-        "sip_uri": "sip:6101@vicidial-staging.codestra.agency",
-        "approved_wss_url": "wss://vicidial-staging.codestra.agency:8089/ws",
+        "sip_uri": "sip:6101@dialer.codestra.agency",
+        "approved_wss_url": "wss://dialer.codestra.agency:8089/ws",
         "temporary_turn_username": "turn-user",
         "temporary_turn_credential": "turn-credential",
-        "approved_turn_url": "turns:vicidial-staging.codestra.agency:5349?transport=tcp",
+        "approved_turn_url": "turns:dialer.codestra.agency:5349?transport=tcp",
         "expiration": "2099-01-01T00:00:00+00:00",
-        "campaign": "TRANSFER_TEST",
+        "campaign": "TEST_SYN",
         "role": 7,
     }
     with pytest.raises(webphone.HTTPException) as invalid:
@@ -82,13 +82,13 @@ def test_issue_returns_bounded_memory_only_contract(monkeypatch):
 
     async def endpoint_request(method, path, request_id, idempotency_key, body=None):
         assert method == "POST"
-        assert path == "/v1/endpoint/6197/issue"
-        assert body["endpoint"] == "6197"
+        assert path == "/v1/endpoint/6101/issue"
+        assert body["endpoint"] == "6101"
         return {
             "status": "issued",
-            "endpoint": "6197",
+            "endpoint": "6101",
             "turn": {
-                "urls": ["turns:vicidial-staging.codestra.agency:5349?transport=tcp"],
+                "urls": ["turns:dialer.codestra.agency:5349?transport=tcp"],
                 "username": "temporary",
                 "credential": "memory-only",
             },
@@ -100,8 +100,8 @@ def test_issue_returns_bounded_memory_only_contract(monkeypatch):
     )
     assert response.status_code == 200
     value = response.json()
-    assert value["campaign_id"] == "TRANSFER_TEST"
-    assert value["endpoint"] == "6197"
+    assert value["campaign_id"] == "TEST_SYN"
+    assert value["endpoint"] == "6101"
     assert value["permitted_call_scope"] == ["6000"]
     assert value["environment"] == "STAGING"
     assert value["websocket_url"].startswith("wss://")
@@ -168,7 +168,7 @@ def test_keycloak_gateway_proxies_only_validated_identity(monkeypatch):
                     "agent_desktop_roles": ["agent"],
                     "lifecycle_state": ["active"],
                     "role_template": ["AGENT"],
-                    "campaign_ids": ["TRANSFER_TEST"],
+                    "campaign_ids": ["TEST_SYN"],
                 },
             },
         ),
@@ -186,7 +186,7 @@ def test_keycloak_gateway_proxies_only_validated_identity(monkeypatch):
                 "keycloak_subject": "keycloak-subject",
                 "endpoint": "6101",
                 "vicidial_username": "agent-6102",
-                "campaign_ids": ["TRANSFER_TEST"],
+                "campaign_ids": ["TEST_SYN"],
                 "role_template": "AGENT",
             },
         ),
@@ -200,13 +200,13 @@ def test_keycloak_gateway_proxies_only_validated_identity(monkeypatch):
             "temporary_sip_authorization_username": "6101",
             "temporary_sip_credential": "short-lived",
             "endpoint": 6101,
-            "sip_uri": "sip:6101@vicidial-staging.codestra.agency",
-            "approved_wss_url": "wss://vicidial-staging.codestra.agency:8089/ws",
+            "sip_uri": "sip:6101@dialer.codestra.agency",
+            "approved_wss_url": "wss://dialer.codestra.agency:8089/ws",
             "temporary_turn_username": "turn-user",
             "temporary_turn_credential": "turn-credential",
-            "approved_turn_url": "turns:vicidial-staging.codestra.agency:5349?transport=tcp",
+            "approved_turn_url": "turns:dialer.codestra.agency:5349?transport=tcp",
             "expiration": "2099-01-01T00:00:00+00:00",
-            "campaign": "TRANSFER_TEST",
+            "campaign": "TEST_SYN",
             "role": "AGENT",
             "employee_identity": "EMP-1",
             "browser_session_binding": "00000000-0000-4000-8000-000000000002",
@@ -217,7 +217,7 @@ def test_keycloak_gateway_proxies_only_validated_identity(monkeypatch):
         "/webphone-api/v1/session",
         headers=MODERN_HEADERS,
         json={
-            "campaign_id": "TRANSFER_TEST",
+            "campaign_id": "TEST_SYN",
             "endpoint": "6101",
             "browser_session_id": str(uuid4()),
         },
@@ -260,7 +260,7 @@ def test_keycloak_gateway_denies_wrong_campaign_and_missing_origin(monkeypatch):
                     "agent_desktop_roles": ["agent"],
                     "lifecycle_state": ["active"],
                     "role_template": ["AGENT"],
-                    "campaign_ids": ["TRANSFER_TEST"],
+                    "campaign_ids": ["TEST_SYN"],
                 },
             },
         ),
@@ -278,7 +278,7 @@ def test_keycloak_gateway_denies_wrong_campaign_and_missing_origin(monkeypatch):
                 "keycloak_subject": "subject",
                 "endpoint": "6101",
                 "vicidial_username": "agent",
-                "campaign_ids": ["TRANSFER_TEST"],
+                "campaign_ids": ["TEST_SYN"],
                 "role_template": "AGENT",
             },
         ),
@@ -288,7 +288,7 @@ def test_keycloak_gateway_denies_wrong_campaign_and_missing_origin(monkeypatch):
         "/webphone-api/v1/session",
         headers={"Authorization": "Bearer browser-token"},
         json={
-            "campaign_id": "TRANSFER_TEST",
+            "campaign_id": "TEST_SYN",
             "endpoint": "6101",
             "browser_session_id": str(uuid4()),
         },

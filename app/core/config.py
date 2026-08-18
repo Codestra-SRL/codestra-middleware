@@ -158,8 +158,8 @@ class Settings(BaseSettings):
     webphone_origin_scheme: str = "https"
     webphone_origin_host: str = "phone.codestra.agency"
     webphone_expected_user: str = "preprod"
-    webphone_staging_campaign: str = "TRANSFER_TEST"
-    webphone_staging_endpoint: str = "6197"
+    webphone_staging_campaign: str = "TEST_SYN"
+    webphone_staging_endpoint: str = "6101"
     n8n_workflow_package_sha256: str = ""
     n8n_target_ca_file: str = ""
     n8n_service_issuer: str = ""
@@ -358,6 +358,7 @@ class Settings(BaseSettings):
     hootsuite_redirect_uri: str = ""
     pjsip_provisioning_enabled: bool = False
     webphone_session_issuer_enabled: bool = False
+    agent_websocket_enabled: bool = False
     telephony_reconciliation_enabled: bool = False
     telephony_notifications_enabled: bool = False
     telephony_evidence_enabled: bool = False
