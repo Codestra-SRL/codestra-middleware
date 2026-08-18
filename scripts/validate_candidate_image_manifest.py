@@ -50,6 +50,8 @@ def validate(args: argparse.Namespace) -> None:
         value = manifest[name]
         if "const" in rules and value != rules["const"]:
             fail(f"{name} does not match schema constant")
+        if "enum" in rules and value not in rules["enum"]:
+            fail(f"{name} is not an approved schema value")
         expected_type = rules.get("type")
         if expected_type == "string" and not isinstance(value, str):
             fail(f"{name} must be a string")

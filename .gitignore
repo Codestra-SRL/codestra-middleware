@@ -9,6 +9,12 @@ __pycache__/
 coverage/
 dist/
 build/
+node_modules/
+test-results/
+.venv/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
 *.dump
 *.sql
 *.rdb

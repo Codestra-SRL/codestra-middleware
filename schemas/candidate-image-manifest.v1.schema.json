@@ -32,7 +32,11 @@
     "repository": {"const": "Codestra-SRL/codestra-middleware"},
     "pr_number": {"type": "integer", "minimum": 1},
     "head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-    "image_repository": {"const": "ghcr.io/codestra-srl/codestra-middleware"},
+    "image_repository": {"enum": [
+      "ghcr.io/codestra-srl/codestra-middleware",
+      "ghcr.io/codestra-srl/codestra-agent-desktop",
+      "ghcr.io/codestra-srl/codestra-websocket-gateway"
+    ]},
     "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "candidate_scope": {"const": "server_a_isolated_staging_candidate"},
     "production_release_provenance_assigned": {"const": false},
