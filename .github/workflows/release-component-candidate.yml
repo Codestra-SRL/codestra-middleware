@@ -67,6 +67,7 @@ jobs:
     timeout-minutes: 90
     permissions:
       actions: read
+      checks: read
       contents: read
       packages: write
       pull-requests: read
