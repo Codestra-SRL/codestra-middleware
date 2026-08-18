@@ -297,7 +297,7 @@ jobs:
           "${RUNNER_TEMP}/cosign" verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${subject}" > candidate/signature-verification.json
           "${RUNNER_TEMP}/cosign" verify-attestation --type cyclonedx --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${subject}" > candidate/sbom-verification.json
           "${RUNNER_TEMP}/cosign" verify-attestation --type slsaprovenance --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${subject}" > candidate/provenance-verification.json
-          sha256sum candidate/*.sigstore.json candidate/*-verification.json > candidate/signing-SHA256SUMS
+          (cd candidate && sha256sum ./*.sigstore.json ./*-verification.json > signing-SHA256SUMS)
           (cd candidate && sha256sum -c signing-SHA256SUMS)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
