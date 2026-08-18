@@ -66,7 +66,12 @@ def main() -> None:
     findings = []
     for (vulnerability_id, package, installed_version), matches in sorted(grouped.items()):
         fixed_versions = sorted({version for m in matches for version in m["fixed_versions"].split(";") if version})
-        no_compatible_fix = package == "python" and installed_version.startswith("3.12.") and not any(version.startswith("3.12.") for version in fixed_versions)
+        installed_minor = ".".join(installed_version.split(".")[:2]) + "."
+        no_compatible_fix = (
+            package == "python"
+            and installed_minor.count(".") == 2
+            and not any(version.lstrip("*").startswith(installed_minor) for version in fixed_versions)
+        )
         findings.append({
             "vulnerability_id": vulnerability_id,
             "package": package,
@@ -77,7 +82,7 @@ def main() -> None:
             "severity": max((m["severity"] for m in matches), key=lambda value: {"HIGH": 1, "CRITICAL": 2}[value]),
             "image_digest": args.image_digest,
             "source_sha": args.source_sha,
-            "upstream_remediation_status": "no_safe_compatible_python_3_12_fix_confirmed" if no_compatible_fix else "safe_fix_available_review_required",
+            "upstream_remediation_status": "no_safe_compatible_python_minor_fix_confirmed" if no_compatible_fix else "safe_fix_available_review_required",
             "runtime_reachability": "python_interpreter_and_shared_runtime_present",
             "compensating_controls": [
                 "server_a_isolated_staging_only",
