@@ -33,6 +33,7 @@ from app.api.v1.tts import router as tts_router
 from app.api.v1.tts import validate_readiness as validate_tts_readiness
 from app.api.v1.ai_commands import router as ai_commands_router
 from app.api.v1.webphone import router as webphone_router
+from app.api.v1.agent_realtime import router as agent_realtime_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.ai import router as ai_router
@@ -53,6 +54,7 @@ app.include_router(orchestration_router)
 app.include_router(mappings_router)
 app.include_router(publisher_router)
 app.include_router(webphone_router)
+app.include_router(agent_realtime_router)
 app.include_router(n8n_staging_router)
 app.include_router(n8n_transport_router)
 app.include_router(n8n_runtime_router)

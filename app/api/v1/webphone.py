@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, WebSocket
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import settings
@@ -57,6 +57,9 @@ class BrowserIdentity:
     role: str
     campaigns: frozenset[str]
     endpoint: int | None
+    tenant_id: str
+    business_unit_id: str
+    agent_id: str
 
 
 @dataclass(frozen=True)
@@ -208,7 +211,7 @@ async def _odoo_identity(
 
 
 async def browser_identity(
-    request: Request,
+    request: Request | WebSocket,
     campaign_id: str | None = None,
     requested_endpoint: int | None = None,
 ) -> BrowserIdentity:
@@ -216,7 +219,7 @@ async def browser_identity(
         raise HTTPException(503, "staging provisioning disabled")
     if settings.webphone_keycloak_enabled:
         origin_ok = request.headers.get("origin") == EXPECTED_ORIGIN
-        if request.method == "GET" and not origin_ok:
+        if getattr(request, "method", "GET") == "GET" and not origin_ok:
             referer = request.headers.get("referer", "")
             referer_parts = urlsplit(referer)
             origin_ok = request.headers.get("sec-fetch-site") == "same-origin" and (
@@ -370,6 +373,12 @@ async def browser_identity(
             authoritative_role,
             frozenset(authoritative_campaigns),
             int(authoritative_endpoint),
+            str(authoritative.get("company_id") or _attribute(attributes, "company_id")),
+            str(
+                authoritative.get("business_unit_id")
+                or _attribute(attributes, "business_unit_id")
+            ),
+            str(authoritative.get("agent_id") or employee_id),
         )
     if (
         request.headers.get("x-webphone-gateway") != "caddy-basic-auth"
@@ -387,6 +396,9 @@ async def browser_identity(
         "AGENT",
         frozenset({CAMPAIGN}),
         int(ENDPOINT),
+        "TST",
+        "TST",
+        EXPECTED_USER,
     )
 
 
@@ -601,7 +613,7 @@ async def issue(user: str, browser_session_id: str) -> dict:
         )
         turn = result["turn"]
         if set(turn) != {"urls", "username", "credential"} or turn["urls"] != [
-            "turns:vicidial-staging.codestra.agency:5349?transport=tcp"
+            "turns:dialer.codestra.agency:5349?transport=tcp"
         ]:
             raise RuntimeError("invalid endpoint adapter response")
         return response_document(session, password, turn)
