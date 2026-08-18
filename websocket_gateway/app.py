@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import secrets
-import socket
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -287,7 +286,9 @@ async def replay(pool: asyncpg.Pool, scope: dict[str, Any], last_event_id: str |
 async def ws_agent(websocket: WebSocket) -> None:
     origin = websocket.headers.get("origin")
     if origin not in settings.allowed_origins:
-        CROSS_SCOPE.inc(); await websocket.close(code=4403); return
+        CROSS_SCOPE.inc()
+        await websocket.close(code=4403)
+        return
     await websocket.accept()
     scope: dict[str, Any] | None = None
     connection: Connection | None = None
@@ -295,32 +296,42 @@ async def ws_agent(websocket: WebSocket) -> None:
         try:
             frame = await asyncio.wait_for(websocket.receive_json(), settings.auth_timeout)
         except asyncio.TimeoutError:
-            AUTH_FAILURES.inc(); await websocket.close(code=4408); return
+            AUTH_FAILURES.inc()
+            await websocket.close(code=4408)
+            return
         if frame.get("type") != "auth" or not isinstance(frame.get("ticket"), str) or len(frame["ticket"]) > 256:
-            AUTH_FAILURES.inc(); await websocket.close(code=4401); return
+            AUTH_FAILURES.inc()
+            await websocket.close(code=4401)
+            return
         scope = await consume_ticket(websocket.app.state.pool, frame["ticket"])
         if not scope:
-            AUTH_FAILURES.inc(); await websocket.close(code=4401); return
+            AUTH_FAILURES.inc()
+            await websocket.close(code=4401)
+            return
         if scope.get("duplicate"):
-            await websocket.close(code=4409); return
+            await websocket.close(code=4409)
+            return
         sid = str(scope["session_id"])
         connection = Connection(websocket, scope)
         connections[sid] = connection
         connection.sender = asyncio.create_task(connection.send_loop())
-        ACTIVE.inc(); TOTAL.inc()
+        ACTIVE.inc()
+        TOTAL.inc()
         last_event_id = frame.get("last_event_id")
         missing = await replay(websocket.app.state.pool, scope, last_event_id) if last_event_id else []
         if last_event_id:
             RECONNECTS.inc()
         await websocket.send_json({"type": "authenticated", "session_id": sid, "replayed": len(missing)})
         for event in missing:
-            await connection.queue.put(event); REPLAYED.inc()
+            await connection.queue.put(event)
+            REPLAYED.inc()
         while True:
             message = await websocket.receive_json()
             if message.get("type") == "pong":
                 continue
             if message.get("type") == "disconnect":
-                await websocket.close(code=1000); return
+                await websocket.close(code=1000)
+                return
             await websocket.send_json({"type": "error", "code": "client_command_not_allowed"})
     except WebSocketDisconnect:
         pass
@@ -357,11 +368,14 @@ async def publish_event(event: Event, request: Request) -> dict[str, Any]:
     delivered = 0
     for active in tuple(connections.values()):
         if not active.allows(document):
-            CROSS_SCOPE.inc(); continue
+            CROSS_SCOPE.inc()
+            continue
         try:
-            active.queue.put_nowait(document); delivered += 1
+            active.queue.put_nowait(document)
+            delivered += 1
         except asyncio.QueueFull:
-            BACKPRESSURE.inc(); await active.websocket.close(code=4429)
+            BACKPRESSURE.inc()
+            await active.websocket.close(code=4429)
     log_event("realtime_event_accepted", event_id=event.event_id, event_type=event.type, tenant_id=event.tenant_id, campaign_id=event.campaign_id, result="accepted", delivered=delivered)
     return {"accepted": True, "duplicate": False, "delivered": delivered}
 

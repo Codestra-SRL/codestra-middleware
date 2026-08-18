@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-import app as gateway
+from websocket_gateway import app as gateway
 
 
 class Socket:

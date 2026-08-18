@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import secrets
-import statistics
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -148,13 +147,15 @@ async def main() -> None:
     wrong_campaign = event(f"wrong-campaign-{uuid.uuid4()}", 5, "call.ringing", campaign="OTHER_CAMPAIGN", user="2a725359-2b9d-42da-af45-9af008a61353")
     assert (await publish(wrong_tenant))["delivered"] == 0
     assert (await publish(wrong_campaign))["delivered"] == 0
-    await no_message(ws_a); await no_message(ws_b)
+    await no_message(ws_a)
+    await no_message(ws_b)
     results["CROSS_TENANT_ISOLATION"] = results["WRONG_CAMPAIGN_ISOLATION"] = "PASS"
 
     await ws_a.close()
     replay_two = event(f"replay-2-{uuid.uuid4()}", 6, "call.answered", user="2a725359-2b9d-42da-af45-9af008a61353")
     replay_three = event(f"replay-3-{uuid.uuid4()}", 7, "call.connected", user="2a725359-2b9d-42da-af45-9af008a61353")
-    await publish(replay_two); await publish(replay_three)
+    await publish(replay_two)
+    await publish(replay_three)
     resumed = await issue(access_token)
     ws_a, authenticated = await connect(resumed["ticket"], event_a["event_id"])
     replayed = [json.loads(await ws_a.recv()), json.loads(await ws_a.recv())]
@@ -207,7 +208,9 @@ async def main() -> None:
     results["SCREEN_POP_LATENCY_MS"] = round(latency_ms, 3)
     results["LOAD_DELIVERY_LATENCY_MS"] = round(load_latency_ms, 3)
 
-    await ws_a.close(); await ws_b.close(); await pool.close()
+    await ws_a.close()
+    await ws_b.close()
+    await pool.close()
     print(json.dumps(results, indent=2, sort_keys=True))
 
 
