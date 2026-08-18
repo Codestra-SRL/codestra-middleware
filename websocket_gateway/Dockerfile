@@ -1,4 +1,4 @@
-FROM python:3.12-alpine@sha256:d09d15e60962ca365d1cd544a48773bac9d33f2fb1b00f2aa0deec78ade7dc31
+FROM python:3.13-alpine@sha256:540c7d91f98ff6880174c40e99067bf5941eb54d818a7a5e094d188b196a934d
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-middleware" \
       org.opencontainers.image.revision="${VCS_REF}" \

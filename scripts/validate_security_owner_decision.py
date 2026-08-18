@@ -97,7 +97,7 @@ def main() -> None:
     for item in accepted:
         if item.get("image_digest") != args.image_digest or item.get("source_sha") != args.source_sha:
             fail("accepted vulnerability identity mismatch")
-        if item.get("upstream_remediation_status") != "no_safe_compatible_python_3_12_fix_confirmed":
+        if item.get("upstream_remediation_status") != "no_safe_compatible_python_minor_fix_confirmed":
             fail("a finding has a safe fix or still requires remediation evaluation")
         for field in ("package", "installed_version", "runtime_paths", "scanners", "compensating_controls", "remediation_owner", "remediation_deadline", "exception_expires_utc", "revocation_conditions"):
             if not item.get(field):
