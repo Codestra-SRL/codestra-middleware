@@ -78,14 +78,14 @@ beforeEach(() => {
 });
 
 describe("phone contract", () => {
-  it("declares every required state", () => expect(phoneStates).toHaveLength(17));
+  it("declares every required state", () => expect(phoneStates).toHaveLength(18));
   it("declares structured error codes", () => expect(phoneErrorCodes).toContain("TRANSFER_PROHIBITION"));
   it("initializes successfully", async () => {
     const { phone } = harness(); await phone.initialize(); expect(phone.getSnapshot().state).toBe("DISCONNECTED");
   });
   it("provisions successfully without browser persistence", async () => {
     const { phone } = harness(); await phone.initialize(); await phone.requestProvisioningSession(request);
-    expect(phone.getSnapshot().state).toBe("PROVISIONING");
+    expect(phone.getSnapshot().state).toBe("PROVISIONED");
     expect(localStorage.length + sessionStorage.length).toBe(0);
   });
   it("rejects provisioning authentication failure", async () => {

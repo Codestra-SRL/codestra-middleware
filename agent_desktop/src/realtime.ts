@@ -1,4 +1,5 @@
 export type RealtimeState = "Disconnected" | "Connecting" | "Connected" | "Reconnecting";
+export type RealtimeEvidence = "ticket-requested" | "ticket-issued" | "ticket-consumed";
 
 export interface RealtimeEvent {
   event_id: string;
@@ -25,21 +26,24 @@ export class RealtimeClient {
   private retries = 0;
   private reconnectTimer?: number;
   private processed = new Set<string>();
-  private tokenProvider: () => Promise<string>;
   private handler: EventHandler;
   private stateHandler: (state: RealtimeState) => void;
+  private evidenceHandler: (evidence: RealtimeEvidence) => void;
 
-  constructor(tokenProvider: () => Promise<string>, handler: EventHandler, stateHandler: (state:RealtimeState)=>void) {
-    this.tokenProvider = tokenProvider; this.handler = handler; this.stateHandler = stateHandler;
+  constructor(handler: EventHandler, stateHandler: (state:RealtimeState)=>void, evidenceHandler: (evidence:RealtimeEvidence)=>void = () => undefined) {
+    this.handler = handler; this.stateHandler = stateHandler; this.evidenceHandler = evidenceHandler;
   }
 
   async connect(): Promise<void> {
     this.stopped = false;
     this.stateHandler(this.retries ? "Reconnecting" : "Connecting");
-    const token = await this.tokenProvider();
-    const response = await fetch("/realtime-api/api/v1/realtime/sessions", {method:"POST", headers:{Authorization:`Bearer ${token}`}, credentials:"omit"});
+    this.evidenceHandler("ticket-requested");
+    const response = await fetch("/realtime-api/api/v1/realtime/sessions", {
+      method:"POST", credentials:"include", headers:{Accept:"application/json"},
+    });
     if (!response.ok) throw new Error(`Realtime session denied (${response.status})`);
     const session = await response.json() as RealtimeSession;
+    this.evidenceHandler("ticket-issued");
     await this.open(session);
   }
 
@@ -51,7 +55,7 @@ export class RealtimeClient {
       socket.onopen = () => socket.send(JSON.stringify({type:"auth", ticket:session.ticket, last_event_id:localStorage.getItem("codestra:last-realtime-event") || undefined}));
       socket.onmessage = message => {
         const value = JSON.parse(String(message.data)) as RealtimeEvent | {type:string};
-        if (value.type === "authenticated") { window.clearTimeout(timer); this.retries = 0; this.stateHandler("Connected"); resolve(); return; }
+        if (value.type === "authenticated") { window.clearTimeout(timer); this.retries = 0; this.evidenceHandler("ticket-consumed"); this.stateHandler("Connected"); resolve(); return; }
         if (!("event_id" in value) || this.processed.has(value.event_id)) return;
         this.processed.add(value.event_id); localStorage.setItem("codestra:last-realtime-event", value.event_id); this.handler(value);
       };

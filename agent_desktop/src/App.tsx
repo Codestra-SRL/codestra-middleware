@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { provision, refreshProvisioning, revokeProvisioning } from "./api";
+import { browserSession, provision, refreshProvisioning, revokeProvisioning } from "./api";
 import { features } from "./config/features";
 import { runtime } from "./config/runtime";
 import { audioDevices, microphonePermission, type AudioDevice } from "./devices";
@@ -18,11 +18,13 @@ import { DiagnosticPhone, SipJsPhone, type PhoneAdapter, type PhoneSnapshot } fr
 import { mockDesktopService } from "./services/desktop";
 import type { DesktopData } from "./types/desktop";
 import { useSingleTab } from "./useSingleTab";
-import { RealtimeClient, type RealtimeEvent, type RealtimeState } from "./realtime";
+import { RealtimeClient, type RealtimeEvent, type RealtimeEvidence, type RealtimeState } from "./realtime";
 import "./styles.css";
 
 type View = "workspace" | "supervisor" | "diagnostics" | "settings";
 const browserSessionId = crypto.randomUUID();
+const CERTIFICATION_USERNAME = "synthetic.agent.test.syn.6101";
+const CERTIFICATION_SUBJECT = "46c6027f-1ea8-4010-a104-5b908aabb715";
 
 const createPhone = (): PhoneAdapter => {
   if (runtime.environment === "staging" && runtime.sipEnabled && runtime.webRtcEnabled && !runtime.safeMode) {
@@ -46,22 +48,32 @@ export default function App() {
   const [realtimeState, setRealtimeState] = useState<RealtimeState>("Disconnected");
   const [screenPop, setScreenPop] = useState<RealtimeEvent>();
   const [recordingState, setRecordingState] = useState("Off");
+  const [browserLogin, setBrowserLogin] = useState(false);
+  const [canonicalIdentity, setCanonicalIdentity] = useState(false);
+  const [realtimeEvidence, setRealtimeEvidence] = useState<Set<RealtimeEvidence>>(new Set());
+  const [webphoneSession, setWebphoneSession] = useState(false);
+  const [wssReachable, setWssReachable] = useState(false);
+  const [microphoneReady, setMicrophoneReady] = useState(false);
+  const [speakerReady, setSpeakerReady] = useState(false);
   const realtime = useRef<RealtimeClient | undefined>(undefined);
 
   useEffect(() => {
-    const receiveToken = (raw: Event) => {
-      const token = (raw as CustomEvent<string>).detail;
-      realtime.current?.disconnect();
-      realtime.current = new RealtimeClient(async () => token, event => {
+    let cancelled = false;
+    void browserSession().then(identity => {
+      if (cancelled) return;
+      setBrowserLogin(identity.authenticated);
+      const exactIdentity = identity.username === CERTIFICATION_USERNAME && identity.subject === CERTIFICATION_SUBJECT;
+      setCanonicalIdentity(exactIdentity);
+      if (!exactIdentity) throw new Error("Certification identity mismatch");
+      realtime.current = new RealtimeClient(event => {
         if (event.type === "call.ringing") setScreenPop(event);
         if (event.type === "recording.started") setRecordingState("ON");
         if (event.type === "recording.available") setRecordingState("Available");
         if (event.type === "session.revoked") realtime.current?.disconnect();
-      }, setRealtimeState);
-      void realtime.current.connect().catch(error => { setRealtimeState("Disconnected"); setMessage(error instanceof Error ? error.message : "Realtime connection failed"); });
-    };
-    window.addEventListener("codestra:access-token", receiveToken);
-    return () => { window.removeEventListener("codestra:access-token", receiveToken); realtime.current?.disconnect(); };
+      }, setRealtimeState, evidence => setRealtimeEvidence(current => new Set(current).add(evidence)));
+      return realtime.current.connect();
+    }).catch(error => { setRealtimeState("Disconnected"); setMessage(error instanceof Error ? error.message : "Authentication failed"); });
+    return () => { cancelled = true; realtime.current?.disconnect(); };
   }, []);
 
   useEffect(() => {
@@ -91,9 +103,29 @@ export default function App() {
     try { await action(); setMessage(success); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Phone operation failed"); }
   };
-  const register = () => run(async () => {
+  const probeWss = () => new Promise<void>((resolve, reject) => {
+    const socket = new WebSocket(runtime.wssUrl, "sip");
+    const timer = window.setTimeout(() => { socket.close(); reject(new Error("Asterisk WSS probe timed out")); }, 7000);
+    socket.onopen = () => { window.clearTimeout(timer); socket.close(1000, "M11 reachability only"); resolve(); };
+    socket.onerror = () => { window.clearTimeout(timer); reject(new Error("Asterisk WSS is unreachable")); };
+  });
+  const prepare = () => run(async () => {
     if (duplicate) throw new Error("Duplicate browser session detected");
+    if (!browserLogin || !canonicalIdentity) throw new Error("Canonical browser identity required");
     await phone.requestProvisioningSession({ campaignId: "TEST_SYN", endpoint: "6101", browserSessionId });
+    setWebphoneSession(true);
+    await probeWss(); setWssReachable(true);
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    setMicrophoneReady(stream.getAudioTracks().some(track => track.readyState === "live"));
+    stream.getTracks().forEach(track => track.stop());
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    setSpeakerReady(devices.some(device => device.kind === "audiooutput") || typeof AudioContext !== "undefined");
+  }, "M11 readiness complete; SIP REGISTER has not been sent");
+  const featureState = runtime.environment === "staging" && !runtime.safeMode && runtime.sipEnabled && runtime.webRtcEnabled && runtime.testSynOnly && !runtime.productionPstn;
+  const diagnosticFailClosed = !(featureState && browserLogin && canonicalIdentity && realtimeState === "Connected" && webphoneSession && wssReachable && microphoneReady && speakerReady);
+  const register = () => run(async () => {
+    if (diagnosticFailClosed) throw new Error("M11 readiness gates are incomplete");
+    if (phone.getSnapshot().state !== "PROVISIONED") await phone.requestProvisioningSession({ campaignId: "TEST_SYN", endpoint: "6101", browserSessionId });
     await phone.connect();
     await phone.register();
   }, "Short-lived staging registration complete");
@@ -126,12 +158,21 @@ export default function App() {
       <div className="top-status"><span className="ready-dot"/>{phone.mode} <button onClick={() => setView("diagnostics")}>Phone: {registration}</button><button data-testid="realtime-status">Realtime: {realtimeState}</button><button className="bell" onClick={() => setView("workspace")}>{data.notifications.filter(item => !item.read).length}</button></div></header>
       <audio ref={remoteAudio} autoPlay playsInline aria-label="Remote call audio"/>
       {view === "workspace" && <div className="dashboard-grid">
+        <section className="panel" data-testid="m11-state"
+          data-environment={runtime.environment} data-safe-mode={String(runtime.safeMode)} data-sip-enabled={String(runtime.sipEnabled)}
+          data-webrtc-enabled={String(runtime.webRtcEnabled)} data-test-syn-only={String(runtime.testSynOnly)} data-production-pstn={String(runtime.productionPstn)}
+          data-browser-login={String(browserLogin)} data-canonical-identity={String(canonicalIdentity)} data-realtime-ticket-requested={String(realtimeEvidence.has("ticket-requested"))}
+          data-realtime-ticket-issued={String(realtimeEvidence.has("ticket-issued"))} data-realtime-ticket-consumed={String(realtimeEvidence.has("ticket-consumed"))}
+          data-application-websocket={realtimeState} data-webphone-session={String(webphoneSession)} data-wss-reachable={String(wssReachable)}
+          data-microphone-ready={String(microphoneReady)} data-speaker-ready={String(speakerReady)} data-diagnostic-fail-closed={String(diagnosticFailClosed)}>
+          <h2>M11 certification</h2><strong>{diagnosticFailClosed ? "Fail-closed" : "Ready — stop before REGISTER"}</strong>
+        </section>
         {screenPop && <section className="panel" data-testid="screen-pop"><h2>Incoming call</h2><strong>{String(screenPop.payload.customer_name ?? "Customer")}</strong><p>{screenPop.campaign_id} · {String(screenPop.payload.phone ?? "")}</p><a href={`/web#id=${encodeURIComponent(String(screenPop.payload.lead_id ?? ""))}&model=crm.lead&view_type=form`}>Open lead</a></section>}
         <section className="panel" data-testid="recording-state"><h2>Recording</h2><strong>{recordingState}</strong>{recordingState === "Available" && <button>Play</button>}</section>
         {features.phone && <PhoneModule mode={phone.mode} state={phoneSnapshot.state} registration={registration} call={callState} duplicate={duplicate} muted={phoneSnapshot.muted} inputs={inputs} outputs={outputs} input={input} output={output} message={message}
           onInput={value => { setInput(value); void run(() => phone.replaceInputDevice(value), "Microphone changed"); }}
           onOutput={value => { setOutput(value); void run(() => phone.replaceOutputDevice(value), "Speaker changed"); }}
-          onRegister={() => void register()} onDisconnect={() => void run(() => phone.disconnect(), "Cleanup complete")}
+          onPrepare={() => void prepare()} onRegister={() => void register()} registerEnabled={!diagnosticFailClosed} onDisconnect={() => void run(() => phone.disconnect(), "Cleanup complete")}
           onDial={() => void run(() => phone.dial("6000"), "Echo-only call requested")}
           onAnswer={() => void run(() => phone.answer(), "Call answered")} onReject={() => void run(() => phone.reject(), "Call rejected")}
           onMute={() => void run(() => phoneSnapshot.muted ? phone.unmute() : phone.mute(), phoneSnapshot.muted ? "Unmuted" : "Muted")}

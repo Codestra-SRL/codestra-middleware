@@ -13,6 +13,9 @@ export const runtime = Object.freeze({
   vicidialEnabled: enabled("VITE_VICIDIAL_ENABLED"),
   odooEnabled: enabled("VITE_ODOO_ENABLED"),
   n8nEnabled: enabled("VITE_N8N_ENABLED"),
+  testSynOnly: enabled("VITE_TEST_SYN_ONLY", true),
+  productionPstn: enabled("VITE_PRODUCTION_PSTN", false),
+  wssUrl: import.meta.env.VITE_WSS_URL || "wss://wss.codestra.agency:8089/ws",
 });
 
 export function assertPreviewSafe(action: string): void {
