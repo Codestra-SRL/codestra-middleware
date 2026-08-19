@@ -7,7 +7,7 @@ import type { CallState, RegistrationState } from "../../types";
 interface Props {
   mode: PhoneMode; state: PhoneState; registration: RegistrationState; call: CallState; duplicate: boolean; muted: boolean;
   inputs: AudioDevice[]; outputs: AudioDevice[]; input: string; output: string; message: string;
-  onInput: (value: string) => void; onOutput: (value: string) => void; onRegister: () => void; onDisconnect: () => void;
+  onInput: (value: string) => void; onOutput: (value: string) => void; onPrepare: () => void; onRegister: () => void; registerEnabled: boolean; onDisconnect: () => void;
   onDial: () => void; onAnswer: () => void; onReject: () => void; onMute: () => void; onHold: () => void;
   onHangup: () => void; onReconnect: () => void; onMicTest: () => void; onSpeakerTest: () => void;
 }
@@ -25,7 +25,8 @@ export function PhoneModule(props: Props) {
     {props.duplicate && <div className="inline-alert">Duplicate tab detected. Registration blocked.</div>}
     <div className="call-display"><div className="pulse"/><span><small>Phone state</small><strong>{props.state}</strong></span><b>{props.call}</b></div>
     <div className="row">
-      <button onClick={props.onRegister} disabled={!capable || props.duplicate || busy || registered || inCall}>Provision + register</button>
+      <button onClick={props.onPrepare} disabled={!capable || props.duplicate || busy || registered || inCall || props.state === "PROVISIONED"}>Prepare M11 (no REGISTER)</button>
+      <button data-testid="provision-register" onClick={props.onRegister} disabled={!props.registerEnabled || props.duplicate || busy || registered || inCall}>Provision + register</button>
       <button onClick={props.onDial} disabled={!capable || busy || !registered}>Call echo 6000</button>
       <button onClick={props.onDisconnect} disabled={!capable || busy || props.state === "DISCONNECTED"}>Disconnect</button>
       <button onClick={props.onAnswer} disabled={!capable || busy || props.state !== "INCOMING"}>Answer</button>

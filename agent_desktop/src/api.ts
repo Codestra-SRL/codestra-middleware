@@ -4,6 +4,23 @@ import {assertPreviewSafe} from "./config/runtime";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
+export interface BrowserSession {
+  username: string;
+  authenticated: boolean;
+}
+
+export async function browserSession(): Promise<BrowserSession> {
+  const response = await fetch("/oauth2/userinfo", {
+    method: "GET", credentials: "include", headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`Browser authentication required (${response.status})`);
+  const value = await response.json() as Record<string, unknown>;
+  const username = [value.preferredUsername, value.preferred_username, value.user, value.email]
+    .find(item => typeof item === "string" && item.length > 0);
+  if (typeof username !== "string") throw new Error("Authenticated browser identity is incomplete");
+  return { username, authenticated: true };
+}
+
 export async function provision(request: ProvisioningRequest): Promise<ProvisioningSession> {
   const response = await fetch("/webphone-api/v1/session", {
     method: "POST", headers: jsonHeaders, credentials: "include", signal: request.signal,

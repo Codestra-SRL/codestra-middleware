@@ -8,6 +8,6 @@
         X-Frame-Options DENY
         Referrer-Policy no-referrer
         Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
-        Content-Security-Policy "default-src 'self'; connect-src 'self' wss://dialer.codestra.agency:8089 wss://api.codestra.agency; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; frame-ancestors 'none'"
+        Content-Security-Policy "default-src 'self'; connect-src 'self' wss://wss.codestra.agency:8089 wss://api.codestra.agency; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; frame-ancestors 'none'"
     }
 }

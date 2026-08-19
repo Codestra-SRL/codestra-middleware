@@ -11,7 +11,7 @@ import { emptySnapshot, type MediaSnapshot } from "./diagnostics";
 import type { ProvisioningSession } from "./types";
 
 export const phoneStates = [
-  "UNINITIALIZED", "PROVISIONING", "CONNECTING", "CONNECTED", "REGISTERING",
+  "UNINITIALIZED", "PROVISIONING", "PROVISIONED", "CONNECTING", "CONNECTED", "REGISTERING",
   "REGISTERED", "INCOMING", "DIALING", "RINGING", "ACTIVE", "HELD",
   "RECONNECTING", "DISCONNECTING", "DISCONNECTED", "EXPIRED", "REVOKED", "ERROR",
 ] as const;
@@ -144,6 +144,7 @@ export class SipJsPhone implements PhoneAdapter {
       this.validateProvisioning(session);
       this.session = session;
       this.scheduleCredentialLifecycle();
+      this.setState("PROVISIONED");
       return session;
     } catch (error) {
       throw this.mapError(error, "PROVISIONING_FAILURE");
