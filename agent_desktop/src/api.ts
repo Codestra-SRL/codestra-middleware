@@ -6,6 +6,7 @@ const jsonHeaders = { "Content-Type": "application/json" };
 
 export interface BrowserSession {
   username: string;
+  subject: string;
   authenticated: boolean;
 }
 
@@ -17,8 +18,11 @@ export async function browserSession(): Promise<BrowserSession> {
   const value = await response.json() as Record<string, unknown>;
   const username = [value.preferredUsername, value.preferred_username, value.user, value.email]
     .find(item => typeof item === "string" && item.length > 0);
+  const subject = [value.sub, value.subject, value.email]
+    .find(item => typeof item === "string" && item.length > 0);
   if (typeof username !== "string") throw new Error("Authenticated browser identity is incomplete");
-  return { username, authenticated: true };
+  if (typeof subject !== "string") throw new Error("Authenticated browser subject is incomplete");
+  return { username, subject, authenticated: true };
 }
 
 export async function provision(request: ProvisioningRequest): Promise<ProvisioningSession> {

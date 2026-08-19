@@ -24,6 +24,7 @@ import "./styles.css";
 type View = "workspace" | "supervisor" | "diagnostics" | "settings";
 const browserSessionId = crypto.randomUUID();
 const CERTIFICATION_USERNAME = "synthetic.agent.test.syn.6101";
+const CERTIFICATION_SUBJECT = "46c6027f-1ea8-4010-a104-5b908aabb715";
 
 const createPhone = (): PhoneAdapter => {
   if (runtime.environment === "staging" && runtime.sipEnabled && runtime.webRtcEnabled && !runtime.safeMode) {
@@ -61,7 +62,7 @@ export default function App() {
     void browserSession().then(identity => {
       if (cancelled) return;
       setBrowserLogin(identity.authenticated);
-      const exactIdentity = identity.username === CERTIFICATION_USERNAME;
+      const exactIdentity = identity.username === CERTIFICATION_USERNAME && identity.subject === CERTIFICATION_SUBJECT;
       setCanonicalIdentity(exactIdentity);
       if (!exactIdentity) throw new Error("Certification identity mismatch");
       realtime.current = new RealtimeClient(event => {

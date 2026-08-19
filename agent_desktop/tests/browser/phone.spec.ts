@@ -17,7 +17,7 @@ const response = {
 };
 
 test.beforeEach(async ({ page }) => {
-  await page.route("**/oauth2/userinfo", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferredUsername: "synthetic.agent.test.syn.6101" }) }));
+  await page.route("**/oauth2/userinfo", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferredUsername: "synthetic.agent.test.syn.6101", sub: "46c6027f-1ea8-4010-a104-5b908aabb715" }) }));
   await page.route("**/webphone-api/v1/session", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(response) }));
   await page.route("**/realtime-api/api/v1/realtime/sessions", route => route.fulfill({
     status: 201, contentType: "application/json", body: JSON.stringify({ session_id: "test", expires_at: new Date(Date.now()+45_000).toISOString(), ws_url: "wss://api.codestra.agency/ws/agent", ticket: "test-ticket" }),
@@ -53,7 +53,7 @@ test("denies an unauthenticated browser and remains fail-closed", async ({ page 
 
 test("denies a non-canonical subject identity and remains fail-closed", async ({ page }) => {
   await page.unroute("**/oauth2/userinfo");
-  await page.route("**/oauth2/userinfo", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferredUsername: "wrong.agent" }) }));
+  await page.route("**/oauth2/userinfo", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferredUsername: "synthetic.agent.test.syn.6101", sub: "00000000-0000-0000-0000-000000000000" }) }));
   await page.goto("/");
   const state = page.getByTestId("m11-state");
   await expect(state).toHaveAttribute("data-browser-login", "true");
@@ -109,7 +109,7 @@ test("microphone denial is visible and leaves no active registration", async ({ 
       },
     });
   });
-  await page.route("**/oauth2/userinfo", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferredUsername: "synthetic.agent.test.syn.6101" }) }));
+  await page.route("**/oauth2/userinfo", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferredUsername: "synthetic.agent.test.syn.6101", sub: "46c6027f-1ea8-4010-a104-5b908aabb715" }) }));
   await page.route("**/realtime-api/api/v1/realtime/sessions", route => route.fulfill({ status: 503 }));
   await page.routeWebSocket("wss://wss.codestra.agency:8089/ws", socket => socket.close());
   await page.route("**/webphone-api/v1/session", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(response) }));
