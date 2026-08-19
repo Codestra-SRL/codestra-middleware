@@ -1,0 +1,27 @@
+groups:
+  - name: beyvra-email
+    rules:
+      - alert: BeyvraEmailOutboxStuck
+        expr: email_outbox_depth > 0 and email_oldest_outbox_age_seconds > 900
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "Beyvra email outbox is stuck"}
+      - alert: BeyvraEmailFailureSpike
+        expr: rate(email_failed_total[10m]) > 0.1
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Beyvra email failures increased"}
+      - alert: BeyvraEmailBounceSpike
+        expr: rate(email_bounced_total[30m]) / clamp_min(rate(email_sent_total[30m]), 0.001) > 0.05
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "Beyvra email bounce rate is elevated"}
+      - alert: BeyvraEmailComplaintDetected
+        expr: increase(email_complaint_total[15m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "Beyvra email complaint received"}
+      - alert: BeyvraEmailDeadLetter
+        expr: email_dead_letter_count > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "Beyvra email dead-letter queue is non-empty"}

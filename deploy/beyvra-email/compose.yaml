@@ -1,0 +1,38 @@
+name: codestra-beyvra-email
+services:
+  api:
+    image: ${BEYVRA_EMAIL_IMAGE:?immutable digest required}
+    restart: unless-stopped
+    env_file: [/etc/codestra/beyvra-email/runtime.env]
+    secrets: [database_url, postal_webhook_secret, postal_webhook_token]
+    networks: [backend, private_provider]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/v1/email/ready',timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  worker:
+    image: ${BEYVRA_EMAIL_IMAGE:?immutable digest required}
+    restart: unless-stopped
+    command: [python, -c, "from app.email.runtime import worker_main; worker_main()"]
+    env_file: [/etc/codestra/beyvra-email/runtime.env]
+    secrets: [database_url, klyrow_token]
+    volumes: [/etc/codestra/mtls/clients/klyrow:/run/mtls/klyrow:ro]
+    networks: [backend, private_provider]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+secrets:
+  database_url: {file: /etc/codestra/secrets/beyvra-email/database-url}
+  postal_webhook_secret: {file: /etc/codestra/secrets/beyvra-email/postal-webhook-secret}
+  postal_webhook_token: {file: /etc/codestra/secrets/beyvra-email/postal-webhook-token}
+  klyrow_token: {file: /etc/codestra/secrets/beyvra-email/klyrow-token}
+networks:
+  backend: {name: codestra_backend, external: true}
+  private_provider: {name: codestra_private_provider, external: true}
+
