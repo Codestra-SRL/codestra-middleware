@@ -2,6 +2,7 @@ name: codestra-beyvra-email
 services:
   api:
     image: ${BEYVRA_EMAIL_IMAGE:?immutable digest required}
+    user: "12001:12001"
     restart: unless-stopped
     env_file: [/etc/codestra/beyvra-email/runtime.env]
     secrets: [database_url, postal_webhook_secret, postal_webhook_token, provider_webhook_secret]
@@ -17,6 +18,7 @@ services:
       retries: 5
   worker:
     image: ${BEYVRA_EMAIL_IMAGE:?immutable digest required}
+    user: "12001:12001"
     restart: unless-stopped
     command: [python, -c, "from app.email.runtime import worker_main; worker_main()"]
     env_file: [/etc/codestra/beyvra-email/runtime.env]
