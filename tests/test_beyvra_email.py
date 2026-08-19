@@ -13,7 +13,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.email.api import build_app
-from app.email.models import Base, DeadLetter, Notification, Outbox, Status, Suppression, TemplateVersion
+from app.email.contracts import BEYVRA_ACCOUNT_ID, BEYVRA_TENANT_ID, SCHEMA_VERSION, seed_control_plane
+from app.email.models import Base, CaseMessage, DeadLetter, Notification, Outbox, Status, Suppression, TemplateVersion
 from app.email.security import AuthorizationError, Principal
 from app.email.service import create_notification, record_failure
 from app.email.templates import SENDERS, TEMPLATE_CATEGORY, render
@@ -23,6 +24,11 @@ class Validator:
     def validate(self, token: str, scope: str) -> Principal:
         if token == "expired":
             raise AuthorizationError("invalid_token")
+        if token == "provider":
+            scopes = {"email.inbound", "email.delivery_event"}
+            if scope not in scopes:
+                raise AuthorizationError("insufficient_scope")
+            return Principal("provider-subject", frozenset(scopes), BEYVRA_TENANT_ID, "klyrow-email-provider")
         scopes = {"email.send", "email.read", "email.retry"} if token == "valid" else {"email.read"}
         if scope not in scopes:
             raise AuthorizationError("insufficient_scope")
@@ -35,6 +41,7 @@ def sessions():
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     with factory() as db:
+        seed_control_plane(db)
         for template_id, category in TEMPLATE_CATEGORY.items():
             db.add(TemplateVersion(template_id=template_id, version=1, locale="en", category=category,
                                    subject="Beyvra {{ action }}", text_body="Action: {{ action }}",
@@ -122,3 +129,56 @@ def test_auth_scope_tenant_isolation_and_webhook_replay(monkeypatch, sessions, t
     assert client.post("/v1/webhooks/postal-native", content=raw, headers=headers).status_code == 409
     with sessions() as db:
         assert db.get(Notification, notification_id).status == Status.DELIVERED
+
+
+def _provider_headers(raw: bytes, secret: bytes, event_id: str, token: str = "provider") -> dict:
+    stamp = str(int(time.time()))
+    signature = hmac.new(secret, stamp.encode() + b"\n" + event_id.encode() + b"\n" + raw, hashlib.sha256).hexdigest()
+    return {"Authorization": "Bearer " + token, "X-Codestra-Client-Cert-Verified": "SUCCESS",
+            "X-Klyrow-Timestamp": stamp, "X-Klyrow-Event-Id": event_id,
+            "X-Klyrow-Signature": "sha256=" + signature, "Content-Type": "application/json"}
+
+
+def test_inbound_authoritative_mapping_signature_and_replay(monkeypatch, sessions, tmp_path):
+    secret = tmp_path / "provider-secret"
+    secret.write_text("provider-test-secret", encoding="utf-8")
+    monkeypatch.setenv("BEYVRA_PROVIDER_WEBHOOK_SECRET_FILE", str(secret))
+    client = TestClient(build_app(sessions, Validator()))
+    event = {"schema_version": SCHEMA_VERSION, "event_id": "inbound-1", "event_type": "INBOUND_MESSAGE",
+             "occurred_at": datetime.now(timezone.utc).isoformat(), "tenant_id": BEYVRA_TENANT_ID,
+             "account_id": BEYVRA_ACCOUNT_ID, "provider": "klyrow-postal", "provider_message_id": "postal-in-1",
+             "sender": "customer@example.test", "recipient": "support@beyvra.com", "cc": [],
+             "subject": "Synthetic support request", "message_id": "<synthetic-1@example.test>",
+             "references": [], "text_body": "Synthetic only", "html_body": "<script>unsafe()</script>", "attachments": []}
+    raw = json.dumps(event, separators=(",", ":")).encode()
+    assert client.post("/internal/v1/beyvra/email/inbound", content=raw,
+                       headers={"Authorization": "Bearer provider"}).status_code == 401
+    bad = _provider_headers(raw, b"wrong-secret", "inbound-1")
+    assert client.post("/internal/v1/beyvra/email/inbound", content=raw, headers=bad).status_code == 401
+    accepted = client.post("/internal/v1/beyvra/email/inbound", content=raw,
+                           headers=_provider_headers(raw, b"provider-test-secret", "inbound-1"))
+    assert accepted.status_code == 202 and accepted.json()["duplicate"] is False
+    replay = client.post("/internal/v1/beyvra/email/inbound", content=raw,
+                         headers=_provider_headers(raw, b"provider-test-secret", "inbound-1"))
+    assert replay.status_code == 202 and replay.json()["duplicate"] is True
+    with sessions() as db:
+        rows = db.query(CaseMessage).all()
+        assert len(rows) == 1 and "&lt;script&gt;" in rows[0].html_body
+
+
+def test_inbound_unknown_cross_tenant_and_header_override_denied(monkeypatch, sessions, tmp_path):
+    secret = tmp_path / "provider-secret"
+    secret.write_text("provider-test-secret", encoding="utf-8")
+    monkeypatch.setenv("BEYVRA_PROVIDER_WEBHOOK_SECRET_FILE", str(secret))
+    client = TestClient(build_app(sessions, Validator()))
+    base = {"schema_version": SCHEMA_VERSION, "event_id": "inbound-denied", "event_type": "INBOUND_MESSAGE",
+            "occurred_at": datetime.now(timezone.utc).isoformat(), "provider": "klyrow-postal",
+            "sender": "customer@example.test", "recipient": "unknown@beyvra.com", "subject": "x",
+            "message_id": "<denied@example.test>", "references": [], "attachments": []}
+    raw = json.dumps(base, separators=(",", ":")).encode()
+    headers = _provider_headers(raw, b"provider-test-secret", "inbound-denied") | {"X-Tenant-ID": "other"}
+    assert client.post("/internal/v1/beyvra/email/inbound", content=raw, headers=headers).status_code == 422
+    base["tenant_id"], base["event_id"] = "other-tenant", "inbound-override"
+    raw = json.dumps(base, separators=(",", ":")).encode()
+    assert client.post("/internal/v1/beyvra/email/inbound", content=raw,
+                       headers=_provider_headers(raw, b"provider-test-secret", "inbound-override")).status_code == 403

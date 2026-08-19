@@ -14,6 +14,8 @@ class Principal:
     subject: str
     scopes: frozenset[str]
     tenant_id: str
+    service: str = "beyvra"
+    environment: str = "production"
 
 
 class TokenValidator:
@@ -30,10 +32,12 @@ class TokenValidator:
         scopes = frozenset(str(claims.get("scope", "")).split())
         if required_scope not in scopes:
             raise AuthorizationError("insufficient_scope")
-        if claims.get("azp") != "beyvra-email-production" or claims.get("service") != "beyvra" or claims.get("environment") != "production":
+        service = str(claims.get("service", ""))
+        azp = str(claims.get("azp", ""))
+        expected = ("klyrow-email-provider", "klyrow-email-provider") if required_scope in {"email.inbound", "email.delivery_event"} else ("beyvra-email-production", "beyvra")
+        if (azp, service) != expected or claims.get("environment") != "production":
             raise AuthorizationError("invalid_service_identity")
         tenant_id = str(claims.get("tenant_id", ""))
         if not tenant_id:
             raise AuthorizationError("tenant_required")
-        return Principal(str(claims["sub"]), scopes, tenant_id)
-
+        return Principal(str(claims["sub"]), scopes, tenant_id, service, "production")

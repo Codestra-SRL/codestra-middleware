@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from .contracts import BEYVRA_TENANT_ID, MAX_BODY_BYTES, ingest_inbound, validate_event
 from .models import DeadLetter, DeliveryEvent, Notification, Outbox, Status, Suppression, utcnow
 from .metrics import bounced, complaints, delivered, postal_latency, suppressed as suppressed_metric
 from .security import AuthorizationError, Principal, TokenValidator
@@ -37,6 +38,40 @@ def build_app(sessions: sessionmaker[Session], validator: TokenValidator) -> Fas
                 raise HTTPException(403 if str(exc) == "insufficient_scope" else 401, str(exc)) from exc
         return dependency
 
+    async def provider_request(request: Request, actor: Principal) -> tuple[bytes, dict, str]:
+        if request.headers.get("X-Codestra-Client-Cert-Verified") != "SUCCESS":
+            raise HTTPException(401, "provider_mtls_required")
+        if actor.service != "klyrow-email-provider" or actor.tenant_id != BEYVRA_TENANT_ID:
+            raise HTTPException(403, "provider_tenant_binding_invalid")
+        try:
+            content_length = int(request.headers.get("content-length", "0"))
+        except ValueError as exc:
+            raise HTTPException(400, "invalid_content_length") from exc
+        if content_length > MAX_BODY_BYTES:
+            raise HTTPException(413, "payload_too_large")
+        raw = await request.body()
+        if len(raw) > MAX_BODY_BYTES:
+            raise HTTPException(413, "payload_too_large")
+        timestamp = request.headers.get("X-Klyrow-Timestamp", "")
+        event_id = request.headers.get("X-Klyrow-Event-Id", "")
+        signature = request.headers.get("X-Klyrow-Signature", "").removeprefix("sha256=")
+        try:
+            if abs(int(time.time()) - int(timestamp)) > 300 or not event_id:
+                raise ValueError
+        except ValueError as exc:
+            raise HTTPException(401, "invalid_or_expired_timestamp") from exc
+        secret = _secret("BEYVRA_PROVIDER_WEBHOOK_SECRET_FILE")
+        expected = hmac.new(secret.encode(), timestamp.encode() + b"\n" + event_id.encode() + b"\n" + raw, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise HTTPException(401, "invalid_request_signature")
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(422, "invalid_event_payload") from exc
+        if str(value.get("event_id", "")) != event_id:
+            raise HTTPException(422, "event_id_mismatch")
+        return raw, value, event_id
+
     @app.get("/v1/email/health")
     def health() -> dict:
         return {"status": "ok"}
@@ -51,6 +86,7 @@ def build_app(sessions: sessionmaker[Session], validator: TokenValidator) -> Fas
         return {"status": "ready"}
 
     @app.post("/v1/email/messages", status_code=202)
+    @app.post("/v1/beyvra/email/messages", status_code=202)
     async def create(request: Request, actor: Principal = Depends(principal("email.send"))) -> dict:
         try:
             body = await request.json()
@@ -60,6 +96,57 @@ def build_app(sessions: sessionmaker[Session], validator: TokenValidator) -> Fas
             status = 409 if str(exc) == "idempotency_conflict" else 422
             raise HTTPException(status, str(exc)) from exc
         return public(notification) | {"duplicate": duplicate}
+
+    @app.post("/internal/v1/beyvra/email/inbound", status_code=202)
+    async def inbound(request: Request, actor: Principal = Depends(principal("email.inbound"))) -> dict:
+        raw, value, event_id = await provider_request(request, actor)
+        try:
+            with sessions() as db:
+                case, message, duplicate = ingest_inbound(db, actor.service, value, hashlib.sha256(raw).hexdigest())
+        except ValueError as exc:
+            code = 409 if str(exc) == "webhook_replay" else 403 if "denied" in str(exc) or "mapped" in str(exc) else 422
+            raise HTTPException(code, str(exc)) from exc
+        return {"accepted": True, "event_id": event_id, "case_id": case.id,
+                "message_id": message.id, "duplicate": duplicate}
+
+    @app.post("/internal/v1/beyvra/email/delivery-events", status_code=202)
+    async def delivery_event(request: Request, actor: Principal = Depends(principal("email.delivery_event"))) -> dict:
+        raw, value, event_id = await provider_request(request, actor)
+        try:
+            validate_event(value)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        normalized = {
+            "DELIVERY_ACCEPTED": Status.SUBMITTED, "DELIVERY_SENT": Status.SENT,
+            "DELIVERY_DELIVERED": Status.DELIVERED, "DELIVERY_DEFERRED": Status.DEFERRED,
+            "BOUNCE_SOFT": Status.BOUNCED_SOFT, "BOUNCE_HARD": Status.BOUNCED_HARD,
+            "COMPLAINT": Status.COMPLAINED, "FAILED": Status.FAILED, "SUPPRESSED": Status.SUPPRESSED,
+        }.get(str(value["event_type"]))
+        if normalized is None:
+            raise HTTPException(422, "invalid_delivery_event_type")
+        provider_id = str(value.get("provider_message_id", ""))
+        with sessions() as db:
+            existing = db.scalar(select(DeliveryEvent).where(DeliveryEvent.provider_event_id == event_id))
+            if existing:
+                return {"accepted": True, "event_id": event_id, "duplicate": True,
+                        "notification_id": existing.notification_id}
+            message = db.scalar(select(Notification).where(Notification.provider_message_id == provider_id,
+                                                            Notification.tenant_id == BEYVRA_TENANT_ID))
+            if not message:
+                raise HTTPException(404, "provider_message_unknown")
+            occurred = datetime.fromisoformat(str(value["occurred_at"]).replace("Z", "+00:00"))
+            db.add(DeliveryEvent(provider_event_id=event_id, provider_message_id=provider_id,
+                                 notification_id=message.notification_id, correlation_id=message.correlation_id,
+                                 event_type=str(value["event_type"]), normalized_status=normalized,
+                                 payload_digest=hashlib.sha256(raw).hexdigest(), occurred_at=occurred))
+            message.status = normalized
+            if normalized == Status.SENT:
+                message.sent_at = occurred
+            elif normalized == Status.DELIVERED:
+                message.delivered_at = occurred
+            db.commit()
+        return {"accepted": True, "event_id": event_id, "duplicate": False,
+                "notification_id": message.notification_id}
 
     @app.get("/v1/email/messages/{notification_id}")
     def get(notification_id: str, actor: Principal = Depends(principal("email.read"))) -> dict:

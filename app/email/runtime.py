@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from .api import build_app
+from .contracts import seed_control_plane
 from .models import Base, Notification, Outbox, Status, TemplateVersion
 from .metrics import dead_letter_count, oldest_outbox_age, outbox_depth, retry_count
 from .security import TokenValidator
@@ -31,6 +32,7 @@ app = build_app(Sessions, validator)
 
 def seed_templates() -> None:
     with Sessions() as db:
+        seed_control_plane(db)
         for category, names in TEMPLATES.items():
             for name in names:
                 if not db.get(TemplateVersion, (name, 1, "en")):
@@ -59,6 +61,8 @@ def metrics() -> Response:
 
 
 def worker_main() -> None:
+    if os.getenv("LIVE_EMAIL_DELIVERY", "false").lower() != "true":
+        raise RuntimeError("live_email_delivery_disabled")
     Base.metadata.create_all(engine)
     seed_templates()
     worker = Worker(Sessions, os.getenv("HOSTNAME", socket.gethostname()))
