@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,6 +65,10 @@ PROTECTED_RELEASE_GATES = {
     "FINAL_SBOM": "sbom_attestation",
     "FINAL_PROVENANCE": "provenance_attestation",
 }
+TRUSTED_OIDC_ISSUER = "https://token.actions.githubusercontent.com"
+TRUSTED_WORKFLOW_PREFIX = (
+    "https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/"
+)
 REQUIRED_BACKUPS = {
     "middleware",
     "policy",
@@ -91,9 +96,14 @@ def protected_record_valid(record: object, release: dict) -> bool:
     return bool(
         record.get("status") == "PASS"
         and record.get("authority") == "github-actions-protected"
-        and record.get("workflow_run_id")
-        and record.get("artifact_id")
+        and str(record.get("workflow_run_id", "")).isdigit()
+        and str(record.get("artifact_id", "")).isdigit()
         and record.get("verification") == "PASS"
+        and record.get("oidc_issuer") == TRUSTED_OIDC_ISSUER
+        and str(record.get("workflow_identity", "")).startswith(
+            TRUSTED_WORKFLOW_PREFIX
+        )
+        and str(record.get("workflow_identity", "")).endswith("@refs/heads/main")
         and record.get("source_sha") == release.get("protected_source_sha")
         and record.get("image_digest") == release.get("image_digest")
     )
@@ -113,7 +123,11 @@ def authoritative_gate(name: str, technical: dict, release: dict) -> bool:
         return REQUIRED_BACKUPS.issubset(backups) and all(
             isinstance(backups[item], dict)
             and backups[item].get("verification") == "PASS"
+            and backups[item].get("restore_verification") == "PASS"
+            and backups[item].get("created_at")
+            and backups[item].get("source_system")
             and backups[item].get("checksum")
+            and backups[item].get("encryption_status") in {"ENCRYPTED", "NOT_REQUIRED"}
             and backups[item].get("retention_location")
             and backups[item].get("restore_procedure")
             for item in REQUIRED_BACKUPS
@@ -122,27 +136,47 @@ def authoritative_gate(name: str, technical: dict, release: dict) -> bool:
         binding = technical.get("current_artifact_binding", {})
         return bool(
             binding.get("approval_reference")
+            and binding.get("verification") == "PASS"
+            and binding.get("source_sha") == release.get("protected_source_sha")
             and binding.get("running_digest")
             and binding.get("running_digest") == binding.get("approved_digest")
+            and binding.get("approved_digest") == release.get("image_digest")
         )
-    if name in {"ROLLBACK_ARTIFACT", "ROLLBACK_ISOLATION_TEST"}:
+    if name in {"ROLLBACK_ARTIFACT", "ROLLBACK_ISOLATION_TEST", "ROLLBACK_AUTOMATION"}:
         rollback = technical.get("rollback", {})
-        required = {
-            "source_sha",
-            "image_digest",
-            "signature_verification",
-            "sbom_attestation",
-            "provenance_attestation",
-            "migration_compatibility",
-        }
-        artifact_ok = required.issubset(rollback) and all(
-            rollback[key] not in (None, "", "FAIL") for key in required
+        artifact_ok = bool(
+            rollback.get("source_sha")
+            and rollback.get("image_digest")
+            and rollback.get("artifact_reference")
+            and rollback.get("signature_verification") == "PASS"
+            and rollback.get("sbom_attestation") == "PASS"
+            and rollback.get("provenance_attestation") == "PASS"
+            and rollback.get("migration_compatibility") == "PASS"
         )
-        return artifact_ok and (
-            name != "ROLLBACK_ISOLATION_TEST"
-            or rollback.get("isolation_test") == "PASS"
-        )
+        if name == "ROLLBACK_ISOLATION_TEST":
+            return artifact_ok and rollback.get("isolation_test") == "PASS"
+        if name == "ROLLBACK_AUTOMATION":
+            return artifact_ok and rollback.get("automation_validation") == "PASS"
+        return artifact_ok
     return True
+
+
+def human_approval_valid(item: object, release: dict) -> bool:
+    if not isinstance(item, dict):
+        return False
+    try:
+        datetime.fromisoformat(str(item.get("timestamp", "")).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return bool(
+        item.get("decision") == "APPROVE"
+        and item.get("name")
+        and item.get("role")
+        and item.get("scope")
+        and item.get("evidence_reference")
+        and item.get("protected_source_sha") == release.get("protected_source_sha")
+        and item.get("image_digest") == release.get("image_digest")
+    )
 
 
 def main() -> int:
@@ -168,20 +202,19 @@ def main() -> int:
     args = parser.parse_args()
 
     results: list[str] = []
-    results.append(
-        emit(
-            "PSTN_DIALING",
-            "PASS"
-            if os.getenv("LIVE_PSTN_DIALING", "false").lower() == "false"
-            else "FAIL",
-        )
+    pstn_disabled = os.getenv("LIVE_PSTN_DIALING", "false").lower() == "false"
+    production_disabled = (
+        os.getenv("PRODUCTION_DIALING_ENABLED", "false").lower() == "false"
     )
+    print(f"PSTN_DIALING={'DISABLED' if pstn_disabled else 'ENABLED'}")
+    print(
+        f"PRODUCTION_DIALING={'DISABLED' if production_disabled else 'ENABLED'}"
+    )
+    results.append(emit("PSTN_DIALING_DISABLED", "PASS" if pstn_disabled else "FAIL"))
     results.append(
         emit(
-            "PRODUCTION_DIALING",
-            "PASS"
-            if os.getenv("PRODUCTION_DIALING_ENABLED", "false").lower() == "false"
-            else "FAIL",
+            "PRODUCTION_DIALING_DISABLED",
+            "PASS" if production_disabled else "FAIL",
         )
     )
     policy = Policy.from_file(args.policy)
@@ -212,16 +245,24 @@ def main() -> int:
     )
 
     technical = load(args.technical)
-    for name in REQUIRED_TECHNICAL_GATES:
-        results.append(
-            emit(name, "PASS" if authoritative_gate(name, technical, release) else "FAIL")
-        )
+    gate_statuses = {
+        name: "PASS" if authoritative_gate(name, technical, release) else "FAIL"
+        for name in REQUIRED_TECHNICAL_GATES
+    }
+    for name, status in gate_statuses.items():
+        results.append(emit(name, status))
+    passed = sum(status == "PASS" for status in gate_statuses.values())
+    print(f"STRICT_GATE_COUNT={passed}_OF_{len(REQUIRED_TECHNICAL_GATES)}")
+    print(
+        "TECHNICAL_READINESS_PERCENT="
+        f"{(100 * passed / len(REQUIRED_TECHNICAL_GATES)):.1f}"
+    )
 
     human = load(args.human)
     missing = [
         name
         for name, item in human.get("approvals", {}).items()
-        if item.get("decision") != "APPROVE"
+        if not human_approval_valid(item, release)
     ]
     human_status = "BLOCKED_HUMAN" if missing else "PASS"
     results.append(emit("HUMAN_APPROVALS", human_status, ",".join(missing)))

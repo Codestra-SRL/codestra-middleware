@@ -8,12 +8,14 @@
     "deployment_authorized": false
   },
   "release": {
+    "evidence_scope": "HISTORICAL_LOCAL_BASELINE",
+    "authoritative_for_protected_release": false,
     "protected_source_sha": "9b817116ae6233af708d201f0233c1f707ee32b7",
     "final_artifact_digest": "sha256:d8177cdafd080a90723ef3afe1d6ca096d0c00278eb9d0601c3c4100022ee2f9",
-    "signature": "PASS",
-    "sbom_attestation": "PASS",
-    "provenance_attestation": "PASS",
-    "release_binding": "PASS",
+    "signature": "LOCAL_ONLY_NOT_ACCEPTED",
+    "sbom_attestation": "LOCAL_ONLY_NOT_ACCEPTED",
+    "provenance_attestation": "LOCAL_ONLY_NOT_ACCEPTED",
+    "release_binding": "LOCAL_ONLY_NOT_ACCEPTED",
     "protected_source_clean": false,
     "sbom_digest": "sha256:27ab69a62d6ff698a62b2e7a53a78d353b35b5fec61543cdcb938923b7116210"
   },
