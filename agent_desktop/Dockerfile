@@ -42,3 +42,5 @@ COPY --from=caddy-build /caddy /usr/bin/caddy
 COPY --from=build /app/dist /usr/share/caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 USER caddy
+ENTRYPOINT ["/usr/bin/caddy"]
+CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
