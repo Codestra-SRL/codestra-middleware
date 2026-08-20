@@ -162,3 +162,33 @@ test("authenticates realtime and renders one screen pop and recording state", as
   await expect(page.getByTestId("recording-state")).toContainText("Available");
   await expect(page.getByTestId("recording-state").getByRole("button", { name: "Play" })).toBeVisible();
 });
+
+test("fails closed across two and three simultaneous tabs and recovers after close", async ({ page, context }) => {
+  const configure = async (candidate: typeof page) => {
+    await candidate.route("**/oauth2/userinfo", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ preferredUsername: "synthetic.agent.test.syn.6101", sub: "46c6027f-1ea8-4010-a104-5b908aabb715" }) }));
+    await candidate.route("**/realtime-api/api/v1/realtime/sessions", route => route.fulfill({ status: 503 }));
+    await candidate.routeWebSocket("wss://wss.codestra.agency:8089/ws", socket => socket.close());
+  };
+  await page.goto("/");
+  const second = await context.newPage();
+  await configure(second);
+  await second.goto("/");
+  await expect(second.getByText("Duplicate tab detected. Registration blocked.")).toBeVisible();
+  await expect(second.getByTestId("provision-register")).toBeDisabled();
+
+  const third = await context.newPage();
+  await configure(third);
+  await third.goto("/");
+  await expect(third.getByText("Duplicate tab detected. Registration blocked.")).toBeVisible();
+  await expect(third.getByTestId("provision-register")).toBeDisabled();
+  expect(await second.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0);
+  expect(await third.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0);
+
+  await second.close();
+  await third.close();
+  const reopened = await context.newPage();
+  await configure(reopened);
+  await reopened.goto("/");
+  await expect(reopened.getByTestId("provision-register")).toBeDisabled();
+  expect(await reopened.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0);
+});
