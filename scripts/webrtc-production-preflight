@@ -59,6 +59,21 @@ REQUIRED_TECHNICAL_GATES = (
     "FINAL_PROVENANCE",
 )
 
+PROTECTED_RELEASE_GATES = {
+    "FINAL_CANDIDATE_SIGNED": "signature",
+    "FINAL_SBOM": "sbom_attestation",
+    "FINAL_PROVENANCE": "provenance_attestation",
+}
+REQUIRED_BACKUPS = {
+    "middleware",
+    "policy",
+    "vicidial",
+    "asterisk",
+    "keycloak",
+    "release_metadata",
+    "pilot_packet",
+}
+
 
 def emit(name: str, status: str, detail: str = "") -> str:
     suffix = f" DETAIL={detail}" if detail else ""
@@ -68,6 +83,66 @@ def emit(name: str, status: str, detail: str = "") -> str:
 
 def load(path: Path) -> dict:
     return json.loads(path.read_text()) if path.is_file() else {}
+
+
+def protected_record_valid(record: object, release: dict) -> bool:
+    if not isinstance(record, dict):
+        return False
+    return bool(
+        record.get("status") == "PASS"
+        and record.get("authority") == "github-actions-protected"
+        and record.get("workflow_run_id")
+        and record.get("artifact_id")
+        and record.get("verification") == "PASS"
+        and record.get("source_sha") == release.get("protected_source_sha")
+        and record.get("image_digest") == release.get("image_digest")
+    )
+
+
+def authoritative_gate(name: str, technical: dict, release: dict) -> bool:
+    gates = technical.get("gates", {})
+    if gates.get(name) != "PASS":
+        return False
+    if name in PROTECTED_RELEASE_GATES:
+        return protected_record_valid(
+            technical.get("protected_release", {}).get(PROTECTED_RELEASE_GATES[name]),
+            release,
+        )
+    if name == "BACKUP_REFERENCES":
+        backups = technical.get("backups", {})
+        return REQUIRED_BACKUPS.issubset(backups) and all(
+            isinstance(backups[item], dict)
+            and backups[item].get("verification") == "PASS"
+            and backups[item].get("checksum")
+            and backups[item].get("retention_location")
+            and backups[item].get("restore_procedure")
+            for item in REQUIRED_BACKUPS
+        )
+    if name == "CURRENT_ARTIFACT_BINDING":
+        binding = technical.get("current_artifact_binding", {})
+        return bool(
+            binding.get("approval_reference")
+            and binding.get("running_digest")
+            and binding.get("running_digest") == binding.get("approved_digest")
+        )
+    if name in {"ROLLBACK_ARTIFACT", "ROLLBACK_ISOLATION_TEST"}:
+        rollback = technical.get("rollback", {})
+        required = {
+            "source_sha",
+            "image_digest",
+            "signature_verification",
+            "sbom_attestation",
+            "provenance_attestation",
+            "migration_compatibility",
+        }
+        artifact_ok = required.issubset(rollback) and all(
+            rollback[key] not in (None, "", "FAIL") for key in required
+        )
+        return artifact_ok and (
+            name != "ROLLBACK_ISOLATION_TEST"
+            or rollback.get("isolation_test") == "PASS"
+        )
+    return True
 
 
 def main() -> int:
@@ -138,8 +213,9 @@ def main() -> int:
 
     technical = load(args.technical)
     for name in REQUIRED_TECHNICAL_GATES:
-        status = str(technical.get("gates", {}).get(name, "FAIL"))
-        results.append(emit(name, status if status == "PASS" else "FAIL"))
+        results.append(
+            emit(name, "PASS" if authoritative_gate(name, technical, release) else "FAIL")
+        )
 
     human = load(args.human)
     missing = [
