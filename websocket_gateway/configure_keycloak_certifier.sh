@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base_url="${KEYCLOAK_BASE_URL:-https://auth.codestra.agency}"
+base_url="${KEYCLOAK_BASE_URL:-https://auth.codestra.co}"
 realm="codestra"
 admin_id="$(tr -d '\n' </etc/codestra/secrets/identity-platform/clients/codestra-realm-admin/client-id)"
 admin_secret="$(tr -d '\n' </etc/codestra/secrets/identity-platform/clients/codestra-realm-admin/client-secret)"

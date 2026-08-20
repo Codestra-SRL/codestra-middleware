@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 
 const secret = readFileSync("/etc/codestra/secrets/websocket-gateway/certifier_client_secret", "utf8").trim();
 const body = new URLSearchParams({grant_type:"client_credentials",client_id:"codestra-realtime-certifier",client_secret:secret});
-const tokenResponse = await fetch("https://auth.codestra.agency/realms/codestra/protocol/openid-connect/token", {method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body});
+const tokenResponse = await fetch("https://auth.codestra.co/realms/codestra/protocol/openid-connect/token", {method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body});
 if (!tokenResponse.ok) throw new Error(`Keycloak login failed: ${tokenResponse.status}`);
 const accessToken = (await tokenResponse.json()).access_token;
 const claims = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString("utf8"));
