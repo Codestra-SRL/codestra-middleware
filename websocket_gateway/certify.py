@@ -32,7 +32,7 @@ DATABASE_URL = read(os.environ["DATABASE_URL_FILE"])
 async def token() -> str:
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
-            "https://auth.codestra.agency/realms/codestra/protocol/openid-connect/token",
+            "https://auth.codestra.co/realms/codestra/protocol/openid-connect/token",
             data={"grant_type": "client_credentials", "client_id": "codestra-realtime-certifier", "client_secret": CLIENT_SECRET},
         )
         response.raise_for_status()

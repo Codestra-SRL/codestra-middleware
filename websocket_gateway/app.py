@@ -62,7 +62,7 @@ def log_event(message: str, **fields: Any) -> None:
 class Settings:
     database_url = ""
     internal_token = ""
-    issuer = os.getenv("KEYCLOAK_ISSUER", "https://auth.codestra.agency/realms/codestra")
+    issuer = os.getenv("KEYCLOAK_ISSUER", "https://auth.codestra.co/realms/codestra")
     audience = os.getenv("KEYCLOAK_AUDIENCE", "codestra-agent-desktop")
     jwks_url = os.getenv("KEYCLOAK_JWKS_URL", "http://keycloak:8080/realms/codestra/protocol/openid-connect/certs")
     ws_url = os.getenv("PUBLIC_WS_URL", "wss://api.codestra.agency/ws/agent")

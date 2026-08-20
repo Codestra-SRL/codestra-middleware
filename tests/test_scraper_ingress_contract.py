@@ -27,7 +27,7 @@ def test_ingress_contract_is_secret_free_and_fail_closed() -> None:
     assert "deployed fail-closed 2026-08-13" in contract
     assert "ZZ_CDX_SCRAPER_CANARY_" in contract
     assert "codestra.scraper-ingress.v1-rc2" in contract
-    assert "https://auth.codestra.agency/realms/codestra" in contract
+    assert "https://auth.codestra.co/realms/codestra" in contract
     assert "scraper.events.write" in contract
     assert "scraper-publisher" in contract
     assert "hmac-sha256-v2" in contract

@@ -38,7 +38,7 @@ shared static-bearer fallback.
 
 JWT requirements:
 
-- issuer: `https://auth.codestra.agency/realms/codestra`
+- issuer: `https://auth.codestra.co/realms/codestra`
 - audience: `codestra-scraper-ingress`
 - scope: `scraper.events.write`
 - realm role: `scraper-publisher`

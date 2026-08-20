@@ -7,7 +7,7 @@ services:
       SALES_SCRAPER_CAMPAIGN_ALLOWLIST: ${SALES_SCRAPER_CAMPAIGN_ALLOWLIST:-}
       SALES_SCRAPER_HMAC_KEY_IDS: ${SALES_SCRAPER_HMAC_KEY_IDS:-}
       SALES_SCRAPER_HMAC_KEYS_DIRECTORY: /run/secrets/scraper-ingress/hmac-keys
-      SALES_SCRAPER_JWT_ISSUER: https://auth.codestra.agency/realms/codestra
+      SALES_SCRAPER_JWT_ISSUER: https://auth.codestra.co/realms/codestra
       SALES_SCRAPER_JWT_AUDIENCE: codestra-scraper-ingress
       SALES_SCRAPER_JWT_JWKS_URL: http://keycloak:8080/realms/codestra/protocol/openid-connect/certs
       SALES_SCRAPER_JWT_AUTHORIZED_PARTIES: ${SALES_SCRAPER_IDENTITY:-}
