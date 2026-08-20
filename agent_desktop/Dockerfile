@@ -28,17 +28,23 @@ WORKDIR /src
 RUN go mod init codestra.invalid/caddy-build \
  && go get github.com/caddyserver/caddy/v2/cmd/caddy@v2.11.4 \
  && go get golang.org/x/net@v0.56.0 golang.org/x/text@v0.39.0 google.golang.org/grpc@v1.82.1 \
- && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /caddy github.com/caddyserver/caddy/v2/cmd/caddy
+ && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime/usr/bin/caddy github.com/caddyserver/caddy/v2/cmd/caddy \
+ && mkdir -p /runtime/tmp/caddy/config /runtime/tmp/caddy/data \
+ && chmod 1777 /runtime/tmp \
+ && chmod 0700 /runtime/tmp/caddy /runtime/tmp/caddy/config /runtime/tmp/caddy/data
 
-FROM alpine:3.24
+FROM scratch
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-middleware" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.title="Codestra Agent Desktop"
-RUN apk upgrade --no-cache \
- && addgroup -S -g 10001 caddy \
- && adduser -S -D -H -u 10001 -G caddy caddy
-COPY --from=caddy-build /caddy /usr/bin/caddy
+ENV HOME=/tmp/caddy \
+    XDG_CONFIG_HOME=/tmp/caddy/config \
+    XDG_DATA_HOME=/tmp/caddy/data
+COPY --from=caddy-build --chown=10001:10001 /runtime/ /
 COPY --from=build /app/dist /usr/share/caddy
 COPY Caddyfile /etc/caddy/Caddyfile
-USER caddy
+USER 10001:10001
+EXPOSE 8080
+ENTRYPOINT ["/usr/bin/caddy"]
+CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
