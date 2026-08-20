@@ -57,6 +57,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     environment: production-release
+    services:
+      postgres:
+        image: postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_DB: middleware_rehearsal
+          POSTGRES_USER: middleware_ci
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U middleware_ci -d middleware_rehearsal"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     permissions:
       actions: read
       contents: read
@@ -152,7 +166,8 @@ jobs:
 
       - name: Run exact-source tests
         env:
-          DATABASE_URL: postgresql+asyncpg://unused:unused@127.0.0.1:9/unavailable
+          DATABASE_URL: postgresql+asyncpg://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal
+          TEST_DATABASE_URL: postgresql+asyncpg://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal
           LIVE_WRITES_ENABLED: "false"
           VICIDIAL_WRITE_ENABLED: "false"
           CALLBACK_DISPATCH_ENABLED: "false"
