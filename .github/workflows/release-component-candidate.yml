@@ -8,6 +8,12 @@ on:
         required: true
         type: choice
         options: [build, sign]
+      component:
+        description: Component scope (all preserves the full release matrix)
+        required: true
+        default: all
+        type: choice
+        options: [all, agent-desktop]
       pr_number:
         required: true
         type: string
@@ -50,7 +56,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: protected-release-components-${{ inputs.operation }}-${{ inputs.source_sha }}
+  group: protected-release-components-${{ inputs.operation }}-${{ inputs.component }}-${{ inputs.source_sha }}
   cancel-in-progress: false
 
 env:
@@ -75,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [middleware, agent-desktop, websocket-gateway]
+        component: ${{ fromJSON(inputs.component == 'agent-desktop' && '["agent-desktop"]' || '["middleware","agent-desktop","websocket-gateway"]') }}
     steps:
       - name: Validate protected source identity
         env:
@@ -240,7 +246,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [middleware, agent-desktop, websocket-gateway]
+        component: ${{ fromJSON(inputs.component == 'agent-desktop' && '["agent-desktop"]' || '["middleware","agent-desktop","websocket-gateway"]') }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
