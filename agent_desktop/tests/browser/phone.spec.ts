@@ -119,7 +119,8 @@ test("microphone denial is visible and leaves no active registration", async ({ 
   await context.close();
 });
 
-test("fake microphone test completes and media is cleaned by page close", async ({ page }) => {
+test("fake microphone test completes and media is cleaned by page close", async ({ page, browserName }) => {
+  test.skip(browserName === "webkit", "SUPPORTED_PLATFORM_LIMITATION: Playwright WebKit on Linux cannot provide a fake microphone device");
   await page.goto("/");
   await page.getByRole("button", { name: "Microphone test" }).click();
   await expect(page.getByText(/Microphone permission and live track verified; no audio recorded/i)).toBeVisible({ timeout: 5000 });

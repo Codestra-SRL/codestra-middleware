@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Machine-readable, non-mutating production preflight. Never registers or calls."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from app.core.webrtc_production_policy import Policy  # noqa: E402
+
+REQUIRED_TECHNICAL_GATES = (
+    "PROTECTED_SOURCE_ALIGNMENT",
+    "TRIVY",
+    "DNS",
+    "TLS",
+    "WSS",
+    "SECURITY_HEADERS",
+    "CORS",
+    "COOKIE_SECURITY",
+    "OIDC_NEGATIVE_MATRIX",
+    "PYTHON_FULL_SUITE",
+    "BROWSER_MATRIX",
+    "NON_TELEPHONY_LOAD_TEST",
+    "WSS_SOAK",
+    "REALTIME_SOAK",
+    "BROWSER_RESOURCE_SOAK",
+    "MULTI_TAB_STRESS",
+    "INACTIVE_CANDIDATE_DEPLOYMENT",
+    "BACKUP_REFERENCES",
+    "BACKUP_RESTORE_VALIDATION",
+    "CURRENT_ARTIFACT_BINDING",
+    "ROLLBACK_ARTIFACT",
+    "ROLLBACK_ISOLATION_TEST",
+    "ROLLBACK_AUTOMATION",
+    "PRODUCTION_POLICY_ENGINE",
+    "EMERGENCY_BLOCK",
+    "PREMIUM_BLOCK",
+    "PROHIBITED_BLOCK",
+    "INTERNATIONAL_POLICY",
+    "CALLING_HOURS_ENGINE",
+    "CONSENT_ENGINE",
+    "RECORDING_POLICY_ENGINE",
+    "PILOT_ALLOWLIST_ENGINE",
+    "PILOT_CAPACITY_CONTROL",
+    "PILOT_KILL_SWITCH",
+    "KILL_SWITCH_PRECEDENCE",
+    "PRODUCTION_CONFIG_FAIL_CLOSED",
+    "OBSERVABILITY",
+    "ALERTING",
+    "FINAL_CANDIDATE_SIGNED",
+    "FINAL_SBOM",
+    "FINAL_PROVENANCE",
+)
+
+
+def emit(name: str, status: str, detail: str = "") -> str:
+    suffix = f" DETAIL={detail}" if detail else ""
+    print(f"{name}={status}{suffix}")
+    return status
+
+
+def load(path: Path) -> dict:
+    return json.loads(path.read_text()) if path.is_file() else {}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--policy",
+        type=Path,
+        default=ROOT / "config/webrtc-production-policy.default-deny.json",
+    )
+    parser.add_argument(
+        "--release", type=Path, default=ROOT / "evidence/webrtc-release-manifest.json"
+    )
+    parser.add_argument(
+        "--technical",
+        type=Path,
+        default=ROOT / "evidence/webrtc-technical-evidence.json",
+    )
+    parser.add_argument(
+        "--human",
+        type=Path,
+        default=ROOT / "evidence/webrtc-human-approval-manifest.json",
+    )
+    args = parser.parse_args()
+
+    results: list[str] = []
+    results.append(
+        emit(
+            "PSTN_DIALING",
+            "PASS"
+            if os.getenv("LIVE_PSTN_DIALING", "false").lower() == "false"
+            else "FAIL",
+        )
+    )
+    results.append(
+        emit(
+            "PRODUCTION_DIALING",
+            "PASS"
+            if os.getenv("PRODUCTION_DIALING_ENABLED", "false").lower() == "false"
+            else "FAIL",
+        )
+    )
+    policy = Policy.from_file(args.policy)
+    results.append(emit("PILOT_KILL_SWITCH", "PASS" if policy.kill_switch else "FAIL"))
+    policy_safe = (
+        policy.version
+        and policy.emergency_blocking
+        and policy.premium_blocking
+        and policy.consent_required
+    )
+    results.append(emit("PRODUCTION_POLICY_ENGINE", "PASS" if policy_safe else "FAIL"))
+
+    release = load(args.release)
+    artifact = Path(release.get("artifact_file", ""))
+    expected = release.get("artifact_sha256", "")
+    actual = (
+        hashlib.sha256(artifact.read_bytes()).hexdigest() if artifact.is_file() else ""
+    )
+    results.append(
+        emit("RELEASE_BINDING", "PASS" if actual and actual == expected else "FAIL")
+    )
+    head = subprocess.check_output(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True
+    ).strip()
+    build_sha = release.get("protected_source_sha")
+    results.append(
+        emit("SOURCE_BUILD_SHA_MATCH", "PASS" if head == build_sha else "FAIL")
+    )
+
+    technical = load(args.technical)
+    for name in REQUIRED_TECHNICAL_GATES:
+        status = str(technical.get("gates", {}).get(name, "FAIL"))
+        results.append(emit(name, status if status == "PASS" else "FAIL"))
+
+    human = load(args.human)
+    missing = [
+        name
+        for name, item in human.get("approvals", {}).items()
+        if item.get("decision") != "APPROVE"
+    ]
+    human_status = "BLOCKED_HUMAN" if missing else "PASS"
+    results.append(emit("HUMAN_APPROVALS", human_status, ",".join(missing)))
+    technical_failed = "FAIL" in results
+    final = "FAIL" if technical_failed else human_status
+    emit("FINAL_PREFLIGHT", final)
+    return 1 if technical_failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
