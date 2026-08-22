@@ -62,3 +62,8 @@ def test_no_callback_postal_secret_or_sqlite_production_path():
     )
     assert "POSTAL_API_KEY" not in callback_sources
     assert "sqlite" not in callback_sources.lower()
+
+
+def test_runtime_image_includes_named_timezone_database():
+    requirements = (ROOT / "requirements.lock").read_text()
+    assert "tzdata==2026.3" in requirements
