@@ -194,6 +194,7 @@ def _view(row: CallbackRecord) -> dict:
         "version": row.version,
         "correlation_id": row.correlation_id,
         "completion_disposition": row.completion_disposition,
+        "completion_notes": row.completion_notes,
         "customer_context": row.context_json,
     }
 
