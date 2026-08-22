@@ -38,8 +38,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("REVOKE ALL PRIVILEGES ON callback_delivery FROM mw_notification_worker")
-    op.execute("REVOKE ALL PRIVILEGES ON callback_record FROM mw_notification_worker")
-    op.execute("REVOKE ALL PRIVILEGES ON callback_delivery FROM mw_scheduler")
-    op.execute("REVOKE ALL PRIVILEGES ON callback_event FROM mw_scheduler")
-    op.execute("REVOKE ALL PRIVILEGES ON callback_record FROM mw_scheduler")
+    tables = {
+        "mw_notification_worker": ("callback_delivery", "callback_record"),
+        "mw_scheduler": ("callback_delivery", "callback_event", "callback_record"),
+    }
+    for role, role_tables in tables.items():
+        for table in role_tables:
+            op.execute(
+                f"""DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='{role}') THEN
+                  REVOKE ALL PRIVILEGES ON {table} FROM {role};
+                END IF;
+                END $$"""
+            )
