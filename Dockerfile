@@ -1,5 +1,7 @@
 # Python 3.12.14 / Alpine 3.24 (Docker Official Image).
 ARG PYTHON_BASE=docker.io/library/python@sha256:d09d15e60962ca365d1cd544a48773bac9d33f2fb1b00f2aa0deec78ade7dc31
+ARG CHAINGUARD_PYTHON_DEV=cgr.dev/chainguard/python@sha256:4bf7e945777010672b8ccd5d2ae2c41c91ad6d3478878347c731ae536d506bef
+ARG CHAINGUARD_PYTHON_RUNTIME=cgr.dev/chainguard/python@sha256:1f6779775c9f466890da563e411cb677045a6c20b6a65160eefad1deffb5012c
 ARG VCS_REF=unknown
 ARG BUILD_REVISION=unknown
 ARG BUILD_CREATED=unknown
@@ -109,7 +111,16 @@ ENV PYTHONPATH=/app
 USER 10001:10001
 ENTRYPOINT ["pytest"]
 
-FROM patched-python AS runtime
+FROM ${CHAINGUARD_PYTHON_DEV} AS runtime-builder
+USER root
+WORKDIR /build
+COPY requirements.lock ./
+RUN python -m venv /opt/venv \
+ && /opt/venv/bin/python -m pip install --no-cache-dir --disable-pip-version-check \
+      --require-hashes -r requirements.lock \
+ && /opt/venv/bin/python -m pip uninstall -y pip setuptools wheel
+
+FROM ${CHAINGUARD_PYTHON_RUNTIME} AS runtime
 ARG VCS_REF
 ARG BUILD_REVISION
 ARG BUILD_CREATED
@@ -117,15 +128,10 @@ LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_CREATED}" \
       io.codestra.build.revision="${BUILD_REVISION}" \
-      io.codestra.python.base.repository="docker.io/library/python" \
-      io.codestra.python.base.digest="sha256:d09d15e60962ca365d1cd544a48773bac9d33f2fb1b00f2aa0deec78ade7dc31" \
-      io.codestra.python.version="3.12.14"
-USER root
-RUN grep -q '^app:' /etc/group || addgroup -S -g 10001 app \
- && grep -q '^app:' /etc/passwd || adduser -S -D -H -u 10001 -G app app
-COPY --from=builder /opt/venv /opt/venv
-RUN /opt/venv/bin/python -m pip uninstall -y pip setuptools \
- && /usr/local/bin/python -m pip uninstall -y pip setuptools
+      io.codestra.python.base.repository="cgr.dev/chainguard/python" \
+      io.codestra.python.base.digest="sha256:1f6779775c9f466890da563e411cb677045a6c20b6a65160eefad1deffb5012c" \
+      io.codestra.python.version="3.14.7"
+COPY --from=runtime-builder /opt/venv /opt/venv
 WORKDIR /app
 COPY --chown=10001:10001 alembic.ini app.py ./
 COPY --chown=10001:10001 app ./app
