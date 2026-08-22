@@ -38,7 +38,12 @@ ACTIVE = Gauge("websocket_connections_active", "Active authenticated sockets")
 TOTAL = Counter("websocket_connections_total", "Authenticated sockets")
 AUTH_FAILURES = Counter("websocket_auth_failures_total", "Authentication failures")
 SENT = Counter("websocket_messages_sent_total", "Messages sent")
+EVENTS_RECEIVED = Counter("call_workspace_events_received_total", "Validated realtime events received", ["event_type"])
+EVENTS_REJECTED = Counter("call_workspace_events_rejected_total", "Realtime event requests rejected", ["status"])
+EVENT_DUPLICATES = Counter("call_workspace_event_duplicates_total", "Duplicate realtime events suppressed")
+POPUP_DELIVERIES = Counter("call_workspace_popup_deliveries_total", "Call ringing workspaces queued to agents")
 DELIVERY_FAILURES = Counter("websocket_delivery_failures_total", "Delivery failures")
+DISCONNECTS = Counter("websocket_disconnects_total", "Authenticated WebSocket disconnects")
 RECONNECTS = Counter("websocket_reconnects_total", "Reconnects")
 REPLAYED = Counter("websocket_replay_events_total", "Events replayed")
 BACKPRESSURE = Counter("websocket_backpressure_disconnects_total", "Backpressure disconnects")
@@ -165,6 +170,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Codestra WebSocket Gateway", version="1.0.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def observe_rejections(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/internal/v1/realtime/events" and response.status_code >= 400:
+        EVENTS_REJECTED.labels(status=str(response.status_code)).inc()
+    return response
 
 
 def roles_of(claims: dict[str, Any]) -> set[str]:
@@ -336,7 +349,8 @@ async def ws_agent(websocket: WebSocket) -> None:
                 return
             await websocket.send_json({"type": "error", "code": "client_command_not_allowed"})
     except WebSocketDisconnect:
-        pass
+        if scope:
+            DISCONNECTS.inc()
     finally:
         if scope:
             await websocket.app.state.pool.execute("UPDATE realtime_sessions SET active_connection=false WHERE session_id=$1", scope["session_id"])
@@ -355,6 +369,7 @@ def require_internal(x_codestra_internal_token: str = Header(default="")) -> Non
 async def publish_event(event: Event, request: Request) -> dict[str, Any]:
     if event.type not in EVENT_TYPES:
         raise HTTPException(422, "unsupported realtime event type")
+    EVENTS_RECEIVED.labels(event_type=event.type).inc()
     encoded = json.dumps(event.payload, separators=(",", ":"))
     if len(encoded.encode()) > settings.max_message_size:
         raise HTTPException(413, "event payload too large")
@@ -365,6 +380,7 @@ async def publish_event(event: Event, request: Request) -> dict[str, Any]:
       event.correlation_id, event.timestamp, event.tenant_id, event.business_unit_id, event.campaign_id,
       event.user_id, event.agent_id, event.call_id, event.sequence, encoded)
     if not row:
+        EVENT_DUPLICATES.inc()
         return {"accepted": True, "duplicate": True, "delivered": 0}
     document = event.model_dump(mode="json")
     delivered = 0
@@ -375,6 +391,8 @@ async def publish_event(event: Event, request: Request) -> dict[str, Any]:
         try:
             active.queue.put_nowait(document)
             delivered += 1
+            if event.type == "call.ringing":
+                POPUP_DELIVERIES.inc()
         except asyncio.QueueFull:
             BACKPRESSURE.inc()
             await active.websocket.close(code=4429)
