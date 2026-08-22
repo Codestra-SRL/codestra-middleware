@@ -3,6 +3,8 @@ from pathlib import Path
 
 WORKFLOW = Path("deploy/n8n/cod-reconciliation-event-v1.workflow.json")
 PRIVATE_CADDY = Path("deploy/internal-n8n/Caddyfile")
+ODOO_PRIVATE_CADDY = Path("deploy/internal-odoo/Caddyfile")
+ODOO_PRIVATE_COMPOSE = Path("deploy/internal-odoo/compose.internal-odoo.yaml")
 INVENTORY = Path("deploy/internal-n8n/production-workflow-inventory.json")
 
 
@@ -53,6 +55,21 @@ def test_private_proxy_exposes_only_canonical_governed_odoo_result_route():
     assert "/codestra/integration/v1/results" not in source
     assert "\tabort\n" in source
     assert "\tbind 0.0.0.0\n" not in source
+
+
+def test_dedicated_odoo_proxy_is_internal_only_and_path_restricted():
+    caddy = ODOO_PRIVATE_CADDY.read_text()
+    compose = ODOO_PRIVATE_COMPOSE.read_text()
+    assert "method POST" in caddy
+    assert "path /api/v1/integration/results" in caddy
+    assert "remote_ip {$INTEGRATION_CIDR:10.254.41.0/28}" in caddy
+    assert "http://codestra-odoo-1:8069" in caddy
+    assert "/codestra/integration/v1/results" not in caddy
+    assert "ports:" not in compose
+    assert 'expose:\n      - "443"' in compose
+    assert "odoo.internal.codestra.agency" in compose
+    assert "codestra-internal-integration" in compose
+    assert "codestra_backend" in compose
 
 
 def test_production_inventory_does_not_self_authorize_workflows():
