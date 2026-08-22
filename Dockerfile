@@ -20,10 +20,17 @@ RUN apk add --no-cache \
       openssl-dev=3.5.7-r0 \
       patch=2.8-r0 \
       readline-dev=8.3.3-r1 \
-      sqlite-dev=3.53.4-r0 \
       tar=1.35-r5 \
       xz-dev=5.8.3-r0 \
       zlib-dev=1.3.2-r0
+RUN curl --fail --location --proto '=https' --tlsv1.2 \
+      --output /tmp/sqlite.apk \
+      https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/sqlite-3.53.2-r0.apk \
+ && curl --fail --location --proto '=https' --tlsv1.2 \
+      --output /tmp/sqlite-dev.apk \
+      https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/sqlite-dev-3.53.2-r0.apk \
+ && apk add --no-cache /tmp/sqlite.apk /tmp/sqlite-dev.apk \
+ && rm /tmp/sqlite.apk /tmp/sqlite-dev.apk
 COPY security/python312/*.patch /usr/src/patches/
 RUN curl --fail --location --proto '=https' --tlsv1.2 \
       --output Python-3.12.13.tar.xz \
