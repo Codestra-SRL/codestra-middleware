@@ -122,6 +122,8 @@ USER root
 RUN grep -q '^app:' /etc/group || addgroup -S -g 10001 app \
  && grep -q '^app:' /etc/passwd || adduser -S -D -H -u 10001 -G app app
 COPY --from=builder /opt/venv /opt/venv
+RUN /opt/venv/bin/python -m pip uninstall -y pip setuptools \
+ && /usr/local/bin/python -m pip uninstall -y pip setuptools
 WORKDIR /app
 COPY --chown=10001:10001 alembic.ini app.py ./
 COPY --chown=10001:10001 app ./app
