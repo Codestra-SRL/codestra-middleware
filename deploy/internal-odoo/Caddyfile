@@ -6,7 +6,7 @@
 odoo.internal.codestra.agency:443 {
 	tls /run/secrets/odoo_internal_tls_cert /run/secrets/odoo_internal_tls_key
 
-	@outside_integration_network not remote_ip 10.254.41.0/28
+	@outside_integration_network not remote_ip {$INTEGRATION_CIDR:10.254.41.0/28}
 	handle @outside_integration_network {
 		respond "forbidden" 403
 	}

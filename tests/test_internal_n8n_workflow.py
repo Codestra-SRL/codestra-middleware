@@ -62,7 +62,7 @@ def test_dedicated_odoo_proxy_is_internal_only_and_path_restricted():
     compose = ODOO_PRIVATE_COMPOSE.read_text()
     assert "method POST" in caddy
     assert "path /api/v1/integration/results" in caddy
-    assert "remote_ip 10.254.41.0/28" in caddy
+    assert "remote_ip {$INTEGRATION_CIDR:10.254.41.0/28}" in caddy
     assert "http://codestra-odoo-1:8069" in caddy
     assert "/codestra/integration/v1/results" not in caddy
     assert "ports:" not in compose
