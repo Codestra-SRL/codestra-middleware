@@ -45,7 +45,6 @@ def test_postgres_rls_is_forced_and_context_is_transaction_local():
     assert "current_setting('app.actor_id'" in migration
     assert "current_setting('app.role'" in migration
     assert "NOBYPASSRLS" in migration
-    api = (ROOT / "app/api/v1/callbacks.py").read_text()
     context = (ROOT / "app/core/callback_rls.py").read_text()
     assert "set_config('app.tenant_id', :tenant, true)" in context
     assert "set_config('app.campaign_ids', :campaigns, true)" in context
@@ -54,7 +53,7 @@ def test_postgres_rls_is_forced_and_context_is_transaction_local():
 def test_scheduler_uses_skip_locked_and_requires_tenant():
     source = (ROOT / "app/callback_scheduler.py").read_text()
     assert "with_for_update(skip_locked=True)" in source
-    assert "tenant_id is required" in source
+    assert "tenant_id and campaign_id are required" in source
 
 
 def test_no_callback_postal_secret_or_sqlite_production_path():
