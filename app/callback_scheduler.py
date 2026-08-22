@@ -19,7 +19,9 @@ async def claim_due(
 ) -> list[CallbackRecord]:
     now = now or datetime.now(UTC)
     if not tenant_id or not campaign_id:
-        raise ValueError("tenant_id and campaign_id are required for callback scheduler RLS")
+        raise ValueError(
+            "tenant_id and campaign_id are required for callback scheduler RLS"
+        )
     await set_callback_rls_context(
         db,
         tenant_id=tenant_id,
@@ -102,7 +104,9 @@ async def mark_missed(
 ) -> int:
     now = now or datetime.now(UTC)
     if not tenant_id or not campaign_id:
-        raise ValueError("tenant_id and campaign_id are required for missed detection RLS")
+        raise ValueError(
+            "tenant_id and campaign_id are required for missed detection RLS"
+        )
     await set_callback_rls_context(
         db,
         tenant_id=tenant_id,
@@ -216,7 +220,9 @@ async def reconcile(
     db: AsyncSession, tenant_id: str, campaign_id: str | None = None
 ) -> dict[str, int]:
     if not tenant_id or not campaign_id:
-        raise ValueError("tenant_id and campaign_id are required for callback reconciliation RLS")
+        raise ValueError(
+            "tenant_id and campaign_id are required for callback reconciliation RLS"
+        )
     await set_callback_rls_context(
         db,
         tenant_id=tenant_id,

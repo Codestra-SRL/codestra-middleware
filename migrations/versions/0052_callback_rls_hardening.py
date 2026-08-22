@@ -63,6 +63,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP POLICY callback_popup_ack_tenant ON callback_popup_ack")
+    op.execute("DROP POLICY callback_delivery_tenant ON callback_delivery")
+    op.execute("DROP POLICY callback_event_tenant ON callback_event")
+    op.execute("DROP POLICY callback_record_scope ON callback_record")
     for table in (
         "callback_popup_ack",
         "callback_delivery",
