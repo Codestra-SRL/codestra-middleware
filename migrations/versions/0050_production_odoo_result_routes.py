@@ -1,14 +1,14 @@
 """Register private production identity and Odoo result routes.
 
-Revision ID: 0049_production_odoo_results
-Revises: 0048_agent_call_realtime
+Revision ID: 0050_production_odoo_results
+Revises: 0049_merge_external_agent
 """
 
 from alembic import op
 
 
-revision = "0049_production_odoo_results"
-down_revision = "0048_agent_call_realtime"
+revision = "0050_production_odoo_results"
+down_revision = "0049_merge_external_agent"
 branch_labels = None
 depends_on = None
 
