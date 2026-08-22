@@ -1,8 +1,11 @@
 from datetime import datetime
 import pytest
+from fastapi import HTTPException
+from starlette.requests import Request
 from pydantic import ValidationError
 
 from app.api.v1.callbacks import CreateCallback
+from app.api.v1.callbacks import principal
 from app.core.callbacks import (
     CallbackConflict,
     canonical_time,
@@ -99,3 +102,39 @@ def test_production_runtime_exposes_callback_contract_fail_closed():
     assert settings.callback_scheduler_enabled is False
     assert settings.callback_delivery_enabled is False
     assert settings.callback_test_syn_enabled is False
+
+
+def test_callback_principal_is_derived_from_verified_claims(monkeypatch):
+    claims = {
+        "sub": "agent-6101",
+        "tenant_id": "COD",
+        "campaigns": ["TEST_SYN"],
+        "teams": ["SYN_TEAM"],
+        "realm_access": {"roles": ["agent"]},
+    }
+    monkeypatch.setattr(
+        "app.api.v1.callbacks.KeycloakValidator.validate", lambda self, token: claims
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/control/callbacks",
+            "headers": [],
+        }
+    )
+    value = principal(request, "Bearer synthetic.jwt.value")
+    assert (
+        value.tenant == "COD"
+        and value.campaigns == frozenset({"TEST_SYN"})
+        and value.role == "agent"
+    )
+
+
+def test_callback_principal_rejects_missing_bearer():
+    request = Request(
+        {"type": "http", "method": "GET", "path": "/api/v1/callbacks", "headers": []}
+    )
+    with pytest.raises(HTTPException) as denied:
+        principal(request, "")
+    assert denied.value.status_code == 401

@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     callback_delivery_enabled: bool = False
     callback_allowed_tenant: str = ""
     callback_allowed_campaign: str = ""
+    callback_jwt_issuer: str = ""
+    callback_jwt_audience: str = "codestra-callback-api"
+    callback_jwt_jwks_url: str = ""
+    callback_jwt_authorized_parties: str = ""
     messaging_enabled: bool = False
     external_dial_enabled: bool = False
     ai_private_api_enabled: bool = False

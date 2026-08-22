@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -23,6 +23,8 @@ from app.core.callbacks import (
     reminders,
     transition,
 )
+from app.core.config import settings
+from app.core.jwt_auth import JWTAuthError, KeycloakValidator
 from app.db.models import CallbackEvent, CallbackRecord
 from app.db.session import get_session
 
@@ -39,34 +41,57 @@ class Principal:
 
 
 def principal(
-    x_actor: str = Header("", alias="X-Codestra-Actor-ID"),
-    x_tenant: str = Header("", alias="X-Codestra-Tenant-ID"),
-    x_campaigns: str = Header("", alias="X-Codestra-Campaigns"),
-    x_role: str = Header("", alias="X-Codestra-Role"),
-    x_teams: str = Header("", alias="X-Codestra-Teams"),
+    request: Request,
+    authorization: str = Header("", alias="Authorization"),
 ) -> Principal:
-    if (
-        not x_actor
-        or not x_tenant
-        or not x_campaigns
-        or x_role
-        not in {
-            "agent",
-            "supervisor",
-            "campaign_manager",
-            "call_center_admin",
-            "owner",
-            "qa",
-            "service",
-        }
-    ):
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "callback bearer identity required")
+    scope = "callbacks.read" if request.method == "GET" else "callbacks.write"
+    validator = KeycloakValidator(
+        issuer=settings.callback_jwt_issuer,
+        audience=settings.callback_jwt_audience,
+        jwks_url=settings.callback_jwt_jwks_url,
+        authorized_parties=frozenset(
+            filter(None, settings.callback_jwt_authorized_parties.split(","))
+        ),
+        required_scopes=frozenset({scope}),
+    )
+    try:
+        claims = validator.validate(authorization[7:])
+    except JWTAuthError as exc:
+        status = (
+            503
+            if not settings.callback_jwt_issuer or not settings.callback_jwt_jwks_url
+            else 403
+        )
+        raise HTTPException(status, "callback identity validation failed") from exc
+    roles = set(claims.get("realm_access", {}).get("roles", []))
+    role = next(
+        (
+            value
+            for value in (
+                "owner",
+                "call_center_admin",
+                "campaign_manager",
+                "supervisor",
+                "qa",
+                "agent",
+                "service",
+            )
+            if value in roles
+        ),
+        "",
+    )
+    tenant = str(claims.get("tenant_id", ""))
+    campaigns = frozenset(map(str, claims.get("campaigns", [])))
+    if not tenant or not campaigns or not role:
         raise HTTPException(403, "scoped callback identity required")
     return Principal(
-        x_actor,
-        x_tenant,
-        frozenset(filter(None, x_campaigns.split(","))),
-        x_role,
-        frozenset(filter(None, x_teams.split(","))),
+        str(claims.get("preferred_username") or claims.get("sub")),
+        tenant,
+        campaigns,
+        role,
+        frozenset(map(str, claims.get("teams", []))),
     )
 
 
