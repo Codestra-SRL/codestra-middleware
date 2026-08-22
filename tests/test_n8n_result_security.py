@@ -86,6 +86,31 @@ async def test_action_result_remains_fail_closed_before_durable_delivery(monkeyp
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "action_type", ["CREATE_ACTIVITY", "CREATE_DRAFT", "SEND_EMAIL", "SEND_SMS"]
+)
+async def test_action_without_production_adapter_is_rejected_before_delivery(
+    monkeypatch, action_type
+):
+    monkeypatch.setattr(integrations, "_authenticate_n8n", lambda *_: claims())
+    monkeypatch.setattr(integrations.settings, "odoo_automation_writes_enabled", True)
+    body = {**RESULT, "actions": [{
+        "action_type": action_type, "entity_type": "crm.lead", "entity_id": "17",
+        "values": {},
+    }]}
+    db = FakeSession([event()])
+    with pytest.raises(HTTPException) as raised:
+        await integrations.n8n_result(
+            body, authorization="Bearer synthetic", idempotency_key="result:event-1:1",
+            db=db,
+        )
+    assert raised.value.status_code == 503
+    assert "adapter is not production enabled" in raised.value.detail
+    assert db.added == []
+    assert db.commits == 0
+
+
+@pytest.mark.asyncio
 async def test_action_result_is_enqueued_when_writes_are_explicitly_enabled(monkeypatch):
     monkeypatch.setattr(integrations, "_authenticate_n8n", lambda *_: claims())
     monkeypatch.setattr(integrations.settings, "odoo_automation_writes_enabled", True)
