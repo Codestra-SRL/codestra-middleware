@@ -56,6 +56,35 @@ class EventEnvelope(BaseModel):
     data_minimized: bool = False
 
 
+class CRMEventEnvelope(BaseModel):
+    """Strict campaign CRM envelope; identity is never inferred from payload."""
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["1"]
+    event_id: str = Field(min_length=1, max_length=128)
+    event_type: str = Field(pattern=r"^[a-z][a-z0-9_.-]+$")
+    correlation_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    tenant_id: str = Field(min_length=1, max_length=128)
+    business_unit_id: str = Field(pattern=r"^(?:GLOBAL|MOY|COD|SCP|MBL|RLP|FTP|TRX|CAL)$")
+    campaign_id: str = Field(min_length=1, max_length=64)
+    entity_type: str = Field(min_length=1, max_length=128)
+    entity_id: str = Field(min_length=1, max_length=128)
+    actor_type: Literal["HUMAN", "AI", "SYSTEM"]
+    actor_id: str = Field(min_length=1, max_length=128)
+    previous_status: str | None = Field(default=None, max_length=128)
+    current_status: str | None = Field(default=None, max_length=128)
+    occurred_at: datetime
+    automation_key: str = Field(min_length=1, max_length=128)
+    payload: dict[str, Any]
+
+
+def enforce_crm_scope(envelope: CRMEventEnvelope) -> None:
+    if envelope.business_unit_id not in BUSINESS_UNITS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "business unit not permitted")
+    if envelope.campaign_id not in settings.allowed_campaigns:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "campaign not permitted")
+
+
 def enforce_scope(envelope: EventEnvelope) -> None:
     if envelope.environment != settings.automation_environment:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "environment not permitted")
@@ -241,10 +270,18 @@ async def receive_event(
 
 
 @router.post("/policy-check")
-async def policy_check(body: EventEnvelope) -> dict[str, Any]:
-    enforce_scope(body)
+async def policy_check(body: dict[str, Any]) -> dict[str, Any]:
+    try:
+        if "tenant_id" in body or "actor_type" in body:
+            envelope = CRMEventEnvelope.model_validate(body)
+            enforce_crm_scope(envelope)
+        else:
+            envelope = EventEnvelope.model_validate(body)
+            enforce_scope(envelope)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid automation event schema") from exc
     return {
-        **body.model_dump(mode="json"),
+        **envelope.model_dump(mode="json"),
         "allowed": True,
         "workflow_id": "validated-by-router",
     }

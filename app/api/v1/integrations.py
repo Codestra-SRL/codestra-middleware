@@ -6,7 +6,7 @@ fail-closed until the approved Odoo adapter and live-write flag are enabled.
 """
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,6 +33,29 @@ class CallbackResult(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     correlation_id: str = Field(min_length=1, max_length=128)
     trace_id: str = Field(min_length=1, max_length=128)
+
+
+class AutomationAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_type: Literal[
+        "CREATE_ACTIVITY", "CREATE_INTERNAL_SUMMARY", "CREATE_DRAFT",
+        "SET_NEXT_ACTION", "CHANGE_STATUS", "SEND_EMAIL", "SEND_SMS",
+    ]
+    entity_type: str = Field(min_length=1, max_length=128)
+    entity_id: str = Field(min_length=1, max_length=128)
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+class AutomationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_id: str = Field(min_length=1, max_length=128)
+    correlation_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    workflow_key: str = Field(min_length=1, max_length=128)
+    execution_id: str = Field(min_length=1, max_length=128)
+    status: Literal["COMPLETED", "FAILED", "RETRY"]
+    actions: list[AutomationAction] = Field(default_factory=list, max_length=100)
+    completed_at: datetime
 
 
 def _require_replay_headers(timestamp: str | None, nonce: str | None, signature: str | None) -> None:
@@ -87,7 +110,23 @@ async def n8n_dispatch(
 
 
 @router.post("/n8n/results", status_code=202)
-async def n8n_result(body: CallbackResult) -> dict[str, str]:
+async def n8n_result(body: dict[str, Any]) -> dict[str, str]:
+    if "event_id" in body:
+        result = AutomationResult.model_validate(body)
+        if result.actions and not settings.odoo_automation_writes_enabled:
+            raise HTTPException(503, "Odoo automation writes are disabled")
+        return {"accepted": "true", "event_id": result.event_id, "status": result.status}
+    legacy = CallbackResult.model_validate(body)
+    return {"accepted": "true", "command_id": legacy.command_id, "status": legacy.status}
+
+
+@router.post("/n8n/progress", status_code=202)
+async def n8n_progress(body: CallbackResult) -> dict[str, str]:
+    return {"accepted": "true", "command_id": body.command_id, "status": body.status}
+
+
+@router.post("/n8n/dead-letter", status_code=202)
+async def n8n_dead_letter(body: CallbackResult) -> dict[str, str]:
     return {"accepted": "true", "command_id": body.command_id, "status": body.status}
 
 
