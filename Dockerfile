@@ -151,7 +151,8 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1
 USER 10001:10001
 EXPOSE 8095
-CMD ["python", "-m", "app.entrypoints.integration_api"]
+ENTRYPOINT []
+CMD ["/opt/venv/bin/python", "-m", "app.entrypoints.integration_api"]
 
 FROM patched-python AS qwen-auth-verifier-runtime
 ARG VCS_REF
