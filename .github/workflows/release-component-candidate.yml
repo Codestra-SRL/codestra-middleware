@@ -103,8 +103,17 @@ jobs:
           jq -e 'any(.[]; .state == "APPROVED")' reviews.json >/dev/null
           pr_head="$(jq -r .head.sha pr.json)"
           gh api "repos/${GITHUB_REPOSITORY}/commits/${pr_head}/check-runs" > checks.json
-          jq -e '[.check_runs[] | select(.name | startswith("validate ("))] as $checks |
-            ($checks | length) == 3 and all($checks[]; .conclusion == "success")' checks.json >/dev/null
+          jq -e '
+            [.check_runs[] | select(.name | startswith("validate ("))]
+            | group_by(.name) as $groups
+            | ($groups | length) == 3
+              and ([ $groups[] | .[0].name ] | sort) == [
+                "validate (agent-desktop)",
+                "validate (middleware)",
+                "validate (websocket-gateway)"
+              ]
+              and all($groups[]; any(.[]; .conclusion == "success"))
+          ' checks.json >/dev/null
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: main
