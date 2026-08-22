@@ -138,6 +138,12 @@ RECORDING_EXPORTER_PATH = re.compile(
     r"^/api/v1/recordings(?:/reservations|/REC-[0-9a-f]{32}/(?:complete|failure))$"
 )
 CALLBACK_JWT_PATH = re.compile(r"^/api/v1/(?:control/)?callbacks(?:/.*)?$")
+N8N_SERVICE_JWT_ROUTES = frozenset(
+    {
+        ("POST", "/api/v1/automation/policy-check"),
+        ("POST", "/api/v1/integrations/n8n/results"),
+    }
+)
 
 
 def _is_ai_console_jwt_route(request: Request) -> bool:
@@ -190,9 +196,12 @@ async def control_request_guard(request: Request, call_next):
             request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
         )
         and request.url.path not in SELF_AUTHENTICATED_PATHS
-        and not (request.method == "POST" and SOCIAL_WEBHOOK_PATH.fullmatch(request.url.path))
+        and not (
+            request.method == "POST" and SOCIAL_WEBHOOK_PATH.fullmatch(request.url.path)
+        )
         and not _is_ai_console_jwt_route(request)
         and not CALLBACK_JWT_PATH.fullmatch(request.url.path)
+        and (request.method, request.url.path) not in N8N_SERVICE_JWT_ROUTES
     ):
         try:
             verify_bearer(
