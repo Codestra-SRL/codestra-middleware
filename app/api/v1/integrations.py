@@ -8,10 +8,16 @@ fail-closed until the approved Odoo adapter and live-write flag are enabled.
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.automation import canonical_hash, redact
 from app.core.config import settings
+from app.core.jwt_auth import JWTAuthError, KeycloakValidator
+from app.db.models import AuditEvent, IdempotencyRecord, IntegrationEvent
+from app.db.session import get_session
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
 
@@ -68,6 +74,29 @@ def _require_replay_headers(timestamp: str | None, nonce: str | None, signature:
         raise HTTPException(401, "request timestamp invalid") from exc
 
 
+def _scope_values(claims: dict[str, Any], plural: str, singular: str) -> set[str]:
+    values = claims.get(plural, claims.get(singular, []))
+    if isinstance(values, str):
+        return {item for item in values.replace(",", " ").split() if item}
+    return {str(item) for item in values or []}
+
+
+def _authenticate_n8n(authorization: str, required_scope: str) -> dict[str, Any]:
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "bearer token required")
+    try:
+        return KeycloakValidator(
+            issuer=settings.n8n_service_issuer,
+            audience=settings.n8n_service_audience,
+            jwks_url=settings.n8n_service_jwks_url,
+            authorized_parties=frozenset({settings.n8n_service_client_id}),
+            required_scopes=frozenset({required_scope}),
+            required_environment="production",
+        ).validate(authorization.removeprefix("Bearer ").strip())
+    except JWTAuthError as exc:
+        raise HTTPException(401, str(exc)) from exc
+
+
 @router.get("/odoo/health")
 async def odoo_health() -> dict[str, str]:
     return {"status": "ok", "gateway": "codestra-middleware", "provider": "odoo"}
@@ -110,14 +139,67 @@ async def n8n_dispatch(
 
 
 @router.post("/n8n/results", status_code=202)
-async def n8n_result(body: dict[str, Any]) -> dict[str, str]:
+async def n8n_result(
+    body: dict[str, Any],
+    authorization: str = Header(alias="Authorization"),
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
     if "event_id" in body:
         result = AutomationResult.model_validate(body)
-        if result.actions and not settings.odoo_automation_writes_enabled:
-            raise HTTPException(503, "Odoo automation writes are disabled")
-        return {"accepted": "true", "event_id": result.event_id, "status": result.status}
-    legacy = CallbackResult.model_validate(body)
-    return {"accepted": "true", "command_id": legacy.command_id, "status": legacy.status}
+        claims = _authenticate_n8n(authorization, "n8n.results.submit")
+        if idempotency_key != result.idempotency_key:
+            raise HTTPException(409, "idempotency binding conflict")
+        event = await db.scalar(
+            select(IntegrationEvent).where(
+                IntegrationEvent.original_event_id == result.event_id
+            )
+        )
+        envelope = event.payload_json if event else {}
+        if (
+            event is None
+            or event.correlation_id != result.correlation_id
+            or event.idempotency_key != result.idempotency_key
+            or envelope.get("event_id") != result.event_id
+            or envelope.get("campaign_id") not in _scope_values(claims, "campaigns", "campaign_scope")
+            or envelope.get("business_unit_id") not in _scope_values(claims, "business_units", "business_unit_scope")
+        ):
+            raise HTTPException(409, "automation result source binding mismatch")
+        if result.actions:
+            if not settings.odoo_automation_writes_enabled:
+                raise HTTPException(503, "Odoo automation writes are disabled")
+            raise HTTPException(503, "durable Odoo campaign action delivery is not configured")
+        scope = "n8n-standard-result"
+        key_hash = canonical_hash({"idempotency_key": result.idempotency_key})
+        request_hash = canonical_hash(redact(result.model_dump(mode="json")))
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+            {"scope": f"{scope}:{key_hash}"},
+        )
+        prior = await db.scalar(select(IdempotencyRecord).where(
+            IdempotencyRecord.scope == scope,
+            IdempotencyRecord.key_hash == key_hash,
+        ))
+        response = {"accepted": "true", "event_id": result.event_id, "status": result.status}
+        if prior:
+            if prior.request_hash != request_hash:
+                await db.rollback()
+                raise HTTPException(409, "automation result idempotency conflict")
+            await db.commit()
+            return response
+        db.add(IdempotencyRecord(
+            scope=scope, key_hash=key_hash, request_hash=request_hash,
+            response=response, status_code=202, event_id=event.id,
+        ))
+        db.add(AuditEvent(
+            action="n8n.standard_result.accepted", subject=result.event_id,
+            correlation_id=result.correlation_id, decision=result.status,
+            redacted_payload={"workflow_key": result.workflow_key, "execution_id": result.execution_id},
+        ))
+        await db.commit()
+        return response
+    CallbackResult.model_validate(body)
+    raise HTTPException(410, "legacy unauthenticated callbacks are retired")
 
 
 @router.post("/n8n/progress", status_code=202)
