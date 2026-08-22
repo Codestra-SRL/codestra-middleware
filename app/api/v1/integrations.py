@@ -69,6 +69,11 @@ class AutomationResult(BaseModel):
     completed_at: datetime
 
 
+ODOO_CAMPAIGN_ACTION_TYPES = frozenset({
+    "CREATE_INTERNAL_SUMMARY", "SET_NEXT_ACTION", "CHANGE_STATUS",
+})
+
+
 def _require_replay_headers(timestamp: str | None, nonce: str | None, signature: str | None) -> None:
     if not timestamp or not nonce or not signature:
         raise HTTPException(401, "timestamp, nonce, and signature are required")
@@ -170,8 +175,19 @@ async def n8n_result(
             or envelope.get("business_unit_id") not in _scope_values(claims, "business_units", "business_unit_scope")
         ):
             raise HTTPException(409, "automation result source binding mismatch")
-        if result.actions and not settings.odoo_automation_writes_enabled:
-            raise HTTPException(503, "Odoo automation writes are disabled")
+        if result.actions:
+            unavailable = sorted({
+                action.action_type for action in result.actions
+                if action.action_type not in ODOO_CAMPAIGN_ACTION_TYPES
+            })
+            if unavailable:
+                raise HTTPException(
+                    503,
+                    "automation action adapter is not production enabled: "
+                    + ",".join(unavailable),
+                )
+            if not settings.odoo_automation_writes_enabled:
+                raise HTTPException(503, "Odoo automation writes are disabled")
         scope = "n8n-standard-result"
         key_hash = canonical_hash({"idempotency_key": result.idempotency_key})
         request_hash = canonical_hash(redact(result.model_dump(mode="json")))
