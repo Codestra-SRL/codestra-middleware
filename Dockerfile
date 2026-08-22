@@ -20,7 +20,7 @@ RUN apk add --no-cache \
       openssl-dev=3.5.7-r0 \
       patch=2.8-r0 \
       readline-dev=8.3.3-r1 \
-      sqlite-dev=3.53.2-r0 \
+      sqlite-dev=3.53.4-r0 \
       tar=1.35-r5 \
       xz-dev=5.8.3-r0 \
       zlib-dev=1.3.2-r0
