@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from starlette.requests import Request
 from pydantic import ValidationError
 
-from app.api.v1.callbacks import CreateCallback
+from app.api.v1.callbacks import CreateCallback, _view
 from app.api.v1.callbacks import principal
 from app.core.callbacks import (
     CallbackConflict,
@@ -16,6 +16,7 @@ from app.core.callbacks import (
 )
 from app.core.config import settings
 from app.entrypoints.integration_api import app as integration_app
+from app.db.models import CallbackRecord
 
 
 def request(**overrides):
@@ -138,3 +139,26 @@ def test_callback_principal_rejects_missing_bearer():
     with pytest.raises(HTTPException) as denied:
         principal(request, "")
     assert denied.value.status_code == 401
+
+
+def test_reconciliation_view_preserves_completion_details():
+    row = CallbackRecord(
+        id="018f0000-0000-7000-8000-000000000001",
+        tenant_id="COD",
+        campaign_id="TEST_SYN",
+        assigned_agent_id="synthetic.agent.test.syn.6101",
+        scheduled_at=datetime.fromisoformat("2026-08-25T14:00:00+00:00"),
+        customer_timezone="UTC",
+        priority="NORMAL",
+        reason="Synthetic reconciliation",
+        notes="",
+        state="COMPLETED",
+        version=4,
+        correlation_id="TEST-SYN-CORRELATION",
+        completion_disposition="SYNTHETIC_COMPLETE",
+        completion_notes="Synthetic callback completed without PSTN",
+        context_json={},
+    )
+    payload = _view(row)
+    assert payload["completion_disposition"] == "SYNTHETIC_COMPLETE"
+    assert payload["completion_notes"] == "Synthetic callback completed without PSTN"
