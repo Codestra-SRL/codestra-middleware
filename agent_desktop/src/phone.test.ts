@@ -21,7 +21,7 @@ const session = (overrides: Partial<ProvisioningSession> = {}): ProvisioningSess
   sip_uri: "sip:6101@dialer.codestra.agency",
   authorization_username: "temporary-user",
   ephemeral_password: "memory-only-credential",
-  websocket_url: "wss://dialer.codestra.agency:8089/ws",
+  websocket_url: "wss://wss.codestra.agency:8089/ws",
   ice_servers: [{ urls: ["turns:vicidial-staging.codestra.agency:5349?transport=tcp"], username: "temporary-turn", credential: "temporary-turn-credential" }],
   expires_at: new Date(Date.now() + 300_000).toISOString(),
   role: "SETTER",

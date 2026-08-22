@@ -14,11 +14,13 @@ import { NotificationsModule } from "./features/notifications/NotificationsModul
 import { PhoneModule } from "./features/phone/PhoneModule";
 import { SettingsModule } from "./features/settings/SettingsModule";
 import { SupervisorModule } from "./features/supervisor/SupervisorModule";
+import { CallWorkspace } from "./features/workspace/CallWorkspace";
 import { DiagnosticPhone, SipJsPhone, type PhoneAdapter, type PhoneSnapshot } from "./phone";
 import { mockDesktopService } from "./services/desktop";
 import type { DesktopData } from "./types/desktop";
 import { useSingleTab } from "./useSingleTab";
 import { RealtimeClient, type RealtimeEvent, type RealtimeEvidence, type RealtimeState } from "./realtime";
+import { workspaceService, type Workspace } from "./workspace";
 import "./styles.css";
 
 type View = "workspace" | "supervisor" | "diagnostics" | "settings";
@@ -47,7 +49,11 @@ export default function App() {
   const [message, setMessage] = useState("Staging-only · production routes and transfers disabled");
   const [realtimeState, setRealtimeState] = useState<RealtimeState>("Disconnected");
   const [screenPop, setScreenPop] = useState<RealtimeEvent>();
+  const [activeWorkspace, setActiveWorkspace] = useState<Workspace>();
+  const [workspaceError, setWorkspaceError] = useState("");
   const [recordingState, setRecordingState] = useState("Off");
+  const [playbackUrl, setPlaybackUrl] = useState<string|null>(null);
+  const [recordingError, setRecordingError] = useState<string|null>(null);
   const [browserLogin, setBrowserLogin] = useState(false);
   const [canonicalIdentity, setCanonicalIdentity] = useState(false);
   const [realtimeEvidence, setRealtimeEvidence] = useState<Set<RealtimeEvidence>>(new Set());
@@ -56,6 +62,14 @@ export default function App() {
   const [microphoneReady, setMicrophoneReady] = useState(false);
   const [speakerReady, setSpeakerReady] = useState(false);
   const realtime = useRef<RealtimeClient | undefined>(undefined);
+  const workspaceSequence = useRef(0);
+
+  const loadWorkspace = async (callId:string) => {
+    try {
+      const loaded=await workspaceService.load(callId);
+      workspaceSequence.current=loaded.sequence;setActiveWorkspace(loaded);setWorkspaceError("");
+    } catch(error) { setWorkspaceError(error instanceof Error?error.message:"Call workspace unavailable"); }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -66,15 +80,31 @@ export default function App() {
       setCanonicalIdentity(exactIdentity);
       if (!exactIdentity) throw new Error("Certification identity mismatch");
       realtime.current = new RealtimeClient(event => {
-        if (event.type === "call.ringing") setScreenPop(event);
+        if (event.call_id&&event.type.startsWith("call.")&&event.sequence>=workspaceSequence.current) {
+          if(event.type === "call.ringing")setScreenPop(event);
+          void loadWorkspace(event.call_id);
+        }
         if (event.type === "recording.started") setRecordingState("ON");
         if (event.type === "recording.available") setRecordingState("Available");
         if (event.type === "session.revoked") realtime.current?.disconnect();
       }, setRealtimeState, evidence => setRealtimeEvidence(current => new Set(current).add(evidence)));
-      return realtime.current.connect();
+      return realtime.current.connect().then(async()=>{
+        try {
+          const current=await workspaceService.current();
+          if(current?.call_id)await loadWorkspace(current.call_id);
+        } catch(error) {
+          setWorkspaceError(error instanceof Error?error.message:"Active call recovery unavailable");
+        }
+      });
     }).catch(error => { setRealtimeState("Disconnected"); setMessage(error instanceof Error ? error.message : "Authentication failed"); });
     return () => { cancelled = true; realtime.current?.disconnect(); };
   }, []);
+
+  useEffect(()=>{
+    if(!duplicate)return;
+    realtime.current?.disconnect();setScreenPop(undefined);setActiveWorkspace(undefined);
+    setMessage("Duplicate tab detected. Registration and call workspace delivery blocked.");
+  },[duplicate]);
 
   useEffect(() => {
     void mockDesktopService.load().then(setData);
@@ -168,7 +198,9 @@ export default function App() {
           <h2>M11 certification</h2><strong>{diagnosticFailClosed ? "Fail-closed" : "Ready — stop before REGISTER"}</strong>
         </section>
         {screenPop && <section className="panel" data-testid="screen-pop"><h2>Incoming call</h2><strong>{String(screenPop.payload.customer_name ?? "Customer")}</strong><p>{screenPop.campaign_id} · {String(screenPop.payload.phone ?? "")}</p><a href={`/web#id=${encodeURIComponent(String(screenPop.payload.lead_id ?? ""))}&model=crm.lead&view_type=form`}>Open lead</a></section>}
-        <section className="panel" data-testid="recording-state"><h2>Recording</h2><strong>{recordingState}</strong>{recordingState === "Available" && <button>Play</button>}</section>
+        {workspaceError&&<div className="workspace-error" role="alert">{workspaceError}<button onClick={()=>activeWorkspace&&void loadWorkspace(activeWorkspace.call_id)}>Retry</button></div>}
+        {activeWorkspace&&<CallWorkspace workspace={activeWorkspace} onRefresh={()=>loadWorkspace(activeWorkspace.call_id)}/>}
+        <section className="panel" data-testid="recording-state"><h2>Recording</h2><strong>{recordingState}</strong>{recordingState === "Available" && <button onClick={()=>{if(!activeWorkspace)return;setRecordingError(null);void workspaceService.playback(activeWorkspace.call_id).then(result=>setPlaybackUrl(result.playback_url)).catch(()=>setRecordingError("Recording is unavailable or you do not have permission."));}}>Play</button>}{playbackUrl&&<audio controls src={playbackUrl} onEnded={()=>setPlaybackUrl(null)}>Your browser cannot play this recording.</audio>}{recordingError&&<p role="alert">{recordingError}</p>}</section>
         {features.phone && <PhoneModule mode={phone.mode} state={phoneSnapshot.state} registration={registration} call={callState} duplicate={duplicate} muted={phoneSnapshot.muted} inputs={inputs} outputs={outputs} input={input} output={output} message={message}
           onInput={value => { setInput(value); void run(() => phone.replaceInputDevice(value), "Microphone changed"); }}
           onOutput={value => { setOutput(value); void run(() => phone.replaceOutputDevice(value), "Speaker changed"); }}
@@ -184,7 +216,7 @@ export default function App() {
         <AiModule ai={data.ai}/><DispositionModule onSave={value => mockDesktopService.disposition(data.lead.id, value)}/>
         <CallbackModule onSave={(when, reason) => mockDesktopService.scheduleCallback(data.lead.id, when, reason)}/><NotificationsModule items={data.notifications}/>
       </div>}
-      {view === "supervisor" && <SupervisorModule team={data.team}/>}
+      {view === "supervisor" && <SupervisorModule/>}
       {view === "diagnostics" && <DiagnosticsModule snapshot={phoneSnapshot.media ?? emptySnapshot} onExport={exportDiagnostics}/>}
       {view === "settings" && <SettingsModule/>}
     </main>
