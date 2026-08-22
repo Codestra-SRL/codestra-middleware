@@ -3,7 +3,7 @@
 from app.core.config import settings
 from app.entrypoints.runtime import run_worker
 from app.workers.scheduler import maintenance_once
-from app.callback_scheduler import claim_due, mark_missed, reconcile
+from app.callback_scheduler import claim_due, escalate_missed, mark_missed, reconcile
 from app.db.session import SessionFactory
 
 
@@ -29,8 +29,12 @@ async def cycle() -> dict[str, object]:
                 session, SERVICE, tenant_id="COD", campaign_id="TEST_SYN"
             )
         async with SessionFactory() as session:
-            repaired = await reconcile(session)
-        return {"due": len(due), "missed": missed, **repaired}
+            escalated = await escalate_missed(
+                session, SERVICE, tenant_id="COD", campaign_id="TEST_SYN"
+            )
+        async with SessionFactory() as session:
+            repaired = await reconcile(session, tenant_id="COD", campaign_id="TEST_SYN")
+        return {"due": len(due), "missed": missed, "escalated": escalated, **repaired}
     if not settings.outbox_worker_enabled:
         return {"status": "disabled"}
     return await maintenance_once()

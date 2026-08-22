@@ -79,6 +79,13 @@ class Settings(BaseSettings):
     callback_jwt_audience: str = "codestra-callback-api"
     callback_jwt_jwks_url: str = ""
     callback_jwt_authorized_parties: str = ""
+    callback_email_command_enabled: bool = False
+    callback_email_sender_profile_id: str = ""
+    callback_email_template_id: str = "codestra.callback.agent-reminder.v1"
+    callback_email_policy_hash: str = ""
+    callback_websocket_delivery_enabled: bool = False
+    callback_websocket_gateway_url: str = ""
+    callback_websocket_token_file: str = ""
     messaging_enabled: bool = False
     external_dial_enabled: bool = False
     ai_private_api_enabled: bool = False
