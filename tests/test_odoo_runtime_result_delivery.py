@@ -12,7 +12,12 @@ from app.adapters.odoo.results import (
     recover_stale_result_deliveries,
 )
 from app.core.config import settings
-from app.db.models import N8nRuntimeExecution, N8nRuntimeResult, OdooResultDelivery
+from app.db.models import (
+    IntegrationEvent,
+    N8nRuntimeExecution,
+    N8nRuntimeResult,
+    OdooResultDelivery,
+)
 
 
 EXECUTION_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -83,11 +88,16 @@ def records():
 
 
 class SequenceClient:
-    def __init__(self, responses: list[httpx.Response | Exception]) -> None:
+    def __init__(
+        self,
+        responses: list[httpx.Response | Exception],
+        operation: str = "results.create",
+    ) -> None:
         self.responses = responses
+        self.operation = operation
 
     async def request(self, operation, payload, **kwargs):
-        assert operation == "results.create"
+        assert operation == self.operation
         item = self.responses.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -184,6 +194,56 @@ async def test_transport_failure_retains_durable_retry(monkeypatch):
         await deliver_result(session, DELIVERY_ID, client=client)
     assert delivery.status == "RETRY"
     assert delivery.last_error_class == "ODOO_TRANSPORT_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_standard_campaign_actions_deliver_with_bound_receipt(monkeypatch):
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "odoo_result_delivery_enabled", True)
+    event = IntegrationEvent(
+        id=17, idempotency_key="result:event-1:1", event_type="followup.due",
+        original_event_id="event-1", source_system="odoo",
+        correlation_id="correlation-1", payload_hash="a" * 64, state="delivered",
+        payload_json={
+            "business_unit_id": "MBL", "campaign_id": "MBL-NEW-LOAN-OUT",
+            "actor_type": "SYSTEM", "actor_id": "middleware",
+        },
+    )
+    delivery = OdooResultDelivery(
+        result_delivery_id=DELIVERY_ID, integration_event_id=17,
+        result_public_id=PUBLIC_ID, originating_outbox_public_id="event-1",
+        request_hash="d" * 64, status="PENDING", attempts=0,
+        standard_result_json={
+            "event_id": "event-1", "correlation_id": "correlation-1",
+            "idempotency_key": "result:event-1:1", "workflow_key": "moneybee_offer_sent",
+            "execution_id": "execution-1", "status": "COMPLETED",
+            "completed_at": "2026-08-22T18:00:00Z",
+            "actions": [{
+                "action_type": "CREATE_INTERNAL_SUMMARY", "entity_type": "crm.lead",
+                "entity_id": "17", "values": {"body": "Bound summary"},
+            }],
+        },
+    )
+    session = AsyncMock()
+
+    async def get(model, identity, **kwargs):
+        if model is OdooResultDelivery and identity == DELIVERY_ID:
+            return delivery
+        if model is IntegrationEvent and identity == 17:
+            return event
+        return None
+
+    session.get.side_effect = get
+    session.scalar.return_value = None
+    client = SequenceClient([httpx.Response(200, json={
+        "status": "APPLIED", "event_id": "event-1", "execution_id": "execution-1",
+        "correlation_id": "correlation-1", "applied_actions": [{"position": 0}],
+        "receipt_id": "receipt-1",
+    })], operation="campaign_actions.apply")
+    accepted = await deliver_result(session, DELIVERY_ID, client=client)
+    assert accepted["receipt_id"] == "receipt-1"
+    assert delivery.status == "DELIVERED"
+    assert delivery.odoo_result_inbox_id == "receipt-1"
 
 
 @pytest.mark.asyncio

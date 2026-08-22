@@ -633,6 +633,13 @@ class OdooResultDelivery(Base):
         nullable=True,
         unique=True,
     )
+    integration_event_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("integration_event.id", ondelete="RESTRICT"),
+        nullable=True,
+        unique=True,
+    )
+    standard_result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     result_public_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), nullable=False, unique=True, default=uuid4
     )
