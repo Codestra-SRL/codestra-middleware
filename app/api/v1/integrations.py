@@ -89,7 +89,7 @@ def _authenticate_n8n(authorization: str, required_scope: str) -> dict[str, Any]
             issuer=settings.n8n_service_issuer,
             audience=settings.n8n_service_audience,
             jwks_url=settings.n8n_service_jwks_url,
-            authorized_parties=frozenset({settings.n8n_service_client_id}),
+            authorized_parties=frozenset({settings.n8n_campaign_service_client_id}),
             required_scopes=frozenset({required_scope}),
             required_environment="production",
         ).validate(authorization.removeprefix("Bearer ").strip())
