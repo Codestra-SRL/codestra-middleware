@@ -20,7 +20,9 @@ def upgrade() -> None:
             "callback_delivery": "SELECT,INSERT,UPDATE",
         },
         "mw_notification_worker": {
-            "callback_record": "SELECT",
+            # The delivery claim joins CallbackRecord under FOR UPDATE, so
+            # PostgreSQL requires UPDATE on both locked relations.
+            "callback_record": "SELECT,UPDATE",
             "callback_delivery": "SELECT,UPDATE",
         },
     }
