@@ -570,7 +570,7 @@ def response_document(session: Session, password: str, turn: dict) -> dict:
         "sip_uri": "sip:6101@dialer.codestra.agency",
         "authorization_username": "6101",
         "ephemeral_password": password,
-        "websocket_url": "wss://dialer.codestra.agency:8089/ws",
+        "websocket_url": "wss://wss.codestra.agency:8089/ws",
         "ice_servers": [turn],
         "expires_at": session.expires_at.isoformat().replace("+00:00", "Z"),
         "role": "SETTER",
