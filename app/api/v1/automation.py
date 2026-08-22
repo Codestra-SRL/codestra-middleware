@@ -273,15 +273,17 @@ async def receive_event(
 async def policy_check(body: dict[str, Any]) -> dict[str, Any]:
     try:
         if "tenant_id" in body or "actor_type" in body:
-            envelope = CRMEventEnvelope.model_validate(body)
-            enforce_crm_scope(envelope)
+            crm_envelope = CRMEventEnvelope.model_validate(body)
+            enforce_crm_scope(crm_envelope)
+            response_body = crm_envelope.model_dump(mode="json")
         else:
-            envelope = EventEnvelope.model_validate(body)
-            enforce_scope(envelope)
+            legacy_envelope = EventEnvelope.model_validate(body)
+            enforce_scope(legacy_envelope)
+            response_body = legacy_envelope.model_dump(mode="json")
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid automation event schema") from exc
     return {
-        **envelope.model_dump(mode="json"),
+        **response_body,
         "allowed": True,
         "workflow_id": "validated-by-router",
     }
