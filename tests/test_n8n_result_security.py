@@ -86,6 +86,30 @@ async def test_action_result_remains_fail_closed_before_durable_delivery(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_action_result_is_enqueued_when_writes_are_explicitly_enabled(monkeypatch):
+    monkeypatch.setattr(integrations, "_authenticate_n8n", lambda *_: claims())
+    monkeypatch.setattr(integrations.settings, "odoo_automation_writes_enabled", True)
+    body = {**RESULT, "actions": [{
+        "action_type": "SET_NEXT_ACTION", "entity_type": "crm.lead", "entity_id": "17",
+        "values": {
+            "next_action_type": "CALL", "next_action_at": "2026-08-23T12:00:00Z",
+            "next_action_owner_id": 9,
+        },
+    }]}
+    db = FakeSession([event(), None])
+    response = await integrations.n8n_result(
+        body, authorization="Bearer synthetic", idempotency_key="result:event-1:1", db=db,
+    )
+    assert response["accepted"] == "true"
+    assert len(db.added) == 3
+    delivery = db.added[1]
+    assert delivery.integration_event_id == 17
+    assert delivery.status == "PENDING"
+    assert delivery.standard_result_json["actions"] == body["actions"]
+    assert db.commits == 1
+
+
+@pytest.mark.asyncio
 async def test_empty_result_is_durably_idempotent_and_audited(monkeypatch):
     monkeypatch.setattr(integrations, "_authenticate_n8n", lambda *_: claims())
     db = FakeSession([event(), None])

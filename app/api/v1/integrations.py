@@ -16,7 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.automation import canonical_hash, redact
 from app.core.config import settings
 from app.core.jwt_auth import JWTAuthError, KeycloakValidator
-from app.db.models import AuditEvent, IdempotencyRecord, IntegrationEvent
+from app.db.models import (
+    AuditEvent,
+    IdempotencyRecord,
+    IntegrationEvent,
+    OdooResultDelivery,
+)
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
@@ -165,10 +170,8 @@ async def n8n_result(
             or envelope.get("business_unit_id") not in _scope_values(claims, "business_units", "business_unit_scope")
         ):
             raise HTTPException(409, "automation result source binding mismatch")
-        if result.actions:
-            if not settings.odoo_automation_writes_enabled:
-                raise HTTPException(503, "Odoo automation writes are disabled")
-            raise HTTPException(503, "durable Odoo campaign action delivery is not configured")
+        if result.actions and not settings.odoo_automation_writes_enabled:
+            raise HTTPException(503, "Odoo automation writes are disabled")
         scope = "n8n-standard-result"
         key_hash = canonical_hash({"idempotency_key": result.idempotency_key})
         request_hash = canonical_hash(redact(result.model_dump(mode="json")))
@@ -191,6 +194,14 @@ async def n8n_result(
             scope=scope, key_hash=key_hash, request_hash=request_hash,
             response=response, status_code=202, event_id=event.id,
         ))
+        if result.actions:
+            db.add(OdooResultDelivery(
+                integration_event_id=event.id,
+                originating_outbox_public_id=result.event_id,
+                request_hash=request_hash,
+                status="PENDING",
+                standard_result_json=result.model_dump(mode="json"),
+            ))
         db.add(AuditEvent(
             action="n8n.standard_result.accepted", subject=result.event_id,
             correlation_id=result.correlation_id, decision=result.status,

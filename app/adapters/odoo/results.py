@@ -94,7 +94,17 @@ async def deliver_result(
         else None
     )
     event = await session.get(IntegrationEvent, delivery.event_id) if delivery else None
-    if runtime_result is not None and runtime_execution is not None:
+    standard_event = (
+        await session.get(IntegrationEvent, result.integration_event_id)
+        if result.integration_event_id
+        else None
+    )
+    standard_delivery = standard_event is not None and result.standard_result_json is not None
+    if standard_delivery:
+        body = _campaign_action_body(result, standard_event)
+        correlation_id = standard_event.correlation_id
+        causation_id = standard_event.original_event_id
+    elif runtime_result is not None and runtime_execution is not None:
         binding = approved_runtime_binding(runtime_execution, runtime_result)
         if binding is None:
             raise OdooResultError("runtime result is not an approved synthetic mapping")
@@ -122,7 +132,7 @@ async def deliver_result(
     try:
         try:
             response = await service_client.request(
-                "results.create",
+                "campaign_actions.apply" if standard_delivery else "results.create",
                 body,
                 idempotency_key=str(result.result_public_id),
                 request_id=f"REQ-{uuid4()}",
@@ -172,11 +182,20 @@ async def deliver_result(
             retryable=False,
         )
         raise OdooResultError("Odoo response is invalid") from exc
-    required = {
-        "persisted": True,
-        "result_public_id": str(result.result_public_id),
-        "correlation_id": correlation_id,
-    }
+    required = (
+        {
+            "status": "APPLIED",
+            "event_id": standard_event.original_event_id,
+            "execution_id": result.standard_result_json["execution_id"],
+            "correlation_id": correlation_id,
+        }
+        if standard_delivery
+        else {
+            "persisted": True,
+            "result_public_id": str(result.result_public_id),
+            "correlation_id": correlation_id,
+        }
+    )
     if any(accepted.get(key) != value for key, value in required.items()):
         await _record_delivery_failure(
             session,
@@ -191,7 +210,9 @@ async def deliver_result(
     result.next_attempt_at = None
     result.last_error_class = None
     result.odoo_result_inbox_id = str(
-        accepted.get("result_inbox_id", accepted["result_public_id"])
+        accepted.get("receipt_id")
+        if standard_delivery
+        else accepted.get("result_inbox_id", accepted["result_public_id"])
     )
     result.response_hash = canonical_hash(accepted)
     await session.commit()
@@ -281,6 +302,29 @@ def _acknowledgement_result_body(
         "acknowledged_at": acknowledgement.persisted_at.isoformat(),
         "reconciliation_status": "RECONCILED",
         "payload": {"summary": "internal reconciliation completed"},
+    }
+
+
+def _campaign_action_body(
+    delivery: OdooResultDelivery,
+    event: IntegrationEvent,
+) -> dict[str, Any]:
+    result = delivery.standard_result_json or {}
+    envelope = event.payload_json
+    return {
+        "schema_version": "1.0",
+        "event_id": event.original_event_id,
+        "correlation_id": event.correlation_id,
+        "causation_id": event.original_event_id,
+        "idempotency_key": result["idempotency_key"],
+        "environment": settings.environment,
+        "business_unit_public_id": envelope["business_unit_id"],
+        "campaign_public_id": envelope["campaign_id"],
+        "actor_type": envelope["actor_type"],
+        "actor_id": envelope["actor_id"],
+        "workflow_key": result["workflow_key"],
+        "execution_id": result["execution_id"],
+        "actions": result["actions"],
     }
 
 
