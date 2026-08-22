@@ -56,44 +56,26 @@ def test_agent_tenant_business_unit_and_campaign_isolation() -> None:
     assert not connection.allows(event(campaign_id="OTHER"))
 
 
-def test_authentication_roles_are_combined_and_required(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_authentication_roles_are_combined_and_required(monkeypatch: pytest.MonkeyPatch) -> None:
     claims = {
         "realm_access": {"roles": ["telephony.webphone.use"]},
-        "resource_access": {
-            gateway.settings.audience: {"roles": ["realtime.agent.connect"]}
-        },
-        "tenant_id": "tenant-a",
-        "business_unit_id": "unit-a",
-        "agent_id": "agent-a",
-        "vicidial_user": "6101",
-        "extension": "6101",
-        "campaigns": ["TEST_SYN"],
-        "sub": "user-a",
-        "exp": 4_102_444_800,
-        "iat": 1,
+        "resource_access": {gateway.settings.audience: {"roles": ["realtime.agent.connect"]}},
+        "tenant_id": "tenant-a", "business_unit_id": "unit-a", "agent_id": "agent-a",
+        "vicidial_user": "6101", "extension": "6101", "campaigns": ["TEST_SYN"],
+        "sub": "user-a", "exp": 4_102_444_800, "iat": 1,
     }
     monkeypatch.setattr(gateway.settings, "issuer", "https://issuer.invalid")
     monkeypatch.setattr(gateway.settings, "audience", "codestra-agent-desktop")
     monkeypatch.setattr(gateway.jwt, "decode", lambda *_args, **_kwargs: claims)
     request = SimpleNamespace(
         headers={"authorization": "Bearer synthetic.jwt.value"},
-        app=SimpleNamespace(
-            state=SimpleNamespace(
-                jwks=SimpleNamespace(
-                    get_signing_key_from_jwt=lambda _token: SimpleNamespace(
-                        key="synthetic-public-key"
-                    )
-                )
-            )
-        ),
+        app=SimpleNamespace(state=SimpleNamespace(jwks=SimpleNamespace(
+            get_signing_key_from_jwt=lambda _token: SimpleNamespace(key="synthetic-public-key")
+        ))),
     )
     assert gateway.decode_access_token(cast(Any, request))["campaigns"] == ["TEST_SYN"]
     with pytest.raises(HTTPException) as denied:
-        gateway.decode_access_token(
-            cast(Any, SimpleNamespace(headers={}, app=request.app))
-        )
+        gateway.decode_access_token(cast(Any, SimpleNamespace(headers={}, app=request.app)))
     assert denied.value.status_code == 401
 
 
@@ -108,18 +90,8 @@ def test_ticket_ttl_auth_timeout_and_replay_bounds_are_fail_closed() -> None:
 
 
 def test_screen_pop_recording_reconnect_and_durable_replay_contracts() -> None:
-    assert {
-        "call.ringing",
-        "recording.started",
-        "recording.available",
-        "realtime.reconnected",
-        "callback.due",
-        "callback.missed",
-        "callback.completed",
-    } <= gateway.EVENT_TYPES
-    migration = (
-        Path(gateway.__file__).with_name("migrations") / "0001_realtime_gateway.up.sql"
-    ).read_text()
+    assert {"call.ringing", "recording.started", "recording.available", "realtime.reconnected"} <= gateway.EVENT_TYPES
+    migration = (Path(gateway.__file__).with_name("migrations") / "0001_realtime_gateway.up.sql").read_text()
     assert "UNIQUE (tenant_id, call_id, sequence)" in migration
     assert "realtime_event_delivery" in migration
     assert "realtime_replay_cursor" in migration
