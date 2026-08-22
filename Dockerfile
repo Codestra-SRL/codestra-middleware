@@ -137,6 +137,8 @@ COPY --from=runtime-builder /opt/venv /opt/venv
 # pinned Chainguard busybox implementation required to execute that wrapper.
 COPY --from=runtime-builder /bin/busybox /bin/busybox
 COPY --from=runtime-builder /bin/sh /bin/sh
+COPY --from=runtime-builder /usr/lib/libcrypt.so.1.1.0 /usr/lib/libcrypt.so.1.1.0
+COPY --from=runtime-builder /usr/lib/libcrypt.so.1 /usr/lib/libcrypt.so.1
 WORKDIR /app
 COPY --chown=10001:10001 alembic.ini app.py ./
 COPY --chown=10001:10001 app ./app
