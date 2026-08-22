@@ -15,13 +15,37 @@ from app.core.automation import (
     verify_timestamp,
 )
 from app.core.config import settings
+from app.core.jwt_auth import JWTAuthError, KeycloakValidator
 from app.db.models import AuditEvent, IdempotencyRecord
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api/v1/automation", tags=["automation"])
 BUSINESS_UNITS = frozenset(
-    {"GLOBAL", "MOY", "COD", "SCP", "MBL", "RLP", "FTP", "TRX", "CAL"}
+    {"GLOBAL", "MOY", "COD", "SCP", "MBL", "SRP", "RLP", "FTP", "TRX", "CAL"}
 )
+
+
+def _claim_values(claims: dict[str, Any], plural: str, singular: str) -> set[str]:
+    values = claims.get(plural, claims.get(singular, []))
+    if isinstance(values, str):
+        return {item for item in values.replace(",", " ").split() if item}
+    return {str(item) for item in values or []}
+
+
+def _authenticate_campaign_policy(authorization: str) -> dict[str, Any]:
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer token required")
+    try:
+        return KeycloakValidator(
+            issuer=settings.n8n_service_issuer,
+            audience=settings.n8n_service_audience,
+            jwks_url=settings.n8n_service_jwks_url,
+            authorized_parties=frozenset({settings.n8n_campaign_service_client_id}),
+            required_scopes=frozenset({"n8n.policy.check"}),
+            required_environment="production",
+        ).validate(authorization.removeprefix("Bearer ").strip())
+    except JWTAuthError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 
 
 class EventEnvelope(BaseModel):
@@ -65,7 +89,7 @@ class CRMEventEnvelope(BaseModel):
     correlation_id: str = Field(min_length=1, max_length=128)
     idempotency_key: str = Field(min_length=1, max_length=255)
     tenant_id: str = Field(min_length=1, max_length=128)
-    business_unit_id: str = Field(pattern=r"^(?:GLOBAL|MOY|COD|SCP|MBL|RLP|FTP|TRX|CAL)$")
+    business_unit_id: str = Field(pattern=r"^(?:GLOBAL|MOY|COD|SCP|MBL|SRP|RLP|FTP|TRX|CAL)$")
     campaign_id: str = Field(min_length=1, max_length=64)
     entity_type: str = Field(min_length=1, max_length=128)
     entity_id: str = Field(min_length=1, max_length=128)
@@ -189,7 +213,7 @@ class AutomationAuditResult(BaseModel):
     event_id: str = Field(min_length=1, max_length=128)
     correlation_id: str = Field(min_length=1, max_length=128)
     idempotency_key: str = Field(min_length=1, max_length=255)
-    business_unit: str = Field(pattern=r"^(?:GLOBAL|MOY|COD|SCP|MBL|RLP|FTP|TRX|CAL)$")
+    business_unit: str = Field(pattern=r"^(?:GLOBAL|MOY|COD|SCP|MBL|SRP|RLP|FTP|TRX|CAL)$")
     campaign_id: str = Field(min_length=1, max_length=64)
     action: str = Field(min_length=1, max_length=128)
     provider: str = Field(min_length=1, max_length=64)
@@ -270,15 +294,33 @@ async def receive_event(
 
 
 @router.post("/policy-check")
-async def policy_check(body: dict[str, Any]) -> dict[str, Any]:
+async def policy_check(
+    body: dict[str, Any],
+    authorization: str = Header(alias="Authorization"),
+) -> dict[str, Any]:
+    claims = _authenticate_campaign_policy(authorization)
     try:
         if "tenant_id" in body or "actor_type" in body:
             crm_envelope = CRMEventEnvelope.model_validate(body)
             enforce_crm_scope(crm_envelope)
+            if (
+                crm_envelope.campaign_id
+                not in _claim_values(claims, "campaigns", "campaign_scope")
+                or crm_envelope.business_unit_id
+                not in _claim_values(claims, "business_units", "business_unit_scope")
+            ):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "campaign policy scope denied")
             response_body = crm_envelope.model_dump(mode="json")
         else:
             legacy_envelope = EventEnvelope.model_validate(body)
             enforce_scope(legacy_envelope)
+            if (
+                legacy_envelope.campaign_id
+                not in _claim_values(claims, "campaigns", "campaign_scope")
+                or legacy_envelope.business_unit
+                not in _claim_values(claims, "business_units", "business_unit_scope")
+            ):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "campaign policy scope denied")
             response_body = legacy_envelope.model_dump(mode="json")
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid automation event schema") from exc
