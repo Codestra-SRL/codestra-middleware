@@ -30,6 +30,8 @@ EVENT_TYPES = {
     "recording.completed", "recording.failed", "recording.available",
     "agent.ready", "agent.not_ready", "agent.logged_in", "agent.logged_out",
     "session.expiring", "session.revoked", "realtime.reconnected",
+    "callback.warning", "callback.due", "callback.missed", "callback.escalated",
+    "callback.cancelled", "callback.completed", "callback.rescheduled",
 }
 
 ACTIVE = Gauge("websocket_connections_active", "Active authenticated sockets")
