@@ -1741,3 +1741,103 @@ class IntegrationRegistryGeneration(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     published_by: Mapped[str] = mapped_column(String(128), nullable=False)
+
+
+class CallbackRecord(Base):
+    """Canonical callback control state; customer CRM data remains in Odoo."""
+
+    __tablename__ = "callback_record"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    contact_id: Mapped[str | None] = mapped_column(String(128))
+    lead_id: Mapped[str | None] = mapped_column(String(128))
+    opportunity_id: Mapped[str | None] = mapped_column(String(128))
+    original_call_id: Mapped[str | None] = mapped_column(String(128))
+    original_linkedid: Mapped[str | None] = mapped_column(String(128))
+    assigned_agent_id: Mapped[str | None] = mapped_column(String(128))
+    assigned_team_id: Mapped[str | None] = mapped_column(String(128))
+    supervisor_id: Mapped[str | None] = mapped_column(String(128))
+    phone_number: Mapped[str] = mapped_column(String(32), nullable=False)
+    normalized_phone: Mapped[str] = mapped_column(String(32), nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    customer_timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    priority: Mapped[str] = mapped_column(String(16), nullable=False, default="NORMAL")
+    reason: Mapped[str] = mapped_column(String(256), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="SCHEDULED")
+    desired_state: Mapped[str] = mapped_column(String(32), nullable=False, default="SCHEDULED")
+    actual_state: Mapped[str] = mapped_column(String(32), nullable=False, default="SCHEDULED")
+    reminder_email_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    reminder_popup_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    email_reminder_1_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    email_reminder_2_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    popup_reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completion_disposition: Mapped[str | None] = mapped_column(String(64))
+    completion_notes: Mapped[str | None] = mapped_column(Text)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    sync_state: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+    compliance_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    __table_args__ = (
+        CheckConstraint("assigned_agent_id IS NOT NULL OR assigned_team_id IS NOT NULL", name="ck_callback_owner"),
+        CheckConstraint("version >= 1 AND attempt_count >= 0 AND max_attempts >= 1", name="ck_callback_counters"),
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_callback_tenant_idempotency"),
+        Index("ix_callback_due_claim", "state", "scheduled_at"),
+        Index("ix_callback_agent_queue", "tenant_id", "campaign_id", "assigned_agent_id", "scheduled_at"),
+        Index("ix_callback_phone", "tenant_id", "normalized_phone"),
+        Index("ix_callback_correlation", "correlation_id"),
+    )
+
+
+class CallbackEvent(Base):
+    __tablename__ = "callback_event"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    callback_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("callback_record.id", ondelete="RESTRICT"), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("callback_id", "version", "event_type", name="uq_callback_event_version_type"),
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_callback_event_idempotency"),
+        Index("ix_callback_event_outbox", "published_at", "occurred_at"),
+    )
+
+
+class CallbackDelivery(Base):
+    __tablename__ = "callback_delivery"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    callback_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("callback_record.id", ondelete="RESTRICT"), nullable=False)
+    callback_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="QUEUED")
+    provider_message_id: Mapped[str | None] = mapped_column(String(128))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error_code: Mapped[str | None] = mapped_column(String(64))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("callback_id", "callback_version", "channel", "stage", name="uq_callback_delivery_stage"),
+        Index("ix_callback_delivery_retry", "status", "next_attempt_at"),
+    )

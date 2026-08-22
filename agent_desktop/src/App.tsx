@@ -66,7 +66,7 @@ export default function App() {
       setCanonicalIdentity(exactIdentity);
       if (!exactIdentity) throw new Error("Certification identity mismatch");
       realtime.current = new RealtimeClient(event => {
-        if (event.type === "call.ringing") setScreenPop(event);
+        if (event.type === "call.ringing" || event.type === "callback.due") setScreenPop(event);
         if (event.type === "recording.started") setRecordingState("ON");
         if (event.type === "recording.available") setRecordingState("Available");
         if (event.type === "session.revoked") realtime.current?.disconnect();
@@ -182,7 +182,7 @@ export default function App() {
           onMicTest={() => void micTest()} onSpeakerTest={() => void speakerTest()}/>}
         <CrmModule lead={data.lead} history={data.history}/><LeadDetailsModule lead={data.lead} onSave={notes => mockDesktopService.saveNotes(data.lead.id, notes)}/>
         <AiModule ai={data.ai}/><DispositionModule onSave={value => mockDesktopService.disposition(data.lead.id, value)}/>
-        <CallbackModule onSave={(when, reason) => mockDesktopService.scheduleCallback(data.lead.id, when, reason)}/><NotificationsModule items={data.notifications}/>
+        <CallbackModule onSave={(when, reason, timezone, priority) => mockDesktopService.scheduleCallback(data.lead.id, when, reason, timezone, priority)} due={screenPop?.type==="callback.due"?{id:String(screenPop.payload.callback_id),customer:String(screenPop.payload.customer_name??"Customer"),phoneMasked:String(screenPop.payload.phone_masked??"••• ••• ••••"),campaign:screenPop.campaign_id,reason:String(screenPop.payload.reason??"Callback"),scheduledAt:screenPop.timestamp,customerTimezone:String(screenPop.payload.customer_timezone??"UTC"),lastCall:String(screenPop.payload.last_call??""),lastNotes:String(screenPop.payload.last_notes??""),version:Number(screenPop.payload.version??1)}:undefined}/><NotificationsModule items={data.notifications}/>
       </div>}
       {view === "supervisor" && <SupervisorModule team={data.team}/>}
       {view === "diagnostics" && <DiagnosticsModule snapshot={phoneSnapshot.media ?? emptySnapshot} onExport={exportDiagnostics}/>}
