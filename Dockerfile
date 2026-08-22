@@ -1,12 +1,12 @@
-# Python 3.12.13 / Alpine 3.24 (Docker Official Image).
-ARG PYTHON_BASE=docker.io/library/python@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df
+# Python 3.12.14 / Alpine 3.24 (Docker Official Image).
+ARG PYTHON_BASE=docker.io/library/python@sha256:d09d15e60962ca365d1cd544a48773bac9d33f2fb1b00f2aa0deec78ade7dc31
 ARG VCS_REF=unknown
 ARG BUILD_REVISION=unknown
 ARG BUILD_CREATED=unknown
 
 FROM ${PYTHON_BASE} AS python-builder
 USER root
-ARG PYTHON_SOURCE_SHA256=c08bc65a81971c1dd5783182826503369466c7e67374d1646519adf05207b684
+ARG PYTHON_SOURCE_SHA256=5c8462af5790baf43a321a1559dbe0db06d1be4300fb85fb53c40060668e548a
 WORKDIR /usr/src
 RUN apk add --no-cache \
       build-base=0.5-r4 \
@@ -26,9 +26,9 @@ RUN apk add --no-cache \
       zlib-dev=1.3.2-r0
 COPY security/python312/*.patch /usr/src/patches/
 RUN curl --fail --location --proto '=https' --tlsv1.2 \
-      --output Python-3.12.13.tar.xz \
-      https://www.python.org/ftp/python/3.12.13/Python-3.12.13.tar.xz \
- && echo "${PYTHON_SOURCE_SHA256}  Python-3.12.13.tar.xz" | sha256sum -c - \
+      --output Python-3.12.14.tar.xz \
+      https://www.python.org/ftp/python/3.12.14/Python-3.12.14.tar.xz \
+ && echo "${PYTHON_SOURCE_SHA256}  Python-3.12.14.tar.xz" | sha256sum -c - \
  && mkdir upstream-patches \
  && while read -r commit checksum; do \
       curl --fail --location --proto '=https' --tlsv1.2 \
@@ -41,27 +41,22 @@ be13e86f6b9788a6f4d0419dffef72cbae5865c9 7c6208f7240f632779d6b1b33d20f90126888cc
 7933f4bf7131aa4140750f9404f5de0aa2969ced d8913b46e769704d0e810994909ee81c8af6aaa7230b79ff4c0d849fe1f305a4
 dae4b1a21f8df4570e30986affd61bbe4ade4cef da243766f48c8f78cc292559df5baedab3046ffcee3f754fb716b27e13952a7c
 642865ddf4b232da1f3b1f7abcfa3254c4bfe785 afcdbd51c751170f703451aef3cfdd40a61bce2c05180cfcf87ff19c2c99f865
-e20c6c9667c99ecaab96e1a2b3767082841ffc8b 7536be971df7f8b7ee9b4d6448edc6be11ed2b54f87531a61401542e10d60795
-938ec030e90c5e53f1faac6fab1643f14e4f4a79 643e4385aeb14de75172f4e0f9dc5116934260cbb844d8b9d648545706f340fa
 fc9b11ff49cbc82e6f917d07a61517a2b5f3145f e24d1474438cce8df94b8b5e336599326956e6f8cc1cf211932349230fd3ef28
 PATCHES
-RUN tar -xJf Python-3.12.13.tar.xz \
+RUN tar -xJf Python-3.12.14.tar.xz \
  && awk 'found || index($0, "diff --git a/Include/pyexpat.h") == 1 { found=1; print }' \
       upstream-patches/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f.patch \
       > upstream-patches/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f-3.12-rest.patch \
- && cd Python-3.12.13 \
+ && cd Python-3.12.14 \
  && for patch_file in \
       ../upstream-patches/be13e86f6b9788a6f4d0419dffef72cbae5865c9.patch \
       ../upstream-patches/7f0dc59c9a70f8f3b4da33d7c4a2ba552a7acc21.patch \
       ../upstream-patches/7933f4bf7131aa4140750f9404f5de0aa2969ced.patch \
       ../upstream-patches/dae4b1a21f8df4570e30986affd61bbe4ade4cef.patch \
       ../upstream-patches/642865ddf4b232da1f3b1f7abcfa3254c4bfe785.patch \
-      ../upstream-patches/e20c6c9667c99ecaab96e1a2b3767082841ffc8b.patch \
-      ../upstream-patches/938ec030e90c5e53f1faac6fab1643f14e4f4a79.patch \
       ../upstream-patches/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f-3.12-rest.patch \
-      ../patches/webbrowser-action-hardening.patch \
       ../patches/expat-hash-salt-3.12.patch; do \
-        patch -p1 --batch < "${patch_file}"; \
+        patch -p1 --batch --fuzz=0 < "${patch_file}"; \
     done \
  && ./configure \
       --enable-loadable-sqlite-extensions \
@@ -87,8 +82,8 @@ LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-
       org.opencontainers.image.created="${BUILD_CREATED}" \
       io.codestra.build.revision="${BUILD_REVISION}" \
       io.codestra.python.base.repository="docker.io/library/python" \
-      io.codestra.python.base.digest="sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df" \
-      io.codestra.python.version="3.12.13"
+      io.codestra.python.base.digest="sha256:d09d15e60962ca365d1cd544a48773bac9d33f2fb1b00f2aa0deec78ade7dc31" \
+      io.codestra.python.version="3.12.14"
 USER root
 WORKDIR /build
 RUN python -m venv /opt/venv
@@ -116,8 +111,8 @@ LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-
       org.opencontainers.image.created="${BUILD_CREATED}" \
       io.codestra.build.revision="${BUILD_REVISION}" \
       io.codestra.python.base.repository="docker.io/library/python" \
-      io.codestra.python.base.digest="sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df" \
-      io.codestra.python.version="3.12.13"
+      io.codestra.python.base.digest="sha256:d09d15e60962ca365d1cd544a48773bac9d33f2fb1b00f2aa0deec78ade7dc31" \
+      io.codestra.python.version="3.12.14"
 USER root
 RUN grep -q '^app:' /etc/group || addgroup -S -g 10001 app \
  && grep -q '^app:' /etc/passwd || adduser -S -D -H -u 10001 -G app app
@@ -148,8 +143,8 @@ LABEL org.opencontainers.image.title="Codestra Qwen Authentication Verifier" \
       org.opencontainers.image.version="1.0.0-rc1" \
       io.codestra.build.revision="${BUILD_REVISION}" \
       io.codestra.python.base.repository="docker.io/library/python" \
-      io.codestra.python.base.digest="sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df" \
-      io.codestra.python.version="3.12.13"
+      io.codestra.python.base.digest="sha256:d09d15e60962ca365d1cd544a48773bac9d33f2fb1b00f2aa0deec78ade7dc31" \
+      io.codestra.python.version="3.12.14"
 USER root
 RUN grep -q '^app:' /etc/group || addgroup -S -g 10001 app \
  && grep -q '^app:' /etc/passwd || adduser -S -D -H -u 10001 -G app app
