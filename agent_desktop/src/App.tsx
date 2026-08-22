@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { browserSession, provision, refreshProvisioning, revokeProvisioning } from "./api";
+import { callbackService } from "./callbacks";
 import { features } from "./config/features";
 import { runtime } from "./config/runtime";
 import { audioDevices, microphonePermission, type AudioDevice } from "./devices";
@@ -84,6 +85,7 @@ export default function App() {
           if(event.type === "call.ringing")setScreenPop(event);
           void loadWorkspace(event.call_id);
         }
+        if (event.type === "callback.due") setScreenPop(event);
         if (event.type === "recording.started") setRecordingState("ON");
         if (event.type === "recording.available") setRecordingState("Available");
         if (event.type === "session.revoked") realtime.current?.disconnect();
@@ -214,7 +216,7 @@ export default function App() {
           onMicTest={() => void micTest()} onSpeakerTest={() => void speakerTest()}/>}
         <CrmModule lead={data.lead} history={data.history}/><LeadDetailsModule lead={data.lead} onSave={notes => mockDesktopService.saveNotes(data.lead.id, notes)}/>
         <AiModule ai={data.ai}/><DispositionModule onSave={value => mockDesktopService.disposition(data.lead.id, value)}/>
-        <CallbackModule onSave={(when, reason) => mockDesktopService.scheduleCallback(data.lead.id, when, reason)}/><NotificationsModule items={data.notifications}/>
+        <CallbackModule onSave={(when, reason, timezone, priority) => mockDesktopService.scheduleCallback(data.lead.id, when, reason, timezone, priority)} onCallNow={callback => callbackService.start(callback.id, callback.version)} onSnooze={(callback, minutes) => callbackService.snooze(callback.id, callback.version, minutes)} due={screenPop?.type==="callback.due"?(() => {const context=(screenPop.payload.customer_context??{}) as Record<string,unknown>;return {id:String(screenPop.payload.callback_id),customer:String(context.customer_name??"Customer"),phoneMasked:String(screenPop.payload.phone_masked??"••• ••• ••••"),campaign:screenPop.campaign_id,reason:String(screenPop.payload.reason??"Callback"),scheduledAt:String(screenPop.payload.scheduled_at??screenPop.timestamp),customerTimezone:String(screenPop.payload.customer_timezone??"UTC"),lastCall:String(context.last_call??""),lastDisposition:String(context.last_disposition??""),lastNotes:String(context.last_notes??""),company:String(context.company??""),lead:String(context.lead??""),previousCallbacks:Number(context.previous_callbacks??0),openTasks:Number(context.open_tasks??0),recentCommunications:Array.isArray(context.recent_communications)?context.recent_communications.map(String):[],crmUrl:typeof context.crm_url==="string"?context.crm_url:undefined,version:Number(screenPop.payload.callback_version??1)};})():undefined}/><NotificationsModule items={data.notifications}/>
       </div>}
       {view === "supervisor" && <SupervisorModule/>}
       {view === "diagnostics" && <DiagnosticsModule snapshot={phoneSnapshot.media ?? emptySnapshot} onExport={exportDiagnostics}/>}

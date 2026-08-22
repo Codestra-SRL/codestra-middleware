@@ -53,6 +53,16 @@ POSTIZ_COMMAND_FAILURES = Counter("codestra_postiz_command_failures_total", "Pos
 POSTIZ_COMMAND_DURATION = Histogram("codestra_postiz_command_duration_seconds", "Postiz command duration", ["command_type"])
 CROSS_SYSTEM_QUEUE_DEPTH = Gauge("codestra_cross_system_queue_depth", "Cross-system queue depth")
 CROSS_SYSTEM_CALLBACK_FAILURES = Counter("codestra_cross_system_callback_failures_total", "Cross-system callback failures", ["provider"])
+
+# Callback subsystem metrics contain only bounded dimensions; callback/customer IDs
+# are deliberately excluded to prevent cardinality and privacy leaks.
+CALLBACKS_DUE = Gauge("codestra_callbacks_due", "Callbacks currently due", ["tenant", "campaign"])
+CALLBACKS_OVERDUE = Gauge("codestra_callbacks_overdue", "Callbacks overdue", ["tenant", "campaign"])
+CALLBACKS_COMPLETED = Counter("codestra_callbacks_completed_total", "Callbacks completed", ["tenant", "campaign"])
+CALLBACKS_MISSED = Counter("codestra_callbacks_missed_total", "Callbacks missed", ["tenant", "campaign"])
+CALLBACK_EMAIL_DELIVERY = Counter("codestra_callback_email_delivery_total", "Callback email delivery outcomes", ["outcome"])
+CALLBACK_POPUP_DELIVERY = Counter("codestra_callback_popup_delivery_total", "Callback popup delivery outcomes", ["outcome"])
+CALLBACK_AGENT_RESPONSE_SECONDS = Histogram("codestra_callback_agent_response_seconds", "Agent response latency", ["campaign"])
 CROSS_SYSTEM_DEAD_LETTER = Counter("codestra_cross_system_dead_letter_total", "Cross-system dead letters", ["provider"])
 CROSS_SYSTEM_RECONCILIATION_MISMATCH = Counter("codestra_cross_system_reconciliation_mismatch_total", "Cross-system reconciliation mismatches", ["provider"])
 CROSS_SYSTEM_STALE_EXECUTION = Gauge("codestra_cross_system_stale_execution_total", "Stale cross-system executions")

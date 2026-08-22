@@ -41,6 +41,7 @@ MAX_RATE_IDENTITIES = 4096
 N8N_TRANSITION_PATH = re.compile(
     r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
 )
+CALLBACK_JWT_PATH = re.compile(r"^/api/v1/(?:control/)?callbacks(?:/.*)?$")
 
 
 class JsonFormatter(logging.Formatter):
@@ -181,6 +182,7 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             )
             and request.url.path not in signed_paths
             and not signed_write
+            and not CALLBACK_JWT_PATH.fullmatch(request.url.path)
         ):
             try:
                 verify_bearer(

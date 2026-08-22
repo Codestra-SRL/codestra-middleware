@@ -34,6 +34,7 @@ from app.api.v1.tts import validate_readiness as validate_tts_readiness
 from app.api.v1.ai_commands import router as ai_commands_router
 from app.api.v1.webphone import router as webphone_router
 from app.api.v1.agent_realtime import router as agent_realtime_router
+from app.api.v1.callbacks import router as callbacks_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.ai import router as ai_router
@@ -44,6 +45,7 @@ from app.core.config import settings
 
 app = FastAPI(title="Codestra Middleware", version="0.2.0")
 app.include_router(events_router)
+app.include_router(callbacks_router)
 app.include_router(control_router)
 app.include_router(automation_router)
 app.include_router(reports_router)
@@ -135,6 +137,7 @@ N8N_TRANSITION_PATH = re.compile(
 RECORDING_EXPORTER_PATH = re.compile(
     r"^/api/v1/recordings(?:/reservations|/REC-[0-9a-f]{32}/(?:complete|failure))$"
 )
+CALLBACK_JWT_PATH = re.compile(r"^/api/v1/(?:control/)?callbacks(?:/.*)?$")
 
 
 def _is_ai_console_jwt_route(request: Request) -> bool:
@@ -189,6 +192,7 @@ async def control_request_guard(request: Request, call_next):
         and request.url.path not in SELF_AUTHENTICATED_PATHS
         and not (request.method == "POST" and SOCIAL_WEBHOOK_PATH.fullmatch(request.url.path))
         and not _is_ai_console_jwt_route(request)
+        and not CALLBACK_JWT_PATH.fullmatch(request.url.path)
     ):
         try:
             verify_bearer(

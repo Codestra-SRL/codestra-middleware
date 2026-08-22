@@ -90,7 +90,7 @@ def test_ticket_ttl_auth_timeout_and_replay_bounds_are_fail_closed() -> None:
 
 
 def test_screen_pop_recording_reconnect_and_durable_replay_contracts() -> None:
-    assert {"call.ringing", "recording.started", "recording.available", "realtime.reconnected"} <= gateway.EVENT_TYPES
+    assert {"call.ringing", "recording.started", "recording.available", "realtime.reconnected", "callback.due", "callback.missed", "callback.completed"} <= gateway.EVENT_TYPES
     migration = (Path(gateway.__file__).with_name("migrations") / "0001_realtime_gateway.up.sql").read_text()
     assert "UNIQUE (tenant_id, call_id, sequence)" in migration
     assert "realtime_event_delivery" in migration

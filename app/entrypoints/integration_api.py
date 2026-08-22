@@ -19,11 +19,13 @@ from app.api.v1.telephony import router as telephony_router
 from app.api.v1.sales import router as sales_router
 from app.api.v1.booking import router as booking_router
 from app.api.v1.webphone import router as webphone_router
+from app.api.v1.callbacks import router as callbacks_router
 from app.entrypoints.runtime import add_api_runtime, run_api
 
 SERVICE = "middleware-integration-api"
 routers = (
     commands_router,
+    callbacks_router,
     control_router,
     automation_router,
     reports_router,
