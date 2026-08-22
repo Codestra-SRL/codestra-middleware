@@ -11,6 +11,8 @@ from app.core.callbacks import (
     reminders,
     transition,
 )
+from app.core.config import settings
+from app.entrypoints.integration_api import app as integration_app
 
 
 def request(**overrides):
@@ -85,3 +87,15 @@ def test_phone_and_reminder_policy():
         and (at - r2).total_seconds() == 3600
         and (at - popup).total_seconds() == 900
     )
+
+
+def test_production_runtime_exposes_callback_contract_fail_closed():
+    paths = {
+        getattr(route, "path", "")
+        for included in integration_app.router.routes
+        for route in getattr(included, "routes", [included])
+    }
+    assert "/api/v1/control/callbacks" in paths
+    assert settings.callback_scheduler_enabled is False
+    assert settings.callback_delivery_enabled is False
+    assert settings.callback_test_syn_enabled is False

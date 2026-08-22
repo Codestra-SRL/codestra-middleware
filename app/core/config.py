@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     vicidial_client_key_file: str = ""
     vicidial_crl_file: str = ""
     callback_dispatch_enabled: bool = False
+    callback_scheduler_enabled: bool = False
+    callback_test_syn_enabled: bool = False
+    callback_delivery_enabled: bool = False
+    callback_allowed_tenant: str = ""
+    callback_allowed_campaign: str = ""
     messaging_enabled: bool = False
     external_dial_enabled: bool = False
     ai_private_api_enabled: bool = False

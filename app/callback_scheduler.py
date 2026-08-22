@@ -9,19 +9,27 @@ from app.db.models import CallbackDelivery, CallbackEvent, CallbackRecord
 
 
 async def claim_due(
-    db: AsyncSession, worker_id: str, limit: int = 100, now: datetime | None = None
+    db: AsyncSession,
+    worker_id: str,
+    limit: int = 100,
+    now: datetime | None = None,
+    tenant_id: str | None = None,
+    campaign_id: str | None = None,
 ) -> list[CallbackRecord]:
     now = now or datetime.now(UTC)
+    query = select(CallbackRecord).where(
+        CallbackRecord.state.in_(
+            ["SCHEDULED", "REMINDER_PENDING", "READY", "SNOOZED", "RESCHEDULED"]
+        ),
+        CallbackRecord.scheduled_at <= now,
+    )
+    if tenant_id is not None:
+        query = query.where(CallbackRecord.tenant_id == tenant_id)
+    if campaign_id is not None:
+        query = query.where(CallbackRecord.campaign_id == campaign_id)
     rows = (
         await db.scalars(
-            select(CallbackRecord)
-            .where(
-                CallbackRecord.state.in_(
-                    ["SCHEDULED", "REMINDER_PENDING", "READY", "SNOOZED", "RESCHEDULED"]
-                ),
-                CallbackRecord.scheduled_at <= now,
-            )
-            .order_by(CallbackRecord.scheduled_at)
+            query.order_by(CallbackRecord.scheduled_at)
             .with_for_update(skip_locked=True)
             .limit(limit)
         )
@@ -67,18 +75,19 @@ async def mark_missed(
     worker_id: str,
     grace_minutes: int = 15,
     now: datetime | None = None,
+    tenant_id: str | None = None,
+    campaign_id: str | None = None,
 ) -> int:
     now = now or datetime.now(UTC)
-    rows = (
-        await db.scalars(
-            select(CallbackRecord)
-            .where(
-                CallbackRecord.state == "DUE",
-                CallbackRecord.scheduled_at <= now - timedelta(minutes=grace_minutes),
-            )
-            .with_for_update(skip_locked=True)
-        )
-    ).all()
+    query = select(CallbackRecord).where(
+        CallbackRecord.state == "DUE",
+        CallbackRecord.scheduled_at <= now - timedelta(minutes=grace_minutes),
+    )
+    if tenant_id is not None:
+        query = query.where(CallbackRecord.tenant_id == tenant_id)
+    if campaign_id is not None:
+        query = query.where(CallbackRecord.campaign_id == campaign_id)
+    rows = (await db.scalars(query.with_for_update(skip_locked=True))).all()
     for row in rows:
         row.state = row.desired_state = row.actual_state = "MISSED"
         row.version += 1
