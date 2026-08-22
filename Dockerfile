@@ -132,6 +132,11 @@ LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-
       io.codestra.python.base.digest="sha256:1f6779775c9f466890da563e411cb677045a6c20b6a65160eefad1deffb5012c" \
       io.codestra.python.version="3.14.7"
 COPY --from=runtime-builder /opt/venv /opt/venv
+# Production Compose uses a fail-closed admission wrapper mounted with a
+# /bin/sh shebang. Keep the runtime otherwise distroless while projecting the
+# pinned Chainguard busybox implementation required to execute that wrapper.
+COPY --from=runtime-builder /bin/busybox /bin/busybox
+COPY --from=runtime-builder /bin/sh /bin/sh
 WORKDIR /app
 COPY --chown=10001:10001 alembic.ini app.py ./
 COPY --chown=10001:10001 app ./app
