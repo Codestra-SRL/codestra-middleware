@@ -99,8 +99,9 @@ async def deliver_result(
         if result.integration_event_id
         else None
     )
-    standard_delivery = standard_event is not None and result.standard_result_json is not None
-    if standard_delivery:
+    standard_delivery = False
+    if standard_event is not None and result.standard_result_json is not None:
+        standard_delivery = True
         body = _campaign_action_body(result, standard_event)
         correlation_id = standard_event.correlation_id
         causation_id = standard_event.original_event_id
@@ -182,20 +183,21 @@ async def deliver_result(
             retryable=False,
         )
         raise OdooResultError("Odoo response is invalid") from exc
-    required = (
-        {
+    if standard_delivery:
+        assert standard_event is not None
+        assert result.standard_result_json is not None
+        required = {
             "status": "APPLIED",
             "event_id": standard_event.original_event_id,
             "execution_id": result.standard_result_json["execution_id"],
             "correlation_id": correlation_id,
         }
-        if standard_delivery
-        else {
+    else:
+        required = {
             "persisted": True,
             "result_public_id": str(result.result_public_id),
             "correlation_id": correlation_id,
         }
-    )
     if any(accepted.get(key) != value for key, value in required.items()):
         await _record_delivery_failure(
             session,
