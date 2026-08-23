@@ -28,6 +28,7 @@ from app.api.v1.sales import router as sales_router
 from app.api.v1.social import router as social_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.internal.ai_jobs import router as internal_ai_jobs_router
+from app.api.internal.klyrow_mail import router as klyrow_mail_router
 from app.api.v1.ai_console import router as ai_console_router
 from app.api.v1.tts import router as tts_router
 from app.api.v1.tts import validate_readiness as validate_tts_readiness
@@ -63,6 +64,7 @@ app.include_router(n8n_runtime_router)
 app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(internal_ai_jobs_router)
+app.include_router(klyrow_mail_router)
 app.include_router(ai_console_router)
 app.include_router(tts_router)
 app.include_router(ai_commands_router)
