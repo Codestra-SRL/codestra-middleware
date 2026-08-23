@@ -224,6 +224,16 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "delivery": "disabled",
         }
 
+    @app.get("/version")
+    async def version() -> dict[str, str]:
+        """Return immutable release labels without exposing runtime configuration."""
+        return {
+            "service": service,
+            "source_sha": os.getenv("SOURCE_SHA", "unknown"),
+            "release_id": os.getenv("RELEASE_ID", "unknown"),
+            "image_digest": os.getenv("IMAGE_DIGEST", "unknown"),
+        }
+
     @app.get("/dependencies")
     async def dependencies() -> dict[str, object]:
         return {
