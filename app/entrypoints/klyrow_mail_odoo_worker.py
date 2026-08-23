@@ -14,7 +14,7 @@ SERVICE = "middleware-klyrow-mail-odoo-worker"
 QUEUE = "klyrow-mail-odoo"
 
 
-async def cycle() -> dict[str, int]:
+async def cycle() -> dict[str, object]:
     if not settings.klyrow_mail_odoo_delivery_enabled:
         return {"claimed": 0, "delivered": 0}
     async with SessionFactory() as session:
