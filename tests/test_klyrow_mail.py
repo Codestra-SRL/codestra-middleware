@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from starlette.requests import Request
 
-from app.api.internal.klyrow_mail import KlyrowInboundEvent, _authenticate
+from app.api.internal.klyrow_mail import KlyrowDeliveryEvent, KlyrowInboundEvent, _authenticate
 from app.core.config import settings
 from app.workers.klyrow_mail_odoo import DeliveryFailure, _odoo_payload
 
@@ -73,6 +73,45 @@ def test_klyrow_hmac_binds_exact_body_and_event(
             signed_request(body, secret, signature="sha256=" + "0" * 64), body, event
         )
     assert getattr(exc.value, "status_code", None) == 401
+
+
+def test_delivery_event_schema_and_authentication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    secret = b"d" * 64
+    path = tmp_path / "hmac"
+    path.write_bytes(secret)
+    monkeypatch.setattr(settings, "klyrow_mail_hmac_secret_file", str(path))
+    payload = {
+        "event_id": "event-delivery-12345678",
+        "source_system": "klyrow",
+        "event_type": "klyrow.email.delivered",
+        "event_version": "1.0",
+        "occurred_at": "2026-08-23T03:00:00Z",
+        "tenant_id": "tenant-a",
+        "message_id": "message-a",
+        "provider_message_id": "postal-a",
+        "stream": "transactional",
+        "recipient_reference": "sha256:recipient",
+        "status": "delivered",
+        "provider": "postal",
+        "correlation_id": "correlation-a",
+        "causation_id": "causation-a",
+        "attempt": 1,
+        "metadata": {"synthetic": True},
+    }
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    event = KlyrowDeliveryEvent.model_validate_json(body)
+    timestamp = str(int(time.time()))
+    canonical = timestamp.encode() + b"\n" + event.event_id.encode() + b"\nklyrow\n" + body
+    signature = "sha256=" + hmac.new(secret, canonical, hashlib.sha256).hexdigest()
+    request = Request({"type": "http", "method": "POST", "path": "/internal/provider-events/klyrow", "headers": [
+        (b"x-source-system", b"klyrow"), (b"x-klyrow-timestamp", timestamp.encode()),
+        (b"x-klyrow-event-id", event.event_id.encode()), (b"x-klyrow-signature", signature.encode()),
+    ]})
+    _authenticate(request, body, event)
+    with pytest.raises(Exception):
+        KlyrowDeliveryEvent.model_validate({**payload, "event_version": "2.0"})
 
 
 def test_odoo_payload_normalizes_sender_and_attachments():
