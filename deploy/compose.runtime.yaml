@@ -184,6 +184,7 @@ services:
       - /etc/codestra/secrets/internal-n8n/middleware-client-secret:/run/secrets/middleware_n8n_client_secret:ro
       - /etc/codestra/secrets/internal-n8n/odoo-results-client-secret:/run/secrets/odoo_results_client_secret:ro
       - /etc/codestra/secrets/internal-n8n/runtime-hmac:/run/secrets/n8n_runtime_hmac:ro
+      - /etc/codestra/secrets/klyrow-mail/event-hmac:/run/secrets/klyrow_mail_event_hmac:ro
       - /etc/codestra/secrets/middleware-staging/postly/postiz_api_key:/run/secrets/postiz_api_key:ro
       - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
     environment:
@@ -211,10 +212,27 @@ services:
       ODOO_RESULTS_AUDIENCE: codestra-odoo
       ODOO_RESULTS_SCOPE: odoo.integration.results.write
       ODOO_RESULTS_CA_FILE: /run/secrets/internal_integration_ca
+      KLYROW_MAIL_INGRESS_ENABLED: "false"
+      KLYROW_MAIL_HMAC_SECRET_FILE: /run/secrets/klyrow_mail_event_hmac
       N8N_RUNTIME_ENABLED: "true"
       N8N_RUNTIME_HMAC_SECRET_FILE: /run/secrets/n8n_runtime_hmac
       POSTIZ_INTERNAL_BASE_URL: http://10.40.0.3:8443
       POSTIZ_API_KEY_FILE: /run/secrets/postiz_api_key
+
+  middleware-klyrow-mail-odoo-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.klyrow_mail_odoo_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-klyrow-mail-odoo-worker
+      KLYROW_MAIL_ODOO_DELIVERY_ENABLED: "false"
+      KLYROW_MAIL_ODOO_URL: https://odoo.internal.codestra.agency
+      KLYROW_MAIL_ODOO_API_KEY_FILE: /run/secrets/klyrow_mail_odoo_api_key
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/klyrow-mail/odoo-api-key:/run/secrets/klyrow_mail_odoo_api_key:ro
+      - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
+    networks: [middleware_backend, codestra_internal_integration]
 
   middleware-scraper-odoo-delivery-worker:
     <<: *worker
