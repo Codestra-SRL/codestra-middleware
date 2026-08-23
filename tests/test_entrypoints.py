@@ -94,6 +94,20 @@ def test_api_runtime_health_and_correlation(monkeypatch):
     assert response.headers["Traceparent"].startswith("00-")
 
 
+def test_api_runtime_version_is_safe_and_immutable(monkeypatch):
+    monkeypatch.setenv("SOURCE_SHA", "a" * 40)
+    monkeypatch.setenv("RELEASE_ID", "release-20260823")
+    monkeypatch.setenv("IMAGE_DIGEST", "sha256:" + "b" * 64)
+    response = TestClient(integration_api.app).get("/version")
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "middleware-integration-api",
+        "source_sha": "a" * 40,
+        "release_id": "release-20260823",
+        "image_digest": "sha256:" + "b" * 64,
+    }
+
+
 def test_disabled_delivery_workers_do_not_claim_or_contact_adapters(monkeypatch):
     monkeypatch.setattr(settings, "odoo_delivery_enabled", False)
     monkeypatch.setattr(settings, "n8n_delivery_enabled", False)
