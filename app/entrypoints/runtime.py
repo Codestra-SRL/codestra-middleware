@@ -20,6 +20,7 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from prometheus_client import Counter, Gauge, make_asgi_app
+from sqlalchemy import text
 
 from app.core.auth import BearerAuthError, verify_bearer
 from app.core.config import settings
@@ -61,7 +62,7 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "service": os.getenv("SERVICE_NAME", "codestra-middleware"),
         }
-        for name in ("correlation_id", "queue", "result"):
+        for name in ("correlation_id", "gateway_request_id", "queue", "result"):
             field = getattr(record, name, None)
             if field is not None:
                 value[name] = str(field)
@@ -117,6 +118,16 @@ def validate_runtime(service: str, queue: str | None = None) -> None:
 
 
 def add_api_runtime(app: FastAPI, service: str) -> None:
+    async def database_ready() -> bool:
+        try:
+            async with asyncio.timeout(settings.database_pool_timeout_seconds):
+                async with engine.connect() as connection:
+                    await connection.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            logger.exception("readiness_database_unavailable")
+            return False
+
     @app.middleware("http")
     async def request_controls(request: Request, call_next):
         try:
@@ -168,6 +179,10 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
         request.state.client_correlation_id = (
             client_correlation if CORRELATION_RE.fullmatch(client_correlation) else None
         )
+        gateway_request_id = request.headers.get("x-kong-request-id", "").strip()
+        request.state.gateway_request_id = (
+            gateway_request_id if CORRELATION_RE.fullmatch(gateway_request_id) else None
+        )
         signed_paths = {
             "/api/v1/events/vicidial",
             "/api/v1/automation/events",
@@ -209,18 +224,40 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             request.headers.get("traceparent", "")
             or f"00-{uuid4().hex}-{uuid4().hex[:16]}-00"
         )
+        logger.info(
+            "request_complete",
+            extra={
+                "correlation_id": correlation_id,
+                "gateway_request_id": request.state.gateway_request_id,
+                "result": f"{request.method} {request.url.path} {response.status_code}",
+            },
+        )
         return response
 
     @app.get("/healthz")
     async def health() -> dict[str, str]:
         return {"status": "ok", "service": service}
 
-    @app.get("/readyz")
-    async def readiness() -> dict[str, str]:
+    @app.get("/readyz", response_model=None)
+    async def readiness() -> dict[str, str] | JSONResponse:
+        if settings.health_require_database and not await database_ready():
+            return JSONResponse(
+                {
+                    "status": "not-ready",
+                    "service": service,
+                    "authorization": "online",
+                    "database": "unavailable",
+                    "delivery": "disabled",
+                },
+                status_code=503,
+            )
         return {
             "status": "ready",
             "service": service,
             "authorization": "online",
+            "database": (
+                "online" if settings.health_require_database else "not-required"
+            ),
             "delivery": "disabled",
         }
 
