@@ -82,6 +82,7 @@ class Settings:
     nats_host = os.getenv("NATS_HOST", "host.docker.internal")
     nats_port = int(os.getenv("NATS_PORT", "4222"))
     event_source_health_url = os.getenv("INTERNAL_EVENT_SOURCE_HEALTH_URL", "http://middleware:8095/health")
+    passive_standby = os.getenv("PASSIVE_STANDBY", "false").lower() in {"1", "true", "yes"}
 
 
 settings = Settings()
@@ -150,6 +151,13 @@ async def verify_schema(pool: asyncpg.Pool) -> None:
     )
     if head != DATABASE_MIGRATION_HEAD:
         raise RuntimeError(f"database migration head mismatch: expected {DATABASE_MIGRATION_HEAD}")
+    in_recovery = bool(await pool.fetchval("SELECT pg_is_in_recovery()"))
+    if settings.passive_standby:
+        if not in_recovery:
+            raise RuntimeError("passive standby requires a read-only recovery database")
+        return
+    if in_recovery:
+        raise RuntimeError("active gateway requires the writable database authority")
     # Connections are process-local. A clean start clears stale ownership only.
     await pool.execute(
         "UPDATE realtime_sessions SET active_connection=false WHERE active_connection=true"
@@ -216,8 +224,11 @@ async def readyz(request: Request) -> dict[str, Any]:
     checks: dict[str, bool] = {"application": True, "authentication_configuration": bool(settings.issuer and settings.audience and settings.jwks_url)}
     try:
         checks["database"] = await request.app.state.pool.fetchval("SELECT 1") == 1
+        in_recovery = bool(await request.app.state.pool.fetchval("SELECT pg_is_in_recovery()"))
+        checks["database_role"] = in_recovery == settings.passive_standby
     except Exception:
         checks["database"] = False
+        checks["database_role"] = False
     try:
         async with httpx.AsyncClient(timeout=2) as client:
             response = await client.get(settings.event_source_health_url)
@@ -237,6 +248,8 @@ async def metrics() -> Response:
 
 @app.post("/api/v1/realtime/sessions", status_code=201)
 async def create_session(request: Request, claims: dict[str, Any] = Depends(decode_access_token)) -> dict[str, Any]:
+    if settings.passive_standby:
+        raise HTTPException(503, "passive standby does not issue sessions")
     session_id = uuid.uuid4()
     raw_ticket = secrets.token_urlsafe(32)
     ticket_hash = hashlib.sha256(raw_ticket.encode()).hexdigest()
@@ -299,6 +312,9 @@ async def replay(pool: asyncpg.Pool, scope: dict[str, Any], last_event_id: str |
 
 @app.websocket("/ws/agent")
 async def ws_agent(websocket: WebSocket) -> None:
+    if settings.passive_standby:
+        await websocket.close(code=1013)
+        return
     origin = websocket.headers.get("origin")
     if origin not in settings.allowed_origins:
         CROSS_SCOPE.inc()
@@ -367,6 +383,8 @@ def require_internal(x_codestra_internal_token: str = Header(default="")) -> Non
 
 @app.post("/internal/v1/realtime/events", status_code=202, dependencies=[Depends(require_internal)])
 async def publish_event(event: Event, request: Request) -> dict[str, Any]:
+    if settings.passive_standby:
+        raise HTTPException(503, "passive standby does not accept events")
     if event.type not in EVENT_TYPES:
         raise HTTPException(422, "unsupported realtime event type")
     EVENTS_RECEIVED.labels(event_type=event.type).inc()
@@ -402,6 +420,8 @@ async def publish_event(event: Event, request: Request) -> dict[str, Any]:
 
 @app.post("/internal/v1/realtime/sessions/{session_id}/revoke", dependencies=[Depends(require_internal)])
 async def revoke_session(session_id: uuid.UUID, request: Request) -> dict[str, bool]:
+    if settings.passive_standby:
+        raise HTTPException(503, "passive standby does not revoke sessions")
     changed = await request.app.state.pool.fetchval("UPDATE realtime_sessions SET revoked_at=now() WHERE session_id=$1 AND revoked_at IS NULL RETURNING true", session_id)
     active = connections.get(str(session_id))
     if active:
