@@ -50,6 +50,24 @@ def test_specialized_services_use_distinct_secret_references() -> None:
         assert f"/{secret_name}:/run/secrets/database_url:ro" in block
 
 
+def test_telephony_services_resolve_the_authoritative_private_vicidial_edge() -> None:
+    for service_name in (
+        "middleware-telephony-provisioning",
+        "middleware-vicidial-adapter",
+        "middleware-pjsip-adapter",
+    ):
+        block = _service_block(service_name)
+        assert "extra_hosts:" in block
+        assert 'edge.internal.codestra.agency:10.40.0.2' in block
+        assert "networks:" in block
+        assert "- middleware_backend" in block
+        assert "- middleware_edge" in block
+        assert (
+            "/etc/codestra/secrets/vicidial-mtls:"
+            "/run/secrets/vicidial-mtls:ro"
+        ) in block
+
+
 def test_runtime_action_flags_default_fail_closed() -> None:
     false_flags = (
         "LIVE_WRITES_ENABLED",

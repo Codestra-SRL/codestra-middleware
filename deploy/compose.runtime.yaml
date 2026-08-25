@@ -438,31 +438,49 @@ services:
   middleware-telephony-provisioning:
     <<: *runtime
     command: [python, -m, app.entrypoints.telephony_provisioning]
+    extra_hosts:
+      - "edge.internal.codestra.agency:10.40.0.2"
+    networks:
+      - middleware_backend
+      - middleware_edge
     environment:
       <<: *safe-flags
       SERVICE_NAME: codestra-telephony-provisioning
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-telephony-provisioning-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
 
   middleware-vicidial-adapter:
     <<: *worker
     command: [python, -m, app.entrypoints.vicidial_adapter]
+    extra_hosts:
+      - "edge.internal.codestra.agency:10.40.0.2"
+    networks:
+      - middleware_backend
+      - middleware_edge
     environment:
       <<: *safe-flags
       SERVICE_NAME: codestra-vicidial-adapter
       QUEUE_NAME: telephony.vicidial.provisioning
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-vicidial-adapter-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
 
   middleware-pjsip-adapter:
     <<: *worker
     command: [python, -m, app.entrypoints.pjsip_adapter]
+    extra_hosts:
+      - "edge.internal.codestra.agency:10.40.0.2"
+    networks:
+      - middleware_backend
+      - middleware_edge
     environment:
       <<: *safe-flags
       SERVICE_NAME: codestra-pjsip-adapter
       QUEUE_NAME: telephony.pjsip.provisioning
     volumes:
       - /etc/codestra/secrets/middleware-runtime/middleware-pjsip-adapter-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/vicidial-mtls:/run/secrets/vicidial-mtls:ro
 
   middleware-webphone-session-issuer:
     <<: *runtime
