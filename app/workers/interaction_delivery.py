@@ -20,7 +20,6 @@ from uuid import UUID
 
 import httpx
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.reliability import RetryPolicy
@@ -116,7 +115,7 @@ async def deliver_once(*, limit: int = 16, lease_seconds: int = 60) -> int:
         interaction_result_id = payload["interaction_result_id"]
         try:
             odoo_event_id = await _deliver_to_odoo(payload, row["correlation_id"])
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- one bad delivery must not crash the worker loop; routed to retry/dead-letter below
             async with SessionFactory() as session:
                 status = await record_failure(
                     session,

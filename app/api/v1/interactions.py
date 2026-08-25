@@ -49,12 +49,15 @@ class CallbackRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
 
 
+InteractionBody = NotesRequest | DispositionRequest | CallbackRequest
+
+
 async def _write(
     db: AsyncSession,
     request: Request,
     interaction_id: str,
     result_type: str,
-    body: BaseModel,
+    body: InteractionBody,
     fields: dict,
     idempotency_key: str | None,
     x_correlation_id: str | None,
