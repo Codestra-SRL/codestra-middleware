@@ -1,6 +1,5 @@
 import asyncio
 import os
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -12,8 +11,7 @@ from app.api.v1 import telephony
 from app.api.v1.telephony import OriginateCallRequest
 from app.core.config import settings
 from app.core.webrtc_production_policy import Decision
-from app.db.models import AuditEvent, IdempotencyRecord, TelephonyCallLifecycle
-
+from app.db.models import AuditEvent, TelephonyCallLifecycle
 
 AGENT_IDENTITY = {
     "campaign_ids": ["TEST_SYN"],
