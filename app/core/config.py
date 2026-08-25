@@ -270,6 +270,8 @@ class Settings(BaseSettings):
     odoo_recording_write_enabled: bool = False
     odoo_recording_hmac_secret: str = ""
     odoo_recording_hmac_secret_file: str = ""
+    interaction_result_hmac_secret: str = ""
+    interaction_result_hmac_secret_file: str = ""
     n8n_recording_workflow_enabled: bool = False
     n8n_recording_binding_enabled: bool = False
     n8n_recording_workflow_active: bool = False
@@ -288,6 +290,9 @@ class Settings(BaseSettings):
     provisioning_service_ca_file: str = ""
     odoo_identity_lookup_url: str = ""
     odoo_identity_lookup_hmac_file: str = ""
+    webrtc_production_policy_path: str = (
+        "config/webrtc-production-policy.default-deny.json"
+    )
     maintenance_interval_seconds: int = 30
     automation_allowed_campaigns: str = "TEST_SYN"
     automation_environment: str = "test"
@@ -616,6 +621,7 @@ class Settings(BaseSettings):
             # Ingestion deliberately has no legacy shared-secret fallback.
             ("ingestion_hmac_secret", self.vicidial_callback_hmac_secret_file),
             ("odoo_recording_hmac_secret", self.odoo_recording_hmac_secret_file),
+            ("interaction_result_hmac_secret", self.interaction_result_hmac_secret_file),
         )
         for attribute, filename in mappings:
             if filename:

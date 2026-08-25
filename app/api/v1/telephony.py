@@ -3,19 +3,40 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
+import logging
+import time
+from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Literal
+from urllib.parse import quote, urlencode, urlsplit
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.vicidial.mtls_client import VicidialMtlsClient, VicidialMtlsError
 from app.core.config import settings
 from app.core.telephony import AUTHORITATIVE_SOURCES, ExtensionState, audit_extension
+from app.core.webrtc_production_policy import (
+    E164,
+    CallRequest as PolicyCallRequest,
+    Consent as PolicyConsent,
+    Decision,
+    Policy,
+    authorize as authorize_call,
+)
 from app.db.models import (
+    AuditEvent,
+    IdempotencyRecord,
+    OutboxEvent,
+    TelephonyCallLifecycle,
     TelephonyExtensionPool,
     TelephonyExtensionReservation,
     TelephonyProvisioningSaga,
@@ -23,6 +44,8 @@ from app.db.models import (
 from app.db.session import get_session
 
 router = APIRouter(prefix="/v1/telephony", tags=["telephony"])
+logger = logging.getLogger("codestra.telephony_originate")
+_originate_requests: dict[str, deque[float]] = defaultdict(deque)
 
 
 class AuditRequest(BaseModel):
@@ -338,3 +361,325 @@ async def reconcile():
         "state": "accepted",
         "authoritative_sources": sorted(AUTHORITATIVE_SOURCES),
     }
+
+
+# --- Click-to-call origination -------------------------------------------
+#
+# Odoo CRM -> (this endpoint) -> VicidialMtlsClient.originate -> VICIdial
+# edge adapter -> Asterisk -> agent endpoint -> PSTN.
+#
+# Fails closed at three independent layers so the whole path is safe to
+# exercise end-to-end while external_dial_enabled/live_writes_enabled are
+# false: (1) the campaign guard below, (2) the default-deny WebRTC
+# production policy (config/webrtc-production-policy.default-deny.json),
+# and (3) VicidialMtlsClient.originate's own flag check. No layer trusts
+# the others.
+
+_ORIGINATE_RATE_LIMIT_PER_MINUTE = 10
+
+
+class ConsentInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str
+    scope: str
+    timestamp: datetime | None = None
+    expiration: datetime | None = None
+    source: str
+    reference: str
+
+
+class OriginateCallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str = Field(min_length=16, max_length=256)
+    employee_id: str = Field(min_length=1, max_length=128)
+    campaign: str = Field(min_length=1, max_length=64)
+    business_unit: str = Field(min_length=1, max_length=64)
+    destination: str = Field(min_length=8, max_length=32)
+    destination_class: str = Field(default="mobile", max_length=32)
+    destination_country: str = Field(min_length=2, max_length=2)
+    destination_timezone: str = Field(min_length=1, max_length=64)
+    caller_id: str = Field(min_length=1, max_length=32)
+    lead_model: str = Field(min_length=1, max_length=64)
+    lead_id: int
+    recording_requested: bool = False
+    consent: ConsentInfo | None = None
+
+
+def _rate_limit_originate(key: str) -> None:
+    now = time.monotonic()
+    bucket = _originate_requests[key]
+    while bucket and bucket[0] < now - 60:
+        bucket.popleft()
+    if len(bucket) >= _ORIGINATE_RATE_LIMIT_PER_MINUTE:
+        raise HTTPException(429, "call origination rate limit exceeded")
+    bucket.append(now)
+
+
+async def _lookup_agent_assignment(employee_id: str, campaign: str) -> dict:
+    """Authoritative Odoo-side lookup of the agent's permitted VICIdial identity.
+
+    Deliberately independent of app.api.v1.webphone._odoo_identity (that
+    module is an isolated staging gate per its own docstring) even though
+    both call the same identity service with the same HMAC scheme -- this
+    endpoint must not depend on that router's framing or lifecycle.
+    """
+    if (
+        not settings.odoo_identity_lookup_url
+        or not settings.odoo_identity_lookup_hmac_file
+    ):
+        raise HTTPException(503, "identity service unavailable")
+    try:
+        secret = Path(settings.odoo_identity_lookup_hmac_file).read_text().strip()
+    except OSError as exc:
+        raise HTTPException(503, "identity service unavailable") from exc
+    url = (
+        f"{settings.odoo_identity_lookup_url.rstrip('/')}/{quote(employee_id, safe='')}"
+    )
+    url += "?" + urlencode({"campaign_id": campaign})
+    parts = urlsplit(url)
+    canonical = str(int(time.time())) + "." + parts.path
+    if parts.query:
+        canonical += "?" + parts.query
+    timestamp = canonical.split(".", 1)[0]
+    signature = hmac.new(
+        secret.encode(), canonical.encode(), hashlib.sha256
+    ).hexdigest()
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            response = await client.get(
+                url,
+                headers={
+                    "X-Codestra-Identity-Timestamp": timestamp,
+                    "X-Codestra-Identity-Signature": f"sha256={signature}",
+                },
+            )
+            if response.status_code >= 400:
+                raise HTTPException(
+                    response.status_code
+                    if response.status_code in {401, 403}
+                    else 503,
+                    "employee identity not authorized",
+                )
+            payload = response.json()
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(503, "identity service unavailable") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(503, "invalid identity response")
+    return payload
+
+
+def _load_call_policy() -> Policy:
+    return Policy.from_file(Path(settings.webrtc_production_policy_path))
+
+
+@router.post("/calls/originate", status_code=200)
+async def originate_call(
+    payload: OriginateCallRequest,
+    session: AsyncSession = Depends(get_session),
+    x_correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
+):
+    correlation_id = x_correlation_id or str(uuid4())
+
+    # Idempotent replay short-circuits everything else -- the caller
+    # already paid the authorization/rate-limit cost once.
+    key_hash = _hash(payload.idempotency_key)
+    replay = (
+        await session.execute(
+            select(IdempotencyRecord).where(
+                IdempotencyRecord.scope == "telephony/calls/originate",
+                IdempotencyRecord.key_hash == key_hash,
+            )
+        )
+    ).scalar_one_or_none()
+    if replay:
+        return replay.response
+
+    _rate_limit_originate(payload.employee_id)
+
+    # Production campaigns remain hard-blocked at the application layer,
+    # matching the existing house convention (see /api/v1/transfers/requests
+    # in app/api/v1/control.py).
+    if payload.campaign != "TEST_SYN" and not settings.allow_non_test_campaigns:
+        raise HTTPException(403, "production campaigns are disabled")
+
+    # The request body's campaign/business_unit/caller_id are claims from
+    # Odoo; only the identity service's answer is trusted for authorization.
+    identity = await _lookup_agent_assignment(payload.employee_id, payload.campaign)
+    campaigns = identity.get("campaign_ids")
+    endpoint = identity.get("endpoint")
+    vicidial_username = identity.get("vicidial_username")
+    business_unit_id = identity.get("business_unit_id")
+    if (
+        not isinstance(campaigns, list)
+        or payload.campaign not in campaigns
+        or not isinstance(endpoint, str)
+        or not endpoint.isdigit()
+        or not isinstance(vicidial_username, str)
+        or not vicidial_username
+        or not business_unit_id
+        or str(business_unit_id) != payload.business_unit
+    ):
+        raise HTTPException(403, "agent is not authorized for this campaign")
+
+    if not E164.fullmatch(payload.destination):
+        raise HTTPException(422, "destination must be a valid E.164 number")
+
+    call_id = uuid4()
+    now = datetime.now(UTC)
+
+    # Evaluate the default-deny production policy. While it stays
+    # disabled/kill-switched (the checked-in default), this always returns
+    # DENY -- the endpoint is fully exercisable end-to-end without ever
+    # being able to place a real call.
+    policy = _load_call_policy()
+    consent = None
+    if payload.consent is not None:
+        consent = PolicyConsent(
+            status=payload.consent.status,
+            scope=payload.consent.scope,
+            timestamp=payload.consent.timestamp,
+            expiration=payload.consent.expiration,
+            source=payload.consent.source,
+            reference=payload.consent.reference,
+        )
+    decision = authorize_call(
+        policy,
+        PolicyCallRequest(
+            correlation_id=correlation_id,
+            agent_subject=vicidial_username,
+            tenant=business_unit_id,
+            business_unit=payload.business_unit,
+            campaign=payload.campaign,
+            extension=endpoint,
+            caller_id=payload.caller_id,
+            destination=payload.destination,
+            destination_class=payload.destination_class,
+            destination_country=payload.destination_country,
+            destination_timezone=payload.destination_timezone,
+            recording_requested=payload.recording_requested,
+            consent=consent,
+            requested_at=now,
+        ),
+    )
+
+    # Record the attempt -- denied or not -- as an auditable call lifecycle
+    # row. This row's id is the call_id returned to Odoo.
+    lifecycle = TelephonyCallLifecycle(
+        id=call_id,
+        correlation_id=correlation_id,
+        primary_unique_id=f"click-to-call:{call_id}",
+        lifecycle_state="STARTED",
+        started_at=now,
+        source_extension=endpoint,
+        destination=payload.destination,
+        dialplan_context="click-to-call",
+    )
+    session.add(lifecycle)
+    session.add(
+        AuditEvent(
+            action="telephony.calls.originate",
+            subject=str(call_id),
+            correlation_id=correlation_id,
+            decision=decision.value,
+            redacted_payload={
+                "employee_id": payload.employee_id,
+                "campaign": payload.campaign,
+                "business_unit": payload.business_unit,
+                "lead_model": payload.lead_model,
+                "lead_id": payload.lead_id,
+                "destination_reference": hashlib.sha256(
+                    payload.destination.encode()
+                ).hexdigest()[:16],
+            },
+        )
+    )
+
+    dialing_status = "blocked"
+    dial_reason = f"policy_decision:{decision.value}"
+    if decision == Decision.ALLOW:
+        adapter = VicidialMtlsClient(settings)
+        try:
+            adapter.originate(
+                {
+                    "call_id": str(call_id),
+                    "correlation_id": correlation_id,
+                    "extension": endpoint,
+                    "vicidial_username": vicidial_username,
+                    "campaign": payload.campaign,
+                    "destination": payload.destination,
+                    "caller_id": payload.caller_id,
+                },
+                correlation_id=correlation_id,
+                request_id=str(call_id),
+            )
+            dialing_status = "attempting"
+            dial_reason = "accepted"
+        except VicidialMtlsError as exc:
+            dialing_status = "blocked"
+            dial_reason = str(exc)
+            lifecycle.lifecycle_state = "ENDED"
+            lifecycle.ended_at = datetime.now(UTC)
+            lifecycle.hangup_cause = "adapter_error"
+        finally:
+            adapter.close()
+
+    session.add(
+        OutboxEvent(
+            topic="call.state.started",
+            payload={
+                "call_id": str(call_id),
+                "correlation_id": correlation_id,
+                "lead_model": payload.lead_model,
+                "lead_id": payload.lead_id,
+                "business_unit": payload.business_unit,
+                "campaign": payload.campaign,
+                "state": lifecycle.lifecycle_state,
+                "dialing": dialing_status,
+            },
+            correlation_id=correlation_id,
+        )
+    )
+
+    response = {
+        "call_id": str(call_id),
+        "correlation_id": correlation_id,
+        "lifecycle_state": lifecycle.lifecycle_state,
+        "dialing": dialing_status,
+        "reason": dial_reason,
+        "policy_decision": decision.value,
+    }
+    logger.info(
+        "telephony_originate_completed",
+        extra={
+            "call_id": str(call_id),
+            "correlation_id": correlation_id,
+            "campaign": payload.campaign,
+            "policy_decision": decision.value,
+            "dialing": dialing_status,
+        },
+    )
+    session.add(
+        IdempotencyRecord(
+            scope="telephony/calls/originate",
+            key_hash=key_hash,
+            request_hash=hashlib.sha256(
+                json.dumps(
+                    payload.model_dump(mode="json"),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+            response=response,
+            status_code=200,
+        )
+    )
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            409, "concurrent origination conflict; retry safely"
+        ) from exc
+    return response

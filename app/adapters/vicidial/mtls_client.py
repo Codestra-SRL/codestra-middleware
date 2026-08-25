@@ -29,6 +29,7 @@ APPROVED_ROUTES = frozenset(
             "/api/v1/transfers/authorize",
         ),
         ("POST", "edge.internal.codestra.agency", "/v1/transfers/execute"),
+        ("POST", "edge.internal.codestra.agency", "/v1/calls/originate"),
     }
 )
 
@@ -108,6 +109,36 @@ class VicidialMtlsClient:
         return self.request(
             "POST",
             f"{self._settings.vicidial_edge_url}/v1/transfers/execute",
+            payload,
+            correlation_id=correlation_id,
+            request_id=request_id,
+        )
+
+    def originate(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        correlation_id: str | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Ask the VICIdial-side edge adapter to place an outbound call.
+
+        Gated by the same triple flag as ``execute`` so a caller cannot
+        reach a real dial by only flipping one setting. The caller
+        (``app.api.v1.telephony.originate_call``) additionally re-checks
+        the same flags plus the default-deny WebRTC production policy
+        before this method is ever called, so this is defense-in-depth,
+        not the only gate.
+        """
+        if not (
+            self._settings.external_dial_enabled
+            and self._settings.vicidial_write_enabled
+            and self._settings.live_writes_enabled
+        ):
+            raise VicidialMtlsError("VICIdial call origination is disabled")
+        return self.request(
+            "POST",
+            f"{self._settings.vicidial_edge_url}/v1/calls/originate",
             payload,
             correlation_id=correlation_id,
             request_id=request_id,
