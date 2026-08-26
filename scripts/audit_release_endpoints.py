@@ -35,8 +35,9 @@ def source_audit() -> list[str]:
     assert contract["service"] == "middleware-integration-api"
     assert contract["listener_port"] == 8095
     actual = {
-        (method.upper(), route.path)
+        (method.upper(), path)
         for route in app.routes
+        if (path := getattr(route, "path", None)) is not None
         for method in (getattr(route, "methods", None) or set())
     }
     expected = {(row["method"], row["path"]) for row in contract["routes"]}
