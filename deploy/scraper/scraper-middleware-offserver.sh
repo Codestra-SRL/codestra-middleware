@@ -7,7 +7,8 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)
 final_dir=${backup_root}/${stamp}
 install -d -m 0700 "${backup_root}"
 work_dir=$(mktemp -d "${backup_root}/.work-${stamp}.XXXXXX")
-remote_name=scraper-middleware-scheduled-${stamp}
+remote_root=/srv/codestra-backups/server-a/middleware
+remote_dir=${remote_root}/${stamp}
 
 cleanup() {
   case "${work_dir}" in
@@ -39,17 +40,16 @@ gpg --homedir /etc/codestra/backup-gpg --batch --yes --trust-model always \
   sha256sum -c SHA256SUMS
 )
 ssh -o BatchMode=yes codestra-vicidial \
-  "install -d -m 0700 /tmp/${remote_name}-upload"
+  "install -d -m 0700 '${remote_root}' '${remote_dir}'"
 scp -q "${final_dir}/codestra_middleware.dump.gpg" \
   "${final_dir}/SHA256SUMS" \
-  "codestra-vicidial:/tmp/${remote_name}-upload/"
+  "codestra-vicidial:${remote_dir}/"
 ssh -o BatchMode=yes codestra-vicidial \
-  "sudo install -d -o root -g root -m 0700 /srv/codestra-backups/server-a/${remote_name} &&
-   sudo install -o root -g root -m 0600 /tmp/${remote_name}-upload/codestra_middleware.dump.gpg /srv/codestra-backups/server-a/${remote_name}/codestra_middleware.dump.gpg &&
-   sudo install -o root -g root -m 0600 /tmp/${remote_name}-upload/SHA256SUMS /srv/codestra-backups/server-a/${remote_name}/SHA256SUMS &&
-   sudo sh -c 'cd /srv/codestra-backups/server-a/${remote_name} && sha256sum -c SHA256SUMS'"
+  "chmod 0700 '${remote_root}' '${remote_dir}' &&
+   chmod 0600 '${remote_dir}/codestra_middleware.dump.gpg' '${remote_dir}/SHA256SUMS' &&
+   cd '${remote_dir}' && sha256sum -c SHA256SUMS"
 ssh -o BatchMode=yes codestra-vicidial \
-  "sudo sh -c 'cd /srv/codestra-backups/server-a/${remote_name} && sha256sum codestra_middleware.dump.gpg'" \
+  "cd '${remote_dir}' && sha256sum codestra_middleware.dump.gpg" \
   > "${final_dir}/REMOTE-SHA256SUMS"
 diff -u \
   <(sort "${final_dir}/SHA256SUMS") \
