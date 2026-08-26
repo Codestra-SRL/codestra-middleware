@@ -102,6 +102,45 @@ def test_health_handler_and_backpressure_contract() -> None:
     assert asyncio.run(gateway.healthz()) == {"status": "healthy"}
     connection = gateway.Connection(cast(Any, Socket()), scope())
     assert connection.queue.maxsize == gateway.settings.max_pending
+
+
+def test_passive_standby_requires_recovery_and_performs_no_startup_write() -> None:
+    class Pool:
+        def __init__(self, recovery: bool):
+            self.recovery = recovery
+            self.executed: list[str] = []
+
+        async def fetchval(self, query: str):
+            if "websocket_schema_migrations" in query:
+                return gateway.DATABASE_MIGRATION_HEAD
+            if "pg_is_in_recovery" in query:
+                return self.recovery
+            raise AssertionError(query)
+
+        async def execute(self, query: str) -> None:
+            self.executed.append(query)
+
+    original = gateway.settings.passive_standby
+    try:
+        gateway.settings.passive_standby = True
+        replica = Pool(recovery=True)
+        asyncio.run(gateway.verify_schema(replica))
+        assert replica.executed == []
+
+        gateway.settings.passive_standby = False
+        primary = Pool(recovery=False)
+        asyncio.run(gateway.verify_schema(primary))
+        assert len(primary.executed) == 1
+    finally:
+        gateway.settings.passive_standby = original
+
+
+def test_passive_standby_write_paths_fail_closed() -> None:
+    source = Path(gateway.__file__).read_text()
+    assert 'HTTPException(503, "passive standby does not issue sessions")' in source
+    assert 'HTTPException(503, "passive standby does not accept events")' in source
+    assert 'HTTPException(503, "passive standby does not revoke sessions")' in source
+    assert "await websocket.close(code=1013)" in source
     source = Path(gateway.__file__).read_text(encoding="utf-8")
     assert "BACKPRESSURE.inc()" in source
     assert "active.queue.put_nowait(document)" in source
