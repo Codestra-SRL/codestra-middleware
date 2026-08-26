@@ -334,7 +334,7 @@ jobs:
           audit_case tcp-failure \
             'postgresql+asyncpg://middleware_ci:wrong@127.0.0.1:1/middleware_rehearsal' \
             503 8104
-          python scripts/audit_release_endpoints.py \
+          python -m scripts.audit_release_endpoints \
             | tee release-endpoint-contract.txt
 
       - name: Create test evidence manifest
