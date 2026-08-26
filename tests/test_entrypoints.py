@@ -18,6 +18,7 @@ from app.entrypoints import (
     vicidial_adapter,
     webphone_session_issuer,
 )
+from app.entrypoints import runtime
 from app.entrypoints.runtime import worker_app
 
 
@@ -92,6 +93,40 @@ def test_api_runtime_health_and_correlation(monkeypatch):
     assert response.headers["X-Correlation-ID"] != "synthetic-correlation"
     UUID(response.headers["X-Correlation-ID"])
     assert response.headers["Traceparent"].startswith("00-")
+
+
+def test_api_runtime_logs_trusted_kong_request_id(monkeypatch, caplog):
+    monkeypatch.setattr(settings, "middleware_secret", "unit-test-secret")
+    gateway_request_id = "8a9bb119-78b5-4d97-b221-cf86e77ac115"
+    with caplog.at_level("INFO", logger="codestra.runtime"):
+        response = TestClient(event_gateway.app).get(
+            "/healthz", headers={"X-Kong-Request-Id": gateway_request_id}
+        )
+    assert response.status_code == 200
+    assert any(
+        getattr(record, "gateway_request_id", None) == gateway_request_id
+        for record in caplog.records
+    )
+
+
+def test_api_runtime_readiness_fails_when_required_database_is_unavailable(
+    monkeypatch,
+):
+    def unavailable(_self):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(settings, "health_require_database", True)
+    monkeypatch.setattr(runtime, "engine", type("UnavailableEngine", (), {"connect": unavailable})())
+    response = TestClient(integration_api.app).get("/readyz")
+    assert response.status_code == 503
+    assert response.json()["database"] == "unavailable"
+
+
+def test_api_runtime_readiness_documents_optional_database(monkeypatch):
+    monkeypatch.setattr(settings, "health_require_database", False)
+    response = TestClient(integration_api.app).get("/readyz")
+    assert response.status_code == 200
+    assert response.json()["database"] == "not-required"
 
 
 def test_api_runtime_version_is_safe_and_immutable(monkeypatch):

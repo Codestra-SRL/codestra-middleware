@@ -8,6 +8,8 @@ engine = create_async_engine(
     pool_size=settings.database_pool_size,
     max_overflow=settings.database_max_overflow,
     pool_timeout=settings.database_pool_timeout_seconds,
+    pool_recycle=settings.database_pool_recycle_seconds,
+    connect_args={"command_timeout": settings.database_command_timeout_seconds},
 )
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
