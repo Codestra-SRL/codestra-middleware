@@ -289,6 +289,54 @@ jobs:
           wait "${server_pid}" || true
           trap - EXIT
 
+      - name: Certify required-database readiness failure modes
+        shell: bash
+        env:
+          MIDDLEWARE_SECRET: synthetic-ci-middleware-secret
+          INGESTION_HMAC_SECRET: synthetic-ci-ingestion-secret
+          HEALTH_REQUIRE_DATABASE: "true"
+          LIVE_WRITES_ENABLED: "false"
+          N8N_PRODUCTION_WORKFLOWS_ENABLED: "false"
+          VICIDIAL_WRITE_ENABLED: "false"
+          CALLBACK_DISPATCH_ENABLED: "false"
+          MESSAGING_ENABLED: "false"
+          OUTBOX_WORKER_ENABLED: "false"
+        run: |
+          set -euo pipefail
+          audit_case() {
+            local name=$1 database_url=$2 expected=$3 port=$4
+            DATABASE_URL="${database_url}" \
+              uvicorn app.entrypoints.integration_api:app \
+                --host 127.0.0.1 --port "${port}" \
+                > "readiness-${name}.log" 2>&1 &
+            local server_pid=$!
+            for attempt in {1..30}; do
+              curl --silent "http://127.0.0.1:${port}/healthz" >/dev/null \
+                && break
+              sleep 1
+            done
+            local status
+            status=$(curl --silent --output "readiness-${name}.json" \
+              --write-out '%{http_code}' "http://127.0.0.1:${port}/readyz")
+            kill "${server_pid}"
+            wait "${server_pid}" || true
+            test "${status}" = "${expected}"
+          }
+          audit_case healthy \
+            'postgresql+asyncpg://middleware_ci:ci-only-password@127.0.0.1:5432/middleware_rehearsal' \
+            200 8101
+          audit_case wrong-credential \
+            'postgresql+asyncpg://middleware_ci:wrong@127.0.0.1:5432/middleware_rehearsal' \
+            503 8102
+          audit_case dns-failure \
+            'postgresql+asyncpg://middleware_ci:wrong@database.invalid:5432/middleware_rehearsal' \
+            503 8103
+          audit_case tcp-failure \
+            'postgresql+asyncpg://middleware_ci:wrong@127.0.0.1:1/middleware_rehearsal' \
+            503 8104
+          python -m scripts.audit_release_endpoints \
+            | tee release-endpoint-contract.txt
+
       - name: Create test evidence manifest
         shell: bash
         run: |
@@ -311,6 +359,11 @@ jobs:
             application-startup.txt \
             healthz-final.json \
             readyz-final.json \
+            readiness-healthy.json \
+            readiness-wrong-credential.json \
+            readiness-dns-failure.json \
+            readiness-tcp-failure.json \
+            release-endpoint-contract.txt \
             > required-ci-evidence.sha256
 
       - name: Upload exact-SHA CI evidence
@@ -338,6 +391,11 @@ jobs:
             application-startup.txt
             healthz-final.json
             readyz-final.json
+            readiness-healthy.json
+            readiness-wrong-credential.json
+            readiness-dns-failure.json
+            readiness-tcp-failure.json
+            release-endpoint-contract.txt
             required-ci-evidence.sha256
 
   publish-final-status:

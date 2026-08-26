@@ -362,6 +362,7 @@ def test_disabled_flags_fail_closed_before_network(tmp_path: Path):
         vicidial_read_enabled=False,
         vicidial_write_enabled=False,
         live_writes_enabled=False,
+        external_dial_enabled=False,
     )
     client = _client(settings, httpx.MockTransport(handler))
     try:
@@ -369,9 +370,56 @@ def test_disabled_flags_fail_closed_before_network(tmp_path: Path):
             client.authorize({})
         with pytest.raises(VicidialMtlsError, match="execution is disabled"):
             client.execute({})
+        with pytest.raises(VicidialMtlsError, match="origination is disabled"):
+            client.originate({})
     finally:
         client.close()
     assert calls == 0
+
+
+def test_originate_disabled_even_with_write_and_live_flags_alone(tmp_path: Path):
+    # external_dial_enabled must ALSO be true -- vicidial_write_enabled and
+    # live_writes_enabled alone (e.g. because a transfer feature needs them)
+    # must never be sufficient to unlock call origination.
+    settings = _settings(
+        tmp_path,
+        vicidial_write_enabled=True,
+        live_writes_enabled=True,
+        external_dial_enabled=False,
+    )
+    client = _client(settings, httpx.MockTransport(lambda _: httpx.Response(200)))
+    try:
+        with pytest.raises(VicidialMtlsError, match="origination is disabled"):
+            client.originate({"destination": "+15551234567"})
+    finally:
+        client.close()
+
+
+def test_originate_valid_request_hits_approved_route(tmp_path: Path):
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"accepted": True})
+
+    settings = _settings(
+        tmp_path,
+        vicidial_write_enabled=True,
+        live_writes_enabled=True,
+        external_dial_enabled=True,
+    )
+    client = _client(settings, httpx.MockTransport(handler))
+    try:
+        assert client.originate({"destination": "+15551234567"}) == {
+            "accepted": True
+        }
+    finally:
+        client.close()
+    request = captured[0]
+    assert request.method == "POST"
+    assert request.url.path == "/v1/calls/originate"
+    assert request.headers["X-Correlation-ID"]
+    assert request.headers["X-Request-ID"]
 
 
 def test_public_or_mixed_dns_resolution_fails_before_network(tmp_path: Path):

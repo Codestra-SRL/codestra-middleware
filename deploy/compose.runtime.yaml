@@ -190,6 +190,9 @@ services:
     environment:
       <<: *safe-flags
       SERVICE_NAME: middleware-integration-api
+      # The public API persists idempotency, inbox/outbox, callback, delivery,
+      # and audit state. Readiness must fail closed when PostgreSQL is absent.
+      HEALTH_REQUIRE_DATABASE: "true"
       QUARANTINE_ENCRYPTION_KEY_FILE: /run/secrets/quarantine-encryption-key
       QUARANTINE_FINGERPRINT_SECRET_FILE: /run/secrets/quarantine-fingerprint-key
       QUARANTINE_REVIEWER_SECRET_FILE: /run/secrets/quarantine-reviewer-key
