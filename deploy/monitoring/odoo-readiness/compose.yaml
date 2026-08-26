@@ -2,7 +2,7 @@ services:
   postgres-exporter:
     image: docker.io/prometheuscommunity/postgres-exporter@sha256:9fca39a4307092387b7de884bed4b62205cb88a6a5fdb423b9a70ea80b34efb3
     environment:
-      DATA_SOURCE_URI: postgres:5432/postgres?sslmode=disable
+      DATA_SOURCE_URI: codestra-postgres-1:5432/postgres?sslmode=disable
       DATA_SOURCE_USER: codestra_monitoring
       DATA_SOURCE_PASS_FILE: /run/secrets/postgres_monitoring_password
     secrets: [postgres_monitoring_password]
