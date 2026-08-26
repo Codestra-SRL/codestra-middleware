@@ -306,7 +306,8 @@ jobs:
           audit_case() {
             local name=$1 database_url=$2 expected=$3 port=$4
             DATABASE_URL="${database_url}" \
-              uvicorn app.main:app --host 127.0.0.1 --port "${port}" \
+              uvicorn app.entrypoints.integration_api:app \
+                --host 127.0.0.1 --port "${port}" \
                 > "readiness-${name}.log" 2>&1 &
             local server_pid=$!
             for attempt in {1..30}; do
