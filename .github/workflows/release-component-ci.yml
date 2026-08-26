@@ -7,6 +7,9 @@ on:
       - "requirements*.lock"
       - "app/**"
       - "tests/**"
+      - "scripts/audit_release_endpoints.py"
+      - "deploy/public-api-route-contract.json"
+      - "deploy/compose.runtime.yaml"
       - "agent_desktop/**"
       - "websocket_gateway/**"
       - ".github/workflows/release-component-*.yml"
@@ -55,6 +58,8 @@ jobs:
           test -s requirements.lock
           test -s requirements-test.lock
           docker build --target test --tag codestra-middleware-test:${GITHUB_SHA} .
+          docker run --rm --entrypoint python codestra-middleware-test:${GITHUB_SHA} \
+            scripts/audit_release_endpoints.py
           docker run --rm --entrypoint pytest codestra-middleware-test:${GITHUB_SHA} -q tests/test_webphone.py tests/test_agent_realtime.py tests/test_realtime.py
           docker build --target runtime --tag codestra-middleware:${GITHUB_SHA} .
       - name: Validate Agent Desktop

@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     database_pool_size: int = 8
     database_max_overflow: int = 4
     database_pool_timeout_seconds: int = 5
+    database_command_timeout_seconds: int = 30
+    database_pool_recycle_seconds: int = 1800
     health_require_database: bool = False
     enabled_event_types: str = (
         "vicidial.call.started,vicidial.call.connected,vicidial.call.ended"
