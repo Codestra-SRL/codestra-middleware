@@ -26,6 +26,7 @@ from app.api.v1.registry import router as registry_router
 from app.api.v1.recordings import router as recordings_router
 from app.api.v1.sales import router as sales_router
 from app.api.v1.social import router as social_router
+from app.api.v1.provider_webhooks import router as provider_webhooks_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.internal.ai_jobs import router as internal_ai_jobs_router
 from app.api.internal.klyrow_mail import router as klyrow_mail_router
@@ -79,6 +80,7 @@ app.include_router(commands_router)
 app.include_router(recordings_router)
 app.include_router(sales_router)
 app.include_router(social_router)
+app.include_router(provider_webhooks_router)
 app.mount("/metrics", make_asgi_app())
 
 
@@ -101,6 +103,8 @@ async def sanitized_validation_error(request: Request, exc: RequestValidationErr
 
 SIGNED_WEBHOOK_PATHS = frozenset(
     {
+        "/webhooks/vicidial/call-result/",
+        "/webhooks/sms/inbound/",
         "/api/v1/events/vicidial",
         "/api/v1/automation/events",
         "/api/v2/telephony/canary",

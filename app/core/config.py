@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     middleware_secret_file: str = ""
     webhook_shared_secret: str = ""
     webhook_shared_secret_file: str = ""
+    vicidial_webhook_secret: str = ""
+    telnexa_webhook_secret: str = ""
     vicidial_callback_hmac_secret_file: str = ""
     signature_ttl_seconds: int = 300
     request_max_bytes: int = 262144
