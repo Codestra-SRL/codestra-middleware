@@ -51,6 +51,14 @@ def test_telephony_readback_catalog_is_registry_only_and_read_only():
     assert expected.keys() <= ODOO_READ_OPERATIONS
 
 
+def test_provider_activity_write_is_registry_backed_and_mutating():
+    assert (
+        ODOO_ENDPOINTS["provider_activities.create"]
+        == "odoo.provider_activities.create"
+    )
+    assert "provider_activities.create" not in ODOO_READ_OPERATIONS
+
+
 @pytest.mark.asyncio
 async def test_unknown_operation_fails_closed():
     client = OdooDeliveryClient(FakeServiceClient(), "staging", "ORG")

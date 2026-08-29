@@ -19,6 +19,7 @@ from app.db.models import (
     IdempotencyRecord,
     IntegrationDelivery,
     IntegrationEvent,
+    OdooResultDelivery,
     OutboxEvent,
 )
 from app.db.session import get_session
@@ -138,6 +139,16 @@ async def _persist(
             result_json=odoo_intent,
         )
     )
+    if write_enabled:
+        db.add(
+            OdooResultDelivery(
+                integration_event_id=incoming.id,
+                originating_outbox_public_id=original_event_id,
+                request_hash=request_hash,
+                status="PENDING",
+                standard_result_json=odoo_intent,
+            )
+        )
     db.add(
         OutboxEvent(
             topic=event_type,

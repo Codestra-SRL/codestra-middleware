@@ -17,6 +17,7 @@ class OdooWebhookAdapter:
             "disposition": disposition,
             "call_time": payload["call_time"],
             "campaign_id": payload["campaign_id"],
+            "comments": payload.get("comments"),
         }
 
     @staticmethod

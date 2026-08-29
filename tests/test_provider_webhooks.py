@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException, Response
 
 from app.api.v1 import provider_webhooks
-from app.db.models import IntegrationDelivery, OutboxEvent
+from app.db.models import IntegrationDelivery, OdooResultDelivery, OutboxEvent
 
 
 VICIDIAL = {
@@ -72,6 +72,12 @@ async def test_valid_signature_persists_odoo_intent_and_platform_event(monkeypat
         for item in session.added
     )
     assert any(
+        isinstance(item, OdooResultDelivery)
+        and item.status == "PENDING"
+        and item.standard_result_json["operation"] == "log_call_result"
+        for item in session.added
+    )
+    assert any(
         isinstance(item, OutboxEvent) and item.topic == "call_disposition_updated"
         for item in session.added
     )
@@ -133,6 +139,7 @@ async def test_odoo_write_is_disabled_by_flag(monkeypatch):
         item for item in session.added if isinstance(item, IntegrationDelivery)
     )
     assert delivery.status == "disabled"
+    assert not any(isinstance(item, OdooResultDelivery) for item in session.added)
     assert result["odoo_write"] == "disabled"
 
 
