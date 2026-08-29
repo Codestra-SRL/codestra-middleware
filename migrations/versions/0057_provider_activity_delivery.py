@@ -1,14 +1,14 @@
 """Register the staging Odoo provider activity endpoint.
 
-Revision ID: 0055_provider_activities
-Revises: 0054_campaign_actions
+Revision ID: 0057_provider_activities
+Revises: 0056_klyrow_delivery_events
 """
 
 from alembic import op
 
 
-revision = "0055_provider_activities"
-down_revision = "0054_campaign_actions"
+revision = "0057_provider_activities"
+down_revision = "0056_klyrow_delivery_events"
 branch_labels = None
 depends_on = None
 
