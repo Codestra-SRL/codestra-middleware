@@ -14,6 +14,7 @@ from app.api.v1.n8n_transport import router as n8n_transport_router
 from app.api.v1.n8n_runtime import router as n8n_runtime_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.orchestration import router as orchestration_router
+from app.api.v1.provider_webhooks import router as provider_webhooks_router
 from app.api.v1.quarantine import router as quarantine_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.telephony import router as telephony_router
@@ -35,6 +36,7 @@ routers = (
     lead_automation_router,
     integrations_router,
     orchestration_router,
+    provider_webhooks_router,
     mappings_router,
     webphone_router,
     n8n_staging_router,
