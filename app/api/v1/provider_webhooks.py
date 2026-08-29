@@ -88,6 +88,10 @@ async def _persist(
     odoo_intent: dict[str, Any],
     body: bytes,
 ) -> dict[str, Any]:
+    staging = getattr(settings, "environment", "") == "staging"
+    write_enabled = settings.odoo_write_enabled or (
+        staging and getattr(settings, "odoo_staging_writes_enabled", False)
+    )
     original_event_id = f"{provider}:{external_id}"
     key_hash = hashlib.sha256(external_id.encode()).hexdigest()
     request_hash = hashlib.sha256(body).hexdigest()
@@ -129,7 +133,7 @@ async def _persist(
         IntegrationDelivery(
             event_id=incoming.id,
             target="odoo",
-            status="pending" if settings.odoo_write_enabled else "disabled",
+            status="pending" if write_enabled else "disabled",
             max_attempts=settings.outbox_max_attempts,
             result_json=odoo_intent,
         )
@@ -151,7 +155,7 @@ async def _persist(
         "accepted": True,
         "event_id": original_event_id,
         "duplicate": False,
-        "odoo_write": "pending" if settings.odoo_write_enabled else "disabled",
+        "odoo_write": "pending" if write_enabled else "disabled",
     }
     db.add(
         IdempotencyRecord(
