@@ -100,9 +100,18 @@ async def deliver_result(
         else None
     )
     standard_delivery = False
+    provider_activity_delivery = False
     if standard_event is not None and result.standard_result_json is not None:
         standard_delivery = True
-        body = _campaign_action_body(result, standard_event)
+        provider_activity_delivery = result.standard_result_json.get("operation") in {
+            "log_call_result",
+            "log_inbound_sms",
+        }
+        body = (
+            _provider_activity_body(result, standard_event)
+            if provider_activity_delivery
+            else _campaign_action_body(result, standard_event)
+        )
         correlation_id = standard_event.correlation_id
         causation_id = standard_event.original_event_id
     elif runtime_result is not None and runtime_execution is not None:
@@ -133,7 +142,11 @@ async def deliver_result(
     try:
         try:
             response = await service_client.request(
-                "campaign_actions.apply" if standard_delivery else "results.create",
+                "provider_activities.create"
+                if provider_activity_delivery
+                else "campaign_actions.apply"
+                if standard_delivery
+                else "results.create",
                 body,
                 idempotency_key=str(result.result_public_id),
                 request_id=f"REQ-{uuid4()}",
@@ -183,7 +196,16 @@ async def deliver_result(
             retryable=False,
         )
         raise OdooResultError("Odoo response is invalid") from exc
-    if standard_delivery:
+    if provider_activity_delivery:
+        assert standard_event is not None
+        assert result.standard_result_json is not None
+        required = {
+            "status": "APPLIED",
+            "event_id": standard_event.original_event_id,
+            "operation": result.standard_result_json["operation"],
+            "correlation_id": correlation_id,
+        }
+    elif standard_delivery:
         assert standard_event is not None
         assert result.standard_result_json is not None
         required = {
@@ -212,7 +234,9 @@ async def deliver_result(
     result.next_attempt_at = None
     result.last_error_class = None
     result.odoo_result_inbox_id = str(
-        accepted.get("receipt_id")
+        accepted.get("message_id")
+        if provider_activity_delivery
+        else accepted.get("receipt_id")
         if standard_delivery
         else accepted.get("result_inbox_id", accepted["result_public_id"])
     )
@@ -328,6 +352,44 @@ def _campaign_action_body(
         "execution_id": result["execution_id"],
         "actions": result["actions"],
     }
+
+
+def _provider_activity_body(
+    delivery: OdooResultDelivery,
+    event: IntegrationEvent,
+) -> dict[str, Any]:
+    result = delivery.standard_result_json or {}
+    organization = settings.test_syn_odoo_organization_public_id
+    business_unit = settings.test_syn_odoo_business_unit_public_id
+    campaign = settings.test_syn_odoo_campaign_public_id
+    if not all((organization, business_unit, campaign)):
+        raise OdooResultError("Odoo provider activity scope is not configured")
+    common = {
+        "operation": result["operation"],
+        "event_id": event.original_event_id,
+        "environment": settings.environment,
+        "organization_public_id": organization,
+        "business_unit_public_id": business_unit,
+        "campaign_public_id": campaign,
+    }
+    if result["operation"] == "log_call_result":
+        return {
+            **common,
+            "phone_number": result["phone_number"],
+            "disposition": result["disposition"],
+            "duration_seconds": result["call_time"],
+            "provider_call_id": result["call_id"],
+            "notes": result.get("comments"),
+        }
+    if result["operation"] == "log_inbound_sms":
+        return {
+            **common,
+            "from_number": result["phone_number"],
+            "body": result["body"],
+            "provider_message_id": result["message_id"],
+            "received_at": result["received_at"],
+        }
+    raise OdooResultError("unsupported Odoo provider activity operation")
 
 
 def approved_runtime_binding(

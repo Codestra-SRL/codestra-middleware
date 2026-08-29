@@ -25,6 +25,7 @@ ODOO_ENDPOINTS = {
     "results.read": "odoo.results.read",
     "results.by_delivery": "odoo.results.by_delivery",
     "campaign_actions.apply": "odoo.campaign_actions.apply",
+    "provider_activities.create": "odoo.provider_activities.create",
     "desired_state.read": "odoo.desired_state.read",
     "agents.read": "odoo.agents.read",
     "leads.read": "odoo.leads.read",
