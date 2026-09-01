@@ -1,7 +1,7 @@
 name: codestra-beyvra-email
 services:
   api:
-    image: ${BEYVRA_EMAIL_IMAGE:?immutable digest required}
+    image: ghcr.io/codestra-srl/beyvra-email@sha256:22df1d37e1fd9073a591cda7b5af6980c55577314207e05c112402819d1244c0
     user: "12001:12001"
     restart: unless-stopped
     env_file: [/etc/codestra/beyvra-email/runtime.env]
@@ -17,7 +17,7 @@ services:
       timeout: 3s
       retries: 5
   worker:
-    image: ${BEYVRA_EMAIL_IMAGE:?immutable digest required}
+    image: ghcr.io/codestra-srl/beyvra-email@sha256:22df1d37e1fd9073a591cda7b5af6980c55577314207e05c112402819d1244c0
     user: "12001:12001"
     restart: unless-stopped
     command: [python, -c, "from app.email.runtime import worker_main; worker_main()"]
@@ -31,7 +31,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
   migrate:
-    image: ${BEYVRA_EMAIL_IMAGE:?immutable digest required}
+    image: ghcr.io/codestra-srl/beyvra-email@sha256:22df1d37e1fd9073a591cda7b5af6980c55577314207e05c112402819d1244c0
     user: "12001:12001"
     restart: "no"
     command: [python, -m, app.email.schema]
