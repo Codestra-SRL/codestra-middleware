@@ -26,7 +26,10 @@ env:
 jobs:
   test:
     name: Test exact repository SHA
-    runs-on: ubuntu-latest
+    # Manual exact-SHA recovery runs use the isolated repository runner when
+    # GitHub-hosted job allocation is unavailable. Pull requests continue to
+    # use GitHub-hosted isolation by default.
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && 'codestra-middleware-prod-cert' || 'ubuntu-latest' }}
     timeout-minutes: 30
     services:
       postgres:
@@ -402,7 +405,7 @@ jobs:
     name: Publish exact-SHA final status
     needs: test
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && 'codestra-middleware-prod-cert' || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Publish status from explicit required-job result
