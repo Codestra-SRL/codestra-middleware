@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codestra.co/schemas/codestra.email.v1.schema.json",
+  "title": "Codestra Email Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "event_type", "occurred_at", "provider"],
+  "properties": {
+    "schema_version": {"const": "codestra.email.v1"},
+    "event_id": {"type": "string", "minLength": 1, "maxLength": 255},
+    "event_type": {"enum": ["INBOUND_MESSAGE", "DELIVERY_ACCEPTED", "DELIVERY_SENT", "DELIVERY_DELIVERED", "DELIVERY_DEFERRED", "BOUNCE_SOFT", "BOUNCE_HARD", "COMPLAINT", "FAILED", "SUPPRESSED"]},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "tenant_id": {"type": ["string", "null"], "maxLength": 36},
+    "account_id": {"type": ["string", "null"], "maxLength": 36},
+    "provider": {"const": "klyrow-postal"},
+    "provider_message_id": {"type": ["string", "null"], "maxLength": 255},
+    "correlation_id": {"type": ["string", "null"], "maxLength": 200},
+    "case_id": {"type": ["string", "null"], "maxLength": 36},
+    "notification_id": {"type": ["string", "null"], "maxLength": 36},
+    "sender": {"type": ["string", "null"], "maxLength": 320},
+    "recipient": {"type": ["string", "null"], "maxLength": 320},
+    "cc": {"type": "array", "maxItems": 50, "items": {"type": "string", "maxLength": 320}},
+    "subject": {"type": ["string", "null"], "maxLength": 998},
+    "message_id": {"type": ["string", "null"], "maxLength": 998},
+    "in_reply_to": {"type": ["string", "null"], "maxLength": 998},
+    "references": {"type": "array", "maxItems": 100, "items": {"type": "string", "maxLength": 998}},
+    "date": {"type": ["string", "null"], "format": "date-time"},
+    "text_body": {"type": ["string", "null"], "maxLength": 1048576},
+    "html_body": {"type": ["string", "null"], "maxLength": 1048576},
+    "attachments": {"type": "array", "maxItems": 50, "items": {"type": "object", "additionalProperties": false, "required": ["filename", "content_type", "size_bytes", "sha256"], "properties": {"filename": {"type": "string", "maxLength": 255}, "content_type": {"type": "string", "maxLength": 255}, "size_bytes": {"type": "integer", "minimum": 0}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}}},
+    "status": {"type": ["string", "null"], "maxLength": 40}
+  }
+}
