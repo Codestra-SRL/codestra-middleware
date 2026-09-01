@@ -30,6 +30,22 @@ services:
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+  migrate:
+    image: ${BEYVRA_EMAIL_IMAGE:?immutable digest required}
+    user: "12001:12001"
+    restart: "no"
+    command: [python, -m, app.email.schema]
+    env_file: [/etc/codestra/beyvra-email/runtime.env]
+    environment:
+      BEYVRA_EMAIL_MIGRATION_AUTHORIZED: ${BEYVRA_EMAIL_MIGRATION_AUTHORIZED:-false}
+      BEYVRA_EMAIL_PREDEPLOY_BACKUP_ID: ${BEYVRA_EMAIL_PREDEPLOY_BACKUP_ID:-}
+    secrets: [database_url]
+    profiles: [migration]
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
 secrets:
   database_url: {file: /etc/codestra/secrets/beyvra-email/database-url}
   postal_webhook_secret: {file: /etc/codestra/secrets/beyvra-email/postal-webhook-secret}
