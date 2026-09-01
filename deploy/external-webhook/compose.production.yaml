@@ -23,7 +23,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001"]
     env_file: [/opt/codestra/env/middleware.env]
     environment:
       SERVICE_NAME: middleware-external-webhook-worker
