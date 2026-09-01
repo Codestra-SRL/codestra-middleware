@@ -1,0 +1,73 @@
+name: External webhook authority CI
+
+on:
+  pull_request:
+    paths:
+      - deploy/external-webhook/compose.production.yaml
+      - tests/test_external_webhook_compose.py
+      - .github/workflows/external-webhook-authority-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate exact external-webhook authority
+    runs-on: [self-hosted, linux, x64, codestra-middleware-prod-cert]
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact clean source
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "${expected}"
+          test -z "$(git status --porcelain)"
+          git diff --check
+
+      - name: Validate regression and Compose model
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from tests.test_external_webhook_compose import (
+              test_external_webhook_tmpfs_is_one_quoted_mount_specification,
+          )
+          test_external_webhook_tmpfs_is_one_quoted_mount_specification()
+          PY
+          fixture="${RUNNER_TEMP}/external-webhook-ci-base.yaml"
+          cat > "${fixture}" <<'YAML'
+          services:
+            middleware-event-gateway:
+              image: busybox:1.37.0
+            middleware-external-webhook-worker:
+              env_file: []
+          networks:
+            middleware_backend: {}
+            n8n_staging_control: {}
+          YAML
+          docker compose \
+            -f "${fixture}" \
+            -f deploy/external-webhook/compose.production.yaml \
+            -f "${fixture}" \
+            config --quiet
+
+      - name: Scan changed authority files for secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/gitleaks.tar.gz"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${archive}" \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  '"${archive}" \
+            | sha256sum --check --strict
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}" gitleaks
+          "${RUNNER_TEMP}/gitleaks" dir . --redact --no-banner --exit-code 1
