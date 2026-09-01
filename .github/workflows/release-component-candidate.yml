@@ -169,9 +169,10 @@ jobs:
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
           ! git status --porcelain | grep .
           tag="candidate-pr${{ inputs.pr_number }}-${COMPONENT}-${SOURCE_SHA}"
+          source_tree_sha256="$(git ls-files -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
           target=(); test -z "${TARGET}" || target=(--target "${TARGET}")
           echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-          docker build "${CONTEXT}" "${target[@]}" --build-arg "VCS_REF=${SOURCE_SHA}" --build-arg "BUILD_REVISION=${SOURCE_SHA}" --build-arg "BUILD_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)" --tag "${IMAGE_REPOSITORY}:${tag}"
+          docker build "${CONTEXT}" "${target[@]}" --build-arg "VCS_REF=${SOURCE_SHA}" --build-arg "BUILD_REVISION=${SOURCE_SHA}" --build-arg "BUILD_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)" --build-arg "IMAGE_VERSION=${tag}" --build-arg "SOURCE_TREE_SHA256=${source_tree_sha256}" --tag "${IMAGE_REPOSITORY}:${tag}"
           docker push "${IMAGE_REPOSITORY}:${tag}"
           digest="$(docker buildx imagetools inspect "${IMAGE_REPOSITORY}:${tag}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
           [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]

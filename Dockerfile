@@ -5,6 +5,8 @@ ARG CHAINGUARD_PYTHON_RUNTIME=cgr.dev/chainguard/python@sha256:1f6779775c9f46689
 ARG VCS_REF=unknown
 ARG BUILD_REVISION=unknown
 ARG BUILD_CREATED=unknown
+ARG IMAGE_VERSION=unreleased
+ARG SOURCE_TREE_SHA256=unknown
 
 FROM ${PYTHON_BASE} AS python-builder
 USER root
@@ -126,9 +128,13 @@ FROM ${CHAINGUARD_PYTHON_RUNTIME} AS runtime
 ARG VCS_REF
 ARG BUILD_REVISION
 ARG BUILD_CREATED
+ARG IMAGE_VERSION
+ARG SOURCE_TREE_SHA256
 LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-middleware" \
       org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
       org.opencontainers.image.created="${BUILD_CREATED}" \
+      codestra.source_tree.sha256="${SOURCE_TREE_SHA256}" \
       io.codestra.build.revision="${BUILD_REVISION}" \
       io.codestra.python.base.repository="cgr.dev/chainguard/python" \
       io.codestra.python.base.digest="sha256:1f6779775c9f466890da563e411cb677045a6c20b6a65160eefad1deffb5012c" \
