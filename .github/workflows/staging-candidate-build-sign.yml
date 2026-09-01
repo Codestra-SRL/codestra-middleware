@@ -209,12 +209,15 @@ jobs:
           set -euo pipefail
           created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           candidate_tag="candidate-pr${{ inputs.pr_number }}-${SOURCE_SHA}"
+          source_tree_sha256="$(git ls-files -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
           echo "${GH_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
           docker build \
             --target runtime \
             --build-arg "VCS_REF=${SOURCE_SHA}" \
             --build-arg "BUILD_REVISION=${SOURCE_SHA}" \
             --build-arg "BUILD_CREATED=${created}" \
+            --build-arg "IMAGE_VERSION=${candidate_tag}" \
+            --build-arg "SOURCE_TREE_SHA256=${source_tree_sha256}" \
             --build-arg "BUILD_VERSION=${candidate_tag}" \
             --tag "${IMAGE_REPOSITORY}:${candidate_tag}" .
           docker push "${IMAGE_REPOSITORY}:${candidate_tag}"

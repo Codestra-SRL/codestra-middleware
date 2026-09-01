@@ -5,6 +5,8 @@ ARG CHAINGUARD_PYTHON_RUNTIME=cgr.dev/chainguard/python@sha256:1f6779775c9f46689
 ARG VCS_REF=unknown
 ARG BUILD_REVISION=unknown
 ARG BUILD_CREATED=unknown
+ARG IMAGE_VERSION=unreleased
+ARG SOURCE_TREE_SHA256=unknown
 
 FROM ${PYTHON_BASE} AS python-builder
 USER root
@@ -14,7 +16,7 @@ RUN apk add --no-cache \
       build-base=0.5-r4 \
       bzip2-dev=1.0.8-r6 \
       curl=8.21.0-r0 \
-      expat-dev=2.8.3-r0 \
+      expat-dev=2.8.4-r0 \
       gdbm-dev=1.26-r0 \
       libffi-dev=3.5.2-r1 \
       linux-headers=7.0.0-r1 \
@@ -47,12 +49,12 @@ RUN curl --fail --location --proto '=https' --tlsv1.2 \
         "https://github.com/python/cpython/commit/${commit}.patch"; \
       echo "${checksum}  upstream-patches/${commit}.patch" | sha256sum -c -; \
     done <<'PATCHES'
-be13e86f6b9788a6f4d0419dffef72cbae5865c9 0104e7a0e39c4aaebeac3974f401a5c124c07b951862cb95b84fa0e9b3c74683
-7f0dc59c9a70f8f3b4da33d7c4a2ba552a7acc21 5203fafe333f2cf8467abc2f8eaa94c47cf3d8bd50676da247f9c44acc739f16
-7933f4bf7131aa4140750f9404f5de0aa2969ced 3ce69e3b5d505dec6fa5d3f9629ef8f287c655429e320792b4809e122b99f287
-dae4b1a21f8df4570e30986affd61bbe4ade4cef 9bfa16aeaf100f4c77da0d77e63e3f0025d51ae49eaf2aa1e9f1c3f25b33b82c
-642865ddf4b232da1f3b1f7abcfa3254c4bfe785 2df06ba191bf524ef7adf3058716bf7ce54937dc5ca9dfa5deb4d93d9bd9f85c
-fc9b11ff49cbc82e6f917d07a61517a2b5f3145f a33151412b5f0a79014bbc9bfb7caa14369951c2340fc60691db7bcea7f0e161
+be13e86f6b9788a6f4d0419dffef72cbae5865c9 7c6208f7240f632779d6b1b33d20f90126888cc4ec9f636abeaa68b5dc875094
+7f0dc59c9a70f8f3b4da33d7c4a2ba552a7acc21 f583351faf1f288bf10b6c3d5f4752cd4a17da881b0043e4eff6395ea7a199f6
+7933f4bf7131aa4140750f9404f5de0aa2969ced d8913b46e769704d0e810994909ee81c8af6aaa7230b79ff4c0d849fe1f305a4
+dae4b1a21f8df4570e30986affd61bbe4ade4cef da243766f48c8f78cc292559df5baedab3046ffcee3f754fb716b27e13952a7c
+642865ddf4b232da1f3b1f7abcfa3254c4bfe785 afcdbd51c751170f703451aef3cfdd40a61bce2c05180cfcf87ff19c2c99f865
+fc9b11ff49cbc82e6f917d07a61517a2b5f3145f e24d1474438cce8df94b8b5e336599326956e6f8cc1cf211932349230fd3ef28
 PATCHES
 RUN tar -xJf Python-3.12.14.tar.xz \
  && awk 'found || index($0, "diff --git a/Include/pyexpat.h") == 1 { found=1; print }' \
@@ -80,7 +82,7 @@ RUN tar -xJf Python-3.12.14.tar.xz \
 
 FROM ${PYTHON_BASE} AS patched-python
 USER root
-RUN apk add --no-cache expat=2.8.3-r0
+RUN apk add --no-cache expat=2.8.4-r0
 RUN rm -rf /usr/local/*
 COPY --from=python-builder /usr/local /usr/local
 
@@ -126,9 +128,13 @@ FROM ${CHAINGUARD_PYTHON_RUNTIME} AS runtime
 ARG VCS_REF
 ARG BUILD_REVISION
 ARG BUILD_CREATED
+ARG IMAGE_VERSION
+ARG SOURCE_TREE_SHA256
 LABEL org.opencontainers.image.source="https://github.com/Codestra-SRL/codestra-middleware" \
       org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
       org.opencontainers.image.created="${BUILD_CREATED}" \
+      codestra.source_tree.sha256="${SOURCE_TREE_SHA256}" \
       io.codestra.build.revision="${BUILD_REVISION}" \
       io.codestra.python.base.repository="cgr.dev/chainguard/python" \
       io.codestra.python.base.digest="sha256:1f6779775c9f466890da563e411cb677045a6c20b6a65160eefad1deffb5012c" \
