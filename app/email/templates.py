@@ -45,4 +45,3 @@ def render(subject: str, text: str, html_body: str, parameters: dict[str, object
         return VARIABLE.sub(lambda match: variables[match.group(1)], value)
 
     return Rendered(substitute(subject, plain), substitute(text, plain), substitute(html_body, escaped))
-
