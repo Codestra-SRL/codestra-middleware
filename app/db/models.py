@@ -685,6 +685,52 @@ class IdempotencyRecord(Base):
     )
 
 
+class InteractionResult(Base):
+    """Authoritative, durable record of an agent's post-call action.
+
+    Written synchronously in the request transaction so the agent desktop
+    can never receive a success response for data that was not persisted.
+    Delivery to Odoo happens asynchronously via the outbox and is tracked
+    on this row so a delivery failure is visible and retryable, not silent.
+    """
+
+    __tablename__ = "interaction_result"
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    interaction_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    result_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    agent_subject: Mapped[str] = mapped_column(String(128), nullable=False)
+    agent_employee_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    crm_lead_public_id: Mapped[str] = mapped_column(String(144), nullable=False)
+    disposition_code: Mapped[str | None] = mapped_column(String(64))
+    notes_text: Mapped[str | None] = mapped_column(Text)
+    callback_scheduled_for: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    callback_timezone: Mapped[str | None] = mapped_column(String(64))
+    callback_reason: Mapped[str | None] = mapped_column(Text)
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    delivery_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending"
+    )
+    delivery_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    delivery_last_error: Mapped[str | None] = mapped_column(Text)
+    odoo_event_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "result_type", "idempotency_key_hash", name="uq_interaction_result_idem"
+        ),
+    )
+
+
 class PublisherNonce(Base):
     __tablename__ = "publisher_nonce"
     key_id: Mapped[str] = mapped_column(String(64), primary_key=True)

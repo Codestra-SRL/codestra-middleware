@@ -237,6 +237,30 @@ services:
       - /etc/codestra/pki/internal-integration/ca.crt:/run/secrets/internal_integration_ca:ro
     networks: [middleware_backend, codestra_internal_integration]
 
+  middleware-interaction-delivery-worker:
+    <<: *worker
+    command: [python, -m, app.entrypoints.interaction_delivery_worker]
+    environment:
+      <<: *safe-flags
+      SERVICE_NAME: middleware-interaction-delivery
+      ODOO_BASE_URL: ${ODOO_BASE_URL:-}
+      INTERACTION_RESULT_HMAC_SECRET_FILE: /run/secrets/interaction_result_hmac_secret
+    volumes:
+      - /etc/codestra/secrets/middleware-runtime/middleware-integration-api-database-url:/run/secrets/database_url:ro
+      - /etc/codestra/secrets/middleware-runtime/interaction-result-hmac-secret:/run/secrets/interaction_result_hmac_secret:ro
+    expose: ["8095"]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8095/metrics', timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
   middleware-scraper-odoo-delivery-worker:
     <<: *worker
     command: [python, -m, app.entrypoints.scraper_odoo_delivery_worker]
