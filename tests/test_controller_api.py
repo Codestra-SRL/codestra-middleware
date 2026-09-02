@@ -9,6 +9,9 @@ from fastapi.testclient import TestClient
 
 from app.api.v1 import controller as controller_api
 from app.core.controller import ApprovalTokens, ControllerError, RestrictedController
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import cast
 
 
 TENANT = "tenant-synthetic-001"
@@ -29,6 +32,8 @@ def domain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> RestrictedControl
         (workspace,),
     )
     monkeypatch.setattr(controller_api, "_controller", lambda: instance)
+    monkeypatch.setattr(controller_api.settings, "controller_repository_backend", "memory")
+    monkeypatch.setattr(controller_api.settings, "controller_private_enabled", False)
     return instance
 
 
@@ -180,6 +185,15 @@ def test_api_contract_contains_all_required_routes(client):
         ("/api/v1/tasks/{task_id}/plan", "POST"),
         ("/api/v1/tasks/{task_id}/approve", "POST"),
         ("/api/v1/tasks/{task_id}/cancel", "POST"),
+        ("/api/v1/tasks/{task_id}/reject", "POST"),
+        ("/api/v1/tasks/{task_id}/queue", "POST"),
+        ("/api/v1/tasks/{task_id}/suspend", "POST"),
+        ("/api/v1/tasks/{task_id}/resume", "POST"),
+        ("/api/v1/scheduler/claim", "POST"),
+        ("/api/v1/scheduler/tasks/{task_id}/heartbeat", "POST"),
+        ("/api/v1/scheduler/tasks/{task_id}/finish", "POST"),
+        ("/api/v1/scheduler/tasks/{task_id}/fail", "POST"),
+        ("/api/v1/scheduler/recover", "POST"),
         ("/api/v1/executions", "POST"),
         ("/api/v1/executions/{execution_id}", "GET"),
         ("/api/v1/tools/execute", "POST"),
@@ -189,6 +203,31 @@ def test_api_contract_contains_all_required_routes(client):
         ("/api/v1/agents", "GET"),
     }
     assert required <= routes
+
+
+def test_private_mode_rejects_memory_and_missing_database_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(controller_api.settings, "controller_private_enabled", True)
+    monkeypatch.setattr(controller_api.settings, "controller_repository_backend", "memory")
+    with pytest.raises(controller_api.HTTPException, match="in-memory"):
+        controller_api._repository(cast(AsyncSession, object()))
+    monkeypatch.setattr(controller_api.settings, "controller_repository_backend", "postgres")
+    monkeypatch.setattr(controller_api.settings, "database_url", "")
+    with pytest.raises(controller_api.HTTPException, match="PostgreSQL"):
+        controller_api._repository(cast(AsyncSession, object()))
+
+
+@pytest.mark.asyncio
+async def test_postgres_unavailable_is_sanitized_and_fails_closed():
+    class UnavailableRepository:
+        def create_task(self):
+            raise SQLAlchemyError("fixture backend unavailable")
+
+    with pytest.raises(controller_api.HTTPException) as raised:
+        await controller_api._call(UnavailableRepository(), "create_task")
+    assert raised.value.status_code == 503
+    assert raised.value.detail == "controller PostgreSQL backend unavailable"
 
 
 def test_agent_inventory_is_exact_private_disabled_and_conflict_safe(client):

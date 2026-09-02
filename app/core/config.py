@@ -157,6 +157,7 @@ class Settings(BaseSettings):
         "/opt/codestra/middleware,/opt/codestra/worktrees"
     )
     controller_private_enabled: bool = False
+    controller_repository_backend: str = "postgres"
     server_a_agent_enabled: bool = False
     server_a_agent_bind: str = "10.40.0.1:9443"
     send_events: bool = False
