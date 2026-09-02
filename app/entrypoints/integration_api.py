@@ -12,6 +12,7 @@ from app.api.v1.mappings import router as mappings_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.n8n_transport import router as n8n_transport_router
 from app.api.v1.n8n_runtime import router as n8n_runtime_router
+from app.api.v1.n8n_operations import router as n8n_operations_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.provider_webhooks import router as provider_webhooks_router
@@ -42,6 +43,7 @@ routers = (
     n8n_staging_router,
     n8n_transport_router,
     n8n_runtime_router,
+    n8n_operations_router,
     quarantine_router,
     telephony_router,
     sales_router,

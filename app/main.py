@@ -18,6 +18,7 @@ from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.n8n_target import router as n8n_target_router
 from app.api.v1.n8n_transport import router as n8n_transport_router
 from app.api.v1.n8n_runtime import router as n8n_runtime_router
+from app.api.v1.n8n_operations import router as n8n_operations_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.orchestration import router as orchestration_router
 from app.api.v1.publisher import router as publisher_router
@@ -62,6 +63,7 @@ app.include_router(agent_realtime_router)
 app.include_router(n8n_staging_router)
 app.include_router(n8n_transport_router)
 app.include_router(n8n_runtime_router)
+app.include_router(n8n_operations_router)
 app.include_router(n8n_target_router)
 app.include_router(telephony_router)
 app.include_router(internal_ai_jobs_router)
@@ -140,6 +142,9 @@ AI_CONSOLE_SELF_AUTHENTICATED_PATHS = (
 N8N_TRANSITION_PATH = re.compile(
     r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
 )
+N8N_OPERATION_JWT_PATH = re.compile(
+    r"^/v1/integrations/n8n/operations(?:/[0-9a-fA-F-]{36}/(?:cancel|reconcile))?$"
+)
 RECORDING_EXPORTER_PATH = re.compile(
     r"^/api/v1/recordings(?:/reservations|/REC-[0-9a-f]{32}/(?:complete|failure))$"
 )
@@ -201,6 +206,7 @@ async def control_request_guard(request: Request, call_next):
         and not (
             request.method == "POST" and N8N_TRANSITION_PATH.fullmatch(request.url.path)
         )
+        and not N8N_OPERATION_JWT_PATH.fullmatch(request.url.path)
         and request.url.path not in SELF_AUTHENTICATED_PATHS
         and not (
             request.method == "POST" and SOCIAL_WEBHOOK_PATH.fullmatch(request.url.path)

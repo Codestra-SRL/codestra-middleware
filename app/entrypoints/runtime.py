@@ -42,6 +42,9 @@ MAX_RATE_IDENTITIES = 4096
 N8N_TRANSITION_PATH = re.compile(
     r"^/api/v1/n8n/executions/[0-9a-fA-F-]{36}/transitions$"
 )
+N8N_OPERATION_JWT_PATH = re.compile(
+    r"^/v1/integrations/n8n/operations(?:/[0-9a-fA-F-]{36}/(?:cancel|reconcile))?$"
+)
 CALLBACK_JWT_PATH = re.compile(r"^/api/v1/(?:control/)?callbacks(?:/.*)?$")
 N8N_SERVICE_JWT_ROUTES = frozenset(
     {
@@ -204,6 +207,7 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             and request.url.path not in signed_paths
             and not signed_write
             and not CALLBACK_JWT_PATH.fullmatch(request.url.path)
+            and not N8N_OPERATION_JWT_PATH.fullmatch(request.url.path)
             and (request.method, request.url.path) not in N8N_SERVICE_JWT_ROUTES
         ):
             try:
