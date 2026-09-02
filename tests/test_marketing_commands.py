@@ -8,6 +8,7 @@ from fastapi import HTTPException, Response
 
 from app.api.v1 import marketing_commands
 from app.api.v1.marketing_commands import ActivationCommand, create_campaign_activation
+from app.core.config import Settings
 from app.db.models import AuditEvent, EventInbox, IdempotencyRecord, OutboxEvent
 
 
@@ -143,3 +144,17 @@ async def test_activation_rejects_header_body_context_mismatch():
             FakeSession(),  # type: ignore[arg-type]
         )
     assert denied.value.status_code == 403
+
+
+def test_enabled_intake_requires_complete_service_identity_configuration():
+    with pytest.raises(ValueError, match="authentication is incomplete"):
+        Settings(marketing_command_intake_enabled=True).validate_safety()
+
+    configured = Settings(
+        marketing_command_intake_enabled=True,
+        marketing_service_issuer="https://auth.example/realms/codestra",
+        marketing_service_audience="codestra-middleware",
+        marketing_service_jwks_url="https://auth.example/realms/codestra/certs",
+        marketing_service_client_id="marketing-service",
+    )
+    configured.validate_safety()
