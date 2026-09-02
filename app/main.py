@@ -14,6 +14,7 @@ from app.api.v1.events import router as events_router
 from app.api.v1.lead_reconciliation import router as lead_reconciliation_router
 from app.api.v1.lead_automation import router as lead_automation_router
 from app.api.v1.mappings import router as mappings_router
+from app.api.v1.marketing_commands import router as marketing_commands_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.n8n_target import router as n8n_target_router
 from app.api.v1.n8n_transport import router as n8n_transport_router
@@ -56,6 +57,7 @@ app.include_router(lead_reconciliation_router)
 app.include_router(lead_automation_router)
 app.include_router(orchestration_router)
 app.include_router(mappings_router)
+app.include_router(marketing_commands_router)
 app.include_router(publisher_router)
 app.include_router(webphone_router)
 app.include_router(agent_realtime_router)
@@ -150,6 +152,9 @@ N8N_SERVICE_JWT_ROUTES = frozenset(
         ("POST", "/api/v1/integrations/n8n/results"),
     }
 )
+MARKETING_SERVICE_JWT_ROUTES = frozenset(
+    {("POST", "/api/v1/control/marketing/campaign-activations")}
+)
 
 
 def _is_ai_console_jwt_route(request: Request) -> bool:
@@ -208,6 +213,7 @@ async def control_request_guard(request: Request, call_next):
         and not _is_ai_console_jwt_route(request)
         and not CALLBACK_JWT_PATH.fullmatch(request.url.path)
         and (request.method, request.url.path) not in N8N_SERVICE_JWT_ROUTES
+        and (request.method, request.url.path) not in MARKETING_SERVICE_JWT_ROUTES
     ):
         try:
             verify_bearer(

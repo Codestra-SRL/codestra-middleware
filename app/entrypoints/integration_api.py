@@ -9,6 +9,7 @@ from app.api.v1.lead_reconciliation import router as lead_reconciliation_router
 from app.api.v1.lead_automation import router as lead_automation_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.mappings import router as mappings_router
+from app.api.v1.marketing_commands import router as marketing_commands_router
 from app.api.v1.n8n_staging import router as n8n_staging_router
 from app.api.v1.n8n_transport import router as n8n_transport_router
 from app.api.v1.n8n_runtime import router as n8n_runtime_router
@@ -38,6 +39,7 @@ routers = (
     orchestration_router,
     provider_webhooks_router,
     mappings_router,
+    marketing_commands_router,
     webphone_router,
     n8n_staging_router,
     n8n_transport_router,

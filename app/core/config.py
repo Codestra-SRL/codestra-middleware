@@ -187,6 +187,11 @@ class Settings(BaseSettings):
     n8n_service_audience: str = "codestra-middleware"
     n8n_service_jwks_url: str = ""
     n8n_service_client_id: str = "codestra-n8n-production"
+    marketing_service_issuer: str = ""
+    marketing_service_audience: str = "codestra-middleware"
+    marketing_service_jwks_url: str = ""
+    marketing_service_client_id: str = "marketing-service"
+    marketing_command_intake_enabled: bool = False
     n8n_campaign_service_client_id: str = "codestra-n8n-campaign-crm-production"
     middleware_n8n_token_url: str = ""
     middleware_n8n_client_id: str = "codestra-middleware-production"

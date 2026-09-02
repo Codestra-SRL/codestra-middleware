@@ -49,6 +49,9 @@ N8N_SERVICE_JWT_ROUTES = frozenset(
         ("POST", "/api/v1/integrations/n8n/results"),
     }
 )
+MARKETING_SERVICE_JWT_ROUTES = frozenset(
+    {("POST", "/api/v1/control/marketing/campaign-activations")}
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -205,6 +208,7 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             and not signed_write
             and not CALLBACK_JWT_PATH.fullmatch(request.url.path)
             and (request.method, request.url.path) not in N8N_SERVICE_JWT_ROUTES
+            and (request.method, request.url.path) not in MARKETING_SERVICE_JWT_ROUTES
         ):
             try:
                 verify_bearer(
