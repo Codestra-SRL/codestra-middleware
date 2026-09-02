@@ -187,6 +187,11 @@ class Settings(BaseSettings):
     n8n_service_audience: str = "codestra-middleware"
     n8n_service_jwks_url: str = ""
     n8n_service_client_id: str = "codestra-n8n-production"
+    marketing_service_issuer: str = ""
+    marketing_service_audience: str = "codestra-middleware"
+    marketing_service_jwks_url: str = ""
+    marketing_service_client_id: str = "marketing-service"
+    marketing_command_intake_enabled: bool = False
     n8n_campaign_service_client_id: str = "codestra-n8n-campaign-crm-production"
     middleware_n8n_token_url: str = ""
     middleware_n8n_client_id: str = "codestra-middleware-production"
@@ -449,6 +454,15 @@ class Settings(BaseSettings):
     sales_scraper_rate_limit_per_minute: int = 60
 
     def validate_safety(self) -> None:
+        if self.marketing_command_intake_enabled and not all(
+            (
+                self.marketing_service_issuer.strip(),
+                self.marketing_service_audience.strip(),
+                self.marketing_service_jwks_url.strip(),
+                self.marketing_service_client_id.strip(),
+            )
+        ):
+            raise ValueError("marketing command intake authentication is incomplete")
         if self.social_n8n_delivery_batch_size not in range(1, 26):
             raise ValueError("social n8n delivery batch size must be between 1 and 25")
         if self.social_n8n_delivery_lease_seconds not in range(10, 601):
