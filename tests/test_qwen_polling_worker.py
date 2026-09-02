@@ -113,6 +113,29 @@ def test_litellm_request_uses_dedicated_projected_bearer(tmp_path, monkeypatch):
     assert captured == {"authorization": "Bearer fixture-value", "timeout": 7}
 
 
+def test_streaming_execution_emits_incremental_utf8_and_metrics(monkeypatch):
+    events = [
+        {"choices": [{"delta": {"content": "hello "}}]},
+        {"choices": [{"delta": {"content": "🌍"}}]},
+        {
+            "choices": [],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+        },
+    ]
+    monkeypatch.setattr(worker, "loopback_sse", lambda *_args: iter(events))
+    emitted = []
+    result = worker.execute_stream(fixture_job(), emitted.append)
+    assert emitted == ["hello ", "🌍"]
+    assert result["output"]["proposal"] == "hello 🌍"
+    assert result["token_usage"] == {
+        "prompt_tokens": 4,
+        "completion_tokens": 2,
+        "total_tokens": 6,
+    }
+    assert result["resource_usage"]["time_to_first_token_seconds"] >= 0
+    assert result["resource_usage"]["tokens_per_second"] > 0
+
+
 def test_protected_build_selects_middleware_runtime_stage():
     workflow = (ROOT / ".github/workflows/staging-candidate-build-sign.yml").read_text()
     build = workflow.split("- name: Build and publish staging-only candidate", 1)[1]
@@ -177,11 +200,16 @@ def test_worker_accepts_server_generated_browser_contract(
     )
     observed = {}
 
-    def fake_loopback(url, payload, timeout, bearer_file=None):
+    def fake_loopback(url, payload, timeout, bearer_file):
         observed.update({"url": url, "payload": payload, "timeout": timeout})
-        return {"choices": [{"message": {"content": "synthetic result"}}]}
+        yield {"choices": [{"delta": {"content": "synthetic "}}]}
+        yield {"choices": [{"delta": {"content": "result"}}]}
+        yield {
+            "choices": [],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        }
 
-    monkeypatch.setattr(worker, "loopback_json", fake_loopback)
+    monkeypatch.setattr(worker, "loopback_sse", fake_loopback)
     result = worker.execute(
         {
             "id": str(job_id),
@@ -195,6 +223,8 @@ def test_worker_accepts_server_generated_browser_contract(
     assert result["status"] == "SUCCEEDED"
     assert result["model_used"] == expected_model
     assert observed["payload"]["model"] == expected_model
+    assert result["output"]["proposal"] == "synthetic result"
+    assert result["token_usage"]["completion_tokens"] == 2
 
 
 def test_worker_empty_completion_duplicate_and_failure_paths(monkeypatch):
@@ -203,8 +233,8 @@ def test_worker_empty_completion_duplicate_and_failure_paths(monkeypatch):
     successful = FakeAPI(fixture_job())
     monkeypatch.setattr(
         worker,
-        "execute",
-        lambda job: {
+        "execute_stream",
+        lambda job, emit: {
             "command_id": job["id"],
             "job_id": job["id"],
             "status": "SUCCEEDED",
@@ -231,8 +261,8 @@ def test_worker_empty_completion_duplicate_and_failure_paths(monkeypatch):
     failed = FakeAPI(fixture_job("ai.embeddings.v1", "embedding-default"))
     monkeypatch.setattr(
         worker,
-        "execute",
-        lambda _job: (_ for _ in ()).throw(worker.WorkerError("model")),
+        "execute_stream",
+        lambda _job, _emit: (_ for _ in ()).throw(worker.WorkerError("model")),
     )
     assert worker.run_once(failed) == "failed-retryable"
     assert failed.calls[-1][1].endswith("/fail")

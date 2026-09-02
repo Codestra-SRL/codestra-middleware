@@ -391,6 +391,8 @@ async def job_chunk(
     principal: WorkerPrincipal = Depends(require_scope("ai.worker.chunks")),
     db: AsyncSession = Depends(get_session),
 ) -> dict[str, object]:
+    if len(body.content.encode()) > 65_536:
+        raise HTTPException(413, "chunk exceeds bound")
     try:
         if body.worker_id != principal.worker_id:
             raise HTTPException(401, "authentication denied")
