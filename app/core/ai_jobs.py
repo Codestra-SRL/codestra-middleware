@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ai_contracts import AICommand, ApprovalPolicy, CommandType, ModelPolicy
 from app.core.ai_contracts import ResourceLimits
+from app.core.ai_platform_identity import CODESTRA_QWEN_SYSTEM_PROMPT
+from app.core.ai_platform_identity import build_platform_context
 
 SAFE_ERROR_DETAIL_FIELDS = frozenset(
     {
@@ -74,6 +76,8 @@ def build_browser_worker_contract(
     idempotency_key: str,
     correlation_id: str,
     max_attempts: int,
+    authenticated_roles: frozenset[str] = frozenset(),
+    approved_projects: frozenset[str] = frozenset(),
 ) -> AICommand:
     """Build the complete worker contract from server-authoritative policy."""
     model_profile = resolve_browser_model_profile(task_type)
@@ -82,7 +86,14 @@ def build_browser_worker_contract(
     if command_type is None or max_tokens is None:
         raise ValueError("unsupported_browser_capability")
     requested_at = datetime.now(timezone.utc)
-    command_input = {"text": content}
+    command_input = {
+        "system_prompt": CODESTRA_QWEN_SYSTEM_PROMPT,
+        "authenticated_context": build_platform_context(
+            authenticated_roles=authenticated_roles,
+            approved_projects=approved_projects,
+        ),
+        "text": content,
+    }
     if project_key is not None:
         command_input["project_key"] = project_key
     return AICommand(
@@ -240,6 +251,8 @@ async def create_message_job(
     idempotency_key: str,
     correlation_id: str,
     max_attempts: int,
+    authenticated_roles: frozenset[str] = frozenset(),
+    approved_projects: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     model_profile = resolve_browser_model_profile(task_type)
     await db.execute(
@@ -304,6 +317,8 @@ async def create_message_job(
         idempotency_key=idempotency_key,
         correlation_id=correlation_id,
         max_attempts=max_attempts,
+        authenticated_roles=authenticated_roles,
+        approved_projects=approved_projects,
     )
     command_payload = command.model_dump(mode="json")
     content_hash = hashlib.sha256(content.encode()).hexdigest()

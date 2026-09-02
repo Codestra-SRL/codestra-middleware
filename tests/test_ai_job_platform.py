@@ -30,6 +30,8 @@ from app.api.v1 import ai_console
 from app import main as middleware_main
 from app.core import ai_jobs
 from app.core.ai_contracts import AICommand
+from app.core.ai_platform_identity import CODESTRA_QWEN_SYSTEM_PROMPT
+from app.core.ai_platform_identity import build_platform_context
 from app.core.config import settings
 
 SECRET = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -71,6 +73,10 @@ def test_browser_capabilities_build_complete_canonical_worker_contracts(
         idempotency_key=f"browser-contract-{task_type}",
         correlation_id=f"corr-browser-contract-{task_type}",
         max_attempts=2,
+        authenticated_roles=frozenset(
+            {"codestra_ai_user", "codestra_ai_developer", "codestra_admin"}
+        ),
+        approved_projects=frozenset({"codestra-ai-console"}),
     )
     assert isinstance(contract, AICommand)
     assert contract.command_id == job_id
@@ -79,6 +85,16 @@ def test_browser_capabilities_build_complete_canonical_worker_contracts(
     assert contract.command_type.value == command_type
     assert contract.input["text"] == "safe browser request"
     assert contract.input.get("project_key") == project_key
+    assert contract.input["system_prompt"] == CODESTRA_QWEN_SYSTEM_PROMPT
+    assert contract.input["authenticated_context"] == {
+        "assistant": "Codestra Qwen",
+        "authenticated": True,
+        "authorized_roles": ["codestra_ai_developer", "codestra_ai_user"],
+        "approved_coding_projects": ["codestra-ai-console"],
+        "public_registration": "disabled",
+        "worker_count": 1,
+        "max_concurrency": 1,
+    }
     assert contract.metadata == {
         "source": "ai-console",
         "conversation_id": str(conversation_id),
@@ -94,6 +110,47 @@ def test_browser_coding_policy_is_role_and_project_bound():
     assert "coding role required" in source
     assert "project is not approved" in source
     assert 'extra="forbid"' in source
+
+
+def test_platform_identity_prompt_is_public_safe_and_fail_closed():
+    prompt = CODESTRA_QWEN_SYSTEM_PROMPT
+    for expected in (
+        "Codestra Qwen",
+        "https://ai.codestra.co",
+        "Server A owns identity",
+        "Server B owns private model inference",
+        "Server C owns the Codestra AI browser frontend",
+        "Codestra Keycloak realm",
+        "public registration is disabled",
+        "Adding a user",
+        "Adding repository access",
+        "Adding a server",
+        "Installing another model",
+        "ask exactly one concise clarification",
+    ):
+        assert expected in prompt
+    for forbidden in ("10.40.0.1", "10.40.0.3", "10.40.0.4", "password="):
+        assert forbidden not in prompt
+    context = build_platform_context(
+        authenticated_roles={
+            "codestra_ai_user",
+            "codestra_ai_developer",
+            "codestra_admin",
+            "realm-management",
+        },
+        approved_projects={"codestra-ai-console"},
+    )
+    assert context["authorized_roles"] == [
+        "codestra_ai_developer",
+        "codestra_ai_user",
+    ]
+    assert context["approved_coding_projects"] == ["codestra-ai-console"]
+    assert context["max_concurrency"] == 1
+    chat_only_context = build_platform_context(
+        authenticated_roles={"codestra_ai_user"},
+        approved_projects={"codestra-ai-console"},
+    )
+    assert chat_only_context["approved_coding_projects"] == []
 
 
 def test_worker_contract_has_one_canonical_auth_and_no_memory_replay_store():
@@ -871,9 +928,20 @@ async def test_durable_job_lifecycle_tenant_stream_cancel_and_recovery(
     assert coding_contract["model_profile"] == "coding-default"
     assert coding_contract["command_type"] == "ai.coding.v1"
     assert AICommand.model_validate(coding_contract["command_payload"])
+    coding_context = coding_contract["command_payload"]["input"][
+        "authenticated_context"
+    ]
+    assert coding_context["authorized_roles"] == [
+        "codestra_ai_developer",
+        "codestra_ai_user",
+    ]
+    assert coding_context["approved_coding_projects"] == ["codestra-ai-console"]
     assert chat_contract["model_profile"] == "fast-chat"
     assert chat_contract["command_type"] == "ai.chat.v1"
     assert AICommand.model_validate(chat_contract["command_payload"])
+    assert chat_contract["command_payload"]["input"]["system_prompt"].startswith(
+        "You are Codestra Qwen"
+    )
     assert dict(invalid_counts) == {
         "null_profile": 0,
         "null_command_type": 0,
