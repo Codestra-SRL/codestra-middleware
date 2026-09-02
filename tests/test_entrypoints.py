@@ -51,9 +51,13 @@ def test_api_surfaces_are_narrow_and_cover_existing_routes():
     assert "/api/v1/integrations/n8n/results" in integration_paths
     assert "/webphone-api/v1/session" in integration_paths
     assert route_paths(policy_engine.app) >= {
+        "/health",
         "/api/v1/policy/decisions",
         "/healthz",
+        "/ready",
         "/readyz",
+        "/version",
+        "/capabilities",
         "/dependencies",
     }
     assert "/api/v1/events/vicidial" not in route_paths(policy_engine.app)
@@ -116,7 +120,9 @@ def test_api_runtime_readiness_fails_when_required_database_is_unavailable(
         raise RuntimeError("database unavailable")
 
     monkeypatch.setattr(settings, "health_require_database", True)
-    monkeypatch.setattr(runtime, "engine", type("UnavailableEngine", (), {"connect": unavailable})())
+    monkeypatch.setattr(
+        runtime, "engine", type("UnavailableEngine", (), {"connect": unavailable})()
+    )
     response = TestClient(integration_api.app).get("/readyz")
     assert response.status_code == 503
     assert response.json()["database"] == "unavailable"
@@ -141,6 +147,25 @@ def test_api_runtime_version_is_safe_and_immutable(monkeypatch):
         "release_id": "release-20260823",
         "image_digest": "sha256:" + "b" * 64,
     }
+
+
+def test_api_runtime_capabilities_read_back_fail_closed_settings(monkeypatch):
+    monkeypatch.setattr(settings, "live_writes_enabled", False)
+    monkeypatch.setattr(settings, "enable_external_delivery", False)
+    monkeypatch.setattr(settings, "allow_live_email", False)
+    monkeypatch.setattr(settings, "allow_live_sms", False)
+    monkeypatch.setattr(settings, "external_dial_enabled", False)
+    monkeypatch.setattr(settings, "social_publish_enabled", False)
+    response = TestClient(integration_api.app).get("/capabilities")
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Correlation-ID"]
+    assert response.json()["business_writes_enabled"] is False
+    assert response.json()["external_delivery_enabled"] is False
+    assert response.json()["live_email_enabled"] is False
+    assert response.json()["live_sms_enabled"] is False
+    assert response.json()["live_pstn_enabled"] is False
+    assert response.json()["live_social_publish_enabled"] is False
 
 
 def test_disabled_delivery_workers_do_not_claim_or_contact_adapters(monkeypatch):
@@ -233,10 +258,20 @@ def test_telephony_adapters_are_independently_kill_switched(monkeypatch):
 def test_worker_has_internal_operational_endpoints():
     app = worker_app("test-worker", "test.queue.v1", sync_worker.cycle)
     paths = route_paths(app)
-    assert {"/healthz", "/readyz", "/dependencies"} <= paths
+    assert {
+        "/health",
+        "/healthz",
+        "/ready",
+        "/readyz",
+        "/version",
+        "/capabilities",
+        "/dependencies",
+    } <= paths
     with TestClient(app) as client:
         health = client.get("/healthz")
         readiness = client.get("/readyz")
         assert health.json()["stopping"] is False
         assert readiness.json()["status"] == "ready"
         assert readiness.json()["queue"] == "test.queue.v1"
+        assert health.headers["Cache-Control"] == "no-store"
+        assert health.headers["X-Correlation-ID"]
