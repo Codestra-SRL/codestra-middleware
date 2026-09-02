@@ -50,7 +50,10 @@ N8N_SERVICE_JWT_ROUTES = frozenset(
     }
 )
 MARKETING_SERVICE_JWT_ROUTES = frozenset(
-    {("POST", "/api/v1/control/marketing/campaign-activations")}
+    {
+        ("POST", "/api/v1/control/marketing/campaign-activations"),
+        ("POST", "/api/v1/control/marketing/campaign-transitions"),
+    }
 )
 
 

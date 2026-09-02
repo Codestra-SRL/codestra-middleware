@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
@@ -26,12 +26,26 @@ class ActivationCommand(BaseModel):
 
     operation_id: UUID
     campaign_id: UUID
+    action: Literal["activate"] = "activate"
+    expected_state: Literal["approved"] = "approved"
     expected_version: int = Field(ge=1)
     tenant_id: str
     correlation_id: str
 
 
-def _authenticate(authorization: str, tenant_id: str) -> dict[str, Any]:
+class TransitionCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: UUID
+    campaign_id: UUID
+    action: Literal["pause", "resume"]
+    expected_state: Literal["paused", "approved"]
+    expected_version: int = Field(ge=1)
+    tenant_id: str
+    correlation_id: str
+
+
+def _authenticate(authorization: str, tenant_id: str, required_scope: str) -> dict[str, Any]:
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
@@ -44,7 +58,7 @@ def _authenticate(authorization: str, tenant_id: str) -> dict[str, Any]:
             audience=settings.marketing_service_audience,
             jwks_url=settings.marketing_service_jwks_url,
             authorized_parties=frozenset({settings.marketing_service_client_id}),
-            required_scopes=frozenset({"marketing.activate"}),
+            required_scopes=frozenset({required_scope}),
             required_environment="production",
         ).validate(authorization.removeprefix("Bearer ").strip())
     except JWTAuthError as exc:
@@ -61,29 +75,30 @@ def _authenticate(authorization: str, tenant_id: str) -> dict[str, Any]:
     return claims
 
 
-def _request_hash(command: ActivationCommand) -> str:
+def _request_hash(command: BaseModel) -> str:
     return hashlib.sha256(
         json.dumps(command.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
 
 
-@router.post("/campaign-activations", status_code=status.HTTP_202_ACCEPTED)
-async def create_campaign_activation(
-    command: ActivationCommand,
+async def _create_campaign_command(
+    command: ActivationCommand | TransitionCommand,
     response: Response,
     authorization: Annotated[str, Header(alias="Authorization")],
     tenant_id: Annotated[str, Header(alias="X-Tenant-ID", min_length=1, max_length=64)],
     correlation_id: Annotated[str, Header(alias="X-Correlation-ID", min_length=1, max_length=128)],
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=16, max_length=255)],
     db: Annotated[AsyncSession, Depends(get_session)],
+    *,
+    required_scope: str,
 ) -> dict[str, Any]:
-    claims = _authenticate(authorization, tenant_id)
+    claims = _authenticate(authorization, tenant_id, required_scope)
     if command.tenant_id != tenant_id or command.correlation_id != correlation_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "command context mismatch")
     if idempotency_key != str(command.operation_id):
         raise HTTPException(status.HTTP_409_CONFLICT, "operation idempotency binding mismatch")
 
-    scope = f"marketing-activation:{tenant_id}"
+    scope = f"marketing-{command.action}:{tenant_id}"
     key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
     request_hash = _request_hash(command)
     await db.execute(
@@ -106,7 +121,7 @@ async def create_campaign_activation(
 
     if not settings.marketing_command_intake_enabled:
         await db.rollback()
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "marketing activation disabled")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "marketing command intake disabled")
 
     operation_id = str(command.operation_id)
     result = {
@@ -120,7 +135,7 @@ async def create_campaign_activation(
         EventInbox(
             event_id=operation_id,
             source="marketing",
-            event_type="marketing.campaign.activation_requested",
+            event_type=f"marketing.campaign.{command.action}_requested",
             payload=payload,
             correlation_id=correlation_id,
             status="accepted",
@@ -128,7 +143,7 @@ async def create_campaign_activation(
     )
     db.add(
         OutboxEvent(
-            topic="marketing.campaign.activation_requested",
+            topic=f"marketing.campaign.{command.action}_requested",
             payload=payload,
             correlation_id=correlation_id,
             status="pending",
@@ -146,7 +161,7 @@ async def create_campaign_activation(
     )
     db.add(
         AuditEvent(
-            action="marketing.campaign.activation.accepted",
+            action=f"marketing.campaign.{command.action}.accepted",
             subject=operation_id,
             correlation_id=correlation_id,
             decision="accepted",
@@ -160,3 +175,38 @@ async def create_campaign_activation(
     await db.commit()
     response.headers["X-Correlation-ID"] = correlation_id
     return result
+
+
+@router.post("/campaign-activations", status_code=status.HTTP_202_ACCEPTED)
+async def create_campaign_activation(
+    command: ActivationCommand,
+    response: Response,
+    authorization: Annotated[str, Header(alias="Authorization")],
+    tenant_id: Annotated[str, Header(alias="X-Tenant-ID", min_length=1, max_length=64)],
+    correlation_id: Annotated[str, Header(alias="X-Correlation-ID", min_length=1, max_length=128)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=16, max_length=255)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    return await _create_campaign_command(
+        command, response, authorization, tenant_id, correlation_id, idempotency_key, db,
+        required_scope="marketing.activate",
+    )
+
+
+@router.post("/campaign-transitions", status_code=status.HTTP_202_ACCEPTED)
+async def create_campaign_transition(
+    command: TransitionCommand,
+    response: Response,
+    authorization: Annotated[str, Header(alias="Authorization")],
+    tenant_id: Annotated[str, Header(alias="X-Tenant-ID", min_length=1, max_length=64)],
+    correlation_id: Annotated[str, Header(alias="X-Correlation-ID", min_length=1, max_length=128)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=16, max_length=255)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    expected = "paused" if command.action == "pause" else "approved"
+    if command.expected_state != expected:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "transition state mismatch")
+    return await _create_campaign_command(
+        command, response, authorization, tenant_id, correlation_id, idempotency_key, db,
+        required_scope="marketing.transition",
+    )

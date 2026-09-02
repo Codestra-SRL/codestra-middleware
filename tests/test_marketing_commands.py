@@ -43,7 +43,7 @@ def authenticated_service(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         marketing_commands,
         "_authenticate",
-        lambda _authorization, _tenant: {"azp": "marketing-service"},
+        lambda _authorization, _tenant, _scope: {"azp": "marketing-service"},
     )
 
 
@@ -106,7 +106,7 @@ async def test_activation_replay_returns_durable_response_without_new_side_effec
         "duplicate": False,
     }
     prior = IdempotencyRecord(
-        scope=f"marketing-activation:{command.tenant_id}",
+        scope=f"marketing-activate:{command.tenant_id}",
         key_hash="unused-by-fake",
         request_hash=marketing_commands._request_hash(command),
         response=durable,
