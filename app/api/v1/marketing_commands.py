@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,7 @@ class ActivationCommand(BaseModel):
 
     operation_id: UUID
     campaign_id: UUID
+    expected_version: int = Field(ge=1)
     tenant_id: str
     correlation_id: str
 

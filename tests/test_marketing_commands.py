@@ -31,6 +31,7 @@ def _command() -> ActivationCommand:
     return ActivationCommand(
         operation_id=operation_id,
         campaign_id=uuid4(),
+        expected_version=1,
         tenant_id="tenant-1",
         correlation_id="correlation-1",
     )
