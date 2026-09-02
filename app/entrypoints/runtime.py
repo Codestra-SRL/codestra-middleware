@@ -220,6 +220,7 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
                 )
         response = await call_next(request)
         response.headers["X-Correlation-ID"] = correlation_id
+        response.headers["Cache-Control"] = "no-store"
         response.headers["Traceparent"] = (
             request.headers.get("traceparent", "")
             or f"00-{uuid4().hex}-{uuid4().hex[:16]}-00"
@@ -234,10 +235,12 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
         )
         return response
 
+    @app.get("/health")
     @app.get("/healthz")
     async def health() -> dict[str, str]:
         return {"status": "ok", "service": service}
 
+    @app.get("/ready", response_model=None)
     @app.get("/readyz", response_model=None)
     async def readiness() -> dict[str, str] | JSONResponse:
         if settings.health_require_database and not await database_ready():
@@ -269,6 +272,35 @@ def add_api_runtime(app: FastAPI, service: str) -> None:
             "source_sha": os.getenv("SOURCE_SHA", "unknown"),
             "release_id": os.getenv("RELEASE_ID", "unknown"),
             "image_digest": os.getenv("IMAGE_DIGEST", "unknown"),
+        }
+
+    @app.get("/capabilities")
+    async def capabilities() -> dict[str, object]:
+        """Expose only authoritative, non-secret runtime safety state."""
+        external_delivery = settings.enable_external_delivery
+        business_writes = settings.live_writes_enabled
+        return {
+            "service": service,
+            "maintenance_mode": False,
+            "degraded_mode": False,
+            "business_writes_enabled": business_writes,
+            "external_delivery_enabled": external_delivery,
+            "live_email_enabled": settings.allow_live_email,
+            "live_sms_enabled": settings.allow_live_sms,
+            "live_pstn_enabled": settings.external_dial_enabled,
+            "live_social_publish_enabled": settings.social_publish_enabled,
+            "live_advertising_enabled": False,
+            "simulation_enabled": not (business_writes or external_delivery),
+            "read_only_mode": not business_writes,
+            "supported_api_versions": ["v1", "v2"],
+            "supported_operations": ["command", "status", "reconcile"],
+            "provider_availability": ("enabled" if external_delivery else "disabled"),
+            "reconciliation_available": True,
+            "backup_authority_status": "unknown",
+            "required_compliance_gates": [
+                "business-write-activation",
+                "provider-activation",
+            ],
         }
 
     @app.get("/dependencies")
@@ -362,10 +394,19 @@ def worker_app(service: str, queue: str, cycle: Cycle) -> FastAPI:
 
     app = FastAPI(title=service, lifespan=lifespan)
 
+    @app.middleware("http")
+    async def operational_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Correlation-ID"] = str(uuid4())
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/health")
     @app.get("/healthz")
     async def health() -> dict[str, object]:
         return {"status": "ok", "service": service, "stopping": state["stopping"]}
 
+    @app.get("/ready")
     @app.get("/readyz")
     async def ready() -> dict[str, object]:
         return {
@@ -383,6 +424,29 @@ def worker_app(service: str, queue: str, cycle: Cycle) -> FastAPI:
             "redis": "configured",
             "queue": queue,
             "live_writes_enabled": settings.live_writes_enabled,
+        }
+
+    @app.get("/version")
+    async def version() -> dict[str, str]:
+        return {
+            "service": service,
+            "source_sha": os.getenv("SOURCE_SHA", "unknown"),
+            "release_id": os.getenv("RELEASE_ID", "unknown"),
+            "image_digest": os.getenv("IMAGE_DIGEST", "unknown"),
+        }
+
+    @app.get("/capabilities")
+    async def capabilities() -> dict[str, object]:
+        return {
+            "service": service,
+            "maintenance_mode": state["stopping"],
+            "degraded_mode": state["last_error"] is not None,
+            "business_writes_enabled": settings.live_writes_enabled,
+            "external_delivery_enabled": settings.enable_external_delivery,
+            "read_only_mode": not settings.live_writes_enabled,
+            "supported_api_versions": ["v1"],
+            "supported_operations": ["consume", "reconcile"],
+            "queue": queue,
         }
 
     app.mount("/metrics", make_asgi_app())
