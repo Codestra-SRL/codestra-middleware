@@ -1,0 +1,261 @@
+name: Build and sign monitoring receiver replacement
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact reviewed 40-character source commit
+        required: true
+        type: string
+      release_version:
+        description: Owner-approved immutable release identifier
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monitoring-receiver-replacement-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-scan:
+    if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: security-release
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      repository: ${{ steps.vars.outputs.repository }}
+    steps:
+      - name: Check out exact reviewed source commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify repository, workflow, ref, source SHA, and clean tree
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "Codestra-SRL/codestra-middleware"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_WORKFLOW_REF" = "Codestra-SRL/codestra-middleware/.github/workflows/build-sign-monitoring-receiver.yml@refs/heads/main"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          test -z "$(git symbolic-ref -q --short HEAD || true)"
+          git cat-file -e "$SOURCE_SHA^{commit}"
+      - name: Resolve reviewed build paths and build timestamp
+        id: inputs
+        shell: bash
+        env:
+          BUILD_CONTEXT: build/monitoring-receiver
+          DOCKERFILE_PATH: build/monitoring-receiver/Dockerfile
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_CONTEXT" != /* && "$DOCKERFILE_PATH" != /* ]]
+          [[ "$BUILD_CONTEXT" != *..* && "$DOCKERFILE_PATH" != *..* ]]
+          test -f "$DOCKERFILE_PATH"; test -d "$BUILD_CONTEXT"
+          root=$(realpath -e .); context=$(realpath -e "$BUILD_CONTEXT"); dockerfile=$(realpath -e "$DOCKERFILE_PATH")
+          case "$context" in "$root"/*) ;; *) exit 1;; esac
+          case "$dockerfile" in "$root"/*) ;; *) exit 1;; esac
+          echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: Define owner-approved registry destination
+        id: vars
+        shell: bash
+        env:
+          REGISTRY_HOSTNAME: ${{ vars.REGISTRY_HOSTNAME }}
+          MONITORING_RECEIVER_REPOSITORY: ${{ vars.MONITORING_RECEIVER_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          test -n "$REGISTRY_HOSTNAME"; test -n "$MONITORING_RECEIVER_REPOSITORY"
+          test "$MONITORING_RECEIVER_REPOSITORY" != "latest"
+          echo "repository=${REGISTRY_HOSTNAME}/${MONITORING_RECEIVER_REPOSITORY}" >> "$GITHUB_OUTPUT"
+      - name: Log in to approved registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ vars.REGISTRY_HOSTNAME }}
+          username: ${{ secrets.REGISTRY_PUSH_USERNAME }}
+          password: ${{ secrets.REGISTRY_PUSH_TOKEN }}
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      - name: Build and publish with native BuildKit attestations
+        id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: build/monitoring-receiver
+          file: build/monitoring-receiver/Dockerfile
+          push: true
+          tags: ${{ steps.vars.outputs.repository }}:${{ inputs.release_version }}
+          platforms: linux/amd64
+          metadata-file: build-metadata.json
+          provenance: mode=max
+          sbom: generator=anchore/syft@sha256:b46e597614ddc78621e560af3fabf9346e35462ea1c886a38b30bcc7ca601a73
+          labels: |
+            org.opencontainers.image.source=https://github.com/Codestra-SRL/codestra-middleware
+            org.opencontainers.image.revision=${{ inputs.source_sha }}
+            org.opencontainers.image.created=${{ steps.inputs.outputs.created }}
+            org.opencontainers.image.version=${{ inputs.release_version }}
+            org.opencontainers.image.title=Codestra monitoring receiver replacement
+            org.opencontainers.image.description=Reviewed monitoring receiver replacement image
+      - name: Pull and inspect exact digest
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          docker buildx imagetools inspect "$IMAGE" > registry-image-inspect.txt
+          docker image inspect "$IMAGE" > oci-metadata.json
+          printf '%s\n' "$IMAGE" > image-digest.txt
+      - name: Generate SBOM and run pinned scans
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work anchore/syft@sha256:b46e597614ddc78621e560af3fabf9346e35462ea1c886a38b30bcc7ca601a73 "$IMAGE" -o cyclonedx-json=sbom.cdx.json
+          docker run --rm -v "$HOME/.docker:/root/.docker:ro" -v "$GITHUB_WORKSPACE:/work" -w /work aquasec/trivy@sha256:91c3a842834563a6860dbaec5af7c1949df5caf988f9632ef5cbb0a5cd59d8f8 image --format json --output trivy.json --exit-code 1 --severity CRITICAL,HIGH "$IMAGE"
+          docker run --rm -v "$HOME/.docker:/root/.docker:ro" -v "$GITHUB_WORKSPACE:/work" -w /work anchore/grype@sha256:3c9d35c54bb94318370ac143789e21ea0b2fb49c50a2f56e8a77d798fe825ec4 "$IMAGE" -o json --file /work/grype.json --fail-on high
+          jq empty sbom.cdx.json; jq empty trivy.json; jq empty grype.json; jq empty build-metadata.json
+      - name: Retain digest-bound evidence
+        env:
+          IMAGE: ${{ steps.vars.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          jq -e '."buildx.build.provenance"' build-metadata.json > buildkit-provenance.json
+          printf 'SBOM_SUBJECT_DIGEST=%s\nPROVENANCE_SUBJECT_DIGEST=%s\nPROVENANCE_GENERATOR=BUILDKIT_NATIVE\nPROVENANCE_REFERENCE=registry-attestation-from-build-push-action\nSOURCE_REPOSITORY=https://github.com/Codestra-SRL/codestra-middleware\nSOURCE_SHA=%s\n' "$IMAGE" "$IMAGE" "${{ inputs.source_sha }}" > subject-references.txt
+          sha256sum image-digest.txt oci-metadata.json registry-image-inspect.txt sbom.cdx.json build-metadata.json buildkit-provenance.json subject-references.txt trivy.json grype.json > checksums.sha256
+      - name: Upload unsigned build evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: monitoring-receiver-build-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            image-digest.txt
+            oci-metadata.json
+            registry-image-inspect.txt
+            sbom.cdx.json
+            build-metadata.json
+            buildkit-provenance.json
+            subject-references.txt
+            trivy.json
+            grype.json
+            checksums.sha256
+
+  sign:
+    needs: build-scan
+    if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: security-release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Check exact workflow context
+        env:
+          EXPECTED: Codestra-SRL/codestra-middleware/.github/workflows/build-sign-monitoring-receiver.yml@refs/heads/main
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "Codestra-SRL/codestra-middleware"; test "$GITHUB_REF" = "refs/heads/main"; test "$GITHUB_WORKFLOW_REF" = "$EXPECTED"
+      - name: Log in to approved registry for signing
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ vars.REGISTRY_HOSTNAME }}
+          username: ${{ secrets.REGISTRY_PUSH_USERNAME }}
+          password: ${{ secrets.REGISTRY_PUSH_TOKEN }}
+      - name: Download build evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: monitoring-receiver-build-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+      - name: Sign exact digest and attest SBOM/provenance
+        env:
+          IMAGE: ${{ needs.build-scan.outputs.repository }}@${{ needs.build-scan.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes --bundle image-signature.sigstore.json "$IMAGE"
+          cosign attest --yes --type cyclonedx --predicate sbom.cdx.json --bundle sbom-attestation.sigstore.json "$IMAGE"
+          cosign attest --yes --type slsaprovenance --predicate buildkit-provenance.json --bundle provenance-attestation.sigstore.json "$IMAGE"
+          printf 'SIGNED_IMAGE_REFERENCE=%s\nSIGNED_IMAGE_DIGEST=%s\nCOSIGN_OIDC_ISSUER=https://token.actions.githubusercontent.com\nCOSIGN_CERTIFICATE_IDENTITY=https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/build-sign-monitoring-receiver.yml@refs/heads/main\n' "$IMAGE" "${{ needs.build-scan.outputs.digest }}" > signing-record.txt
+          sha256sum image-signature.sigstore.json sbom-attestation.sigstore.json provenance-attestation.sigstore.json signing-record.txt >> checksums.sha256
+      - name: Upload signed evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: monitoring-receiver-signed-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            image-digest.txt
+            oci-metadata.json
+            registry-image-inspect.txt
+            sbom.cdx.json
+            build-metadata.json
+            buildkit-provenance.json
+            subject-references.txt
+            trivy.json
+            grype.json
+            checksums.sha256
+            image-signature.sigstore.json
+            sbom-attestation.sigstore.json
+            provenance-attestation.sigstore.json
+            signing-record.txt
+
+  verify:
+    needs: [build-scan, sign]
+    if: github.repository == 'Codestra-SRL/codestra-middleware' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production-image-verification
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check exact workflow context
+        env:
+          EXPECTED: Codestra-SRL/codestra-middleware/.github/workflows/build-sign-monitoring-receiver.yml@refs/heads/main
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "Codestra-SRL/codestra-middleware"; test "$GITHUB_REF" = "refs/heads/main"; test "$GITHUB_WORKFLOW_REF" = "$EXPECTED"
+      - name: Log in to approved registry for read-only verification
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ vars.REGISTRY_HOSTNAME }}
+          username: ${{ secrets.REGISTRY_VERIFY_USERNAME }}
+          password: ${{ secrets.REGISTRY_VERIFY_TOKEN }}
+      - name: Download signed evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: monitoring-receiver-signed-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+      - name: Independently verify digest, signer, issuer, and attestations
+        env:
+          IMAGE: ${{ needs.build-scan.outputs.repository }}@${{ needs.build-scan.outputs.digest }}
+          EXPECTED_IDENTITY: https://github.com/Codestra-SRL/codestra-middleware/.github/workflows/build-sign-monitoring-receiver.yml@refs/heads/main
+          EXPECTED_ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          cosign verify --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" "$IMAGE" > image-verification.json
+          cosign verify-attestation --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" --type cyclonedx "$IMAGE" > sbom-verification.json
+          cosign verify-attestation --certificate-identity "$EXPECTED_IDENTITY" --certificate-oidc-issuer "$EXPECTED_ISSUER" --type slsaprovenance "$IMAGE" > provenance-verification.json
+          sha256sum -c checksums.sha256
+          sha256sum image-verification.json sbom-verification.json provenance-verification.json > verification-checksums.sha256
+      - name: Upload independent verification evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: monitoring-receiver-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            image-verification.json
+            sbom-verification.json
+            provenance-verification.json
+            verification-checksums.sha256
