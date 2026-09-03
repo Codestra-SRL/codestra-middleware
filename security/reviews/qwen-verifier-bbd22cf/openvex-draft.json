@@ -1,0 +1,81 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://evidence.codestra.invalid/qwen-ai-01/vex/sha256-a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef",
+  "author": "Evelin Appolon (kazan555; GitHub user ID 77101516)",
+  "role": "Independent Security Owner",
+  "timestamp": "2026-08-04T03:12:45Z",
+  "last_updated": "2026-08-04T11:59:19Z",
+  "version": 2,
+  "statements": [
+    {
+      "vulnerability": {"name": "CVE-2026-11940"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The exact verifier image imports no tarfile functionality and exposes no archive-processing or archive-input endpoint. The affected hardlink path is not invoked. A checksum-pinned maintained-branch backport is also recorded."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-11972"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The exact verifier performs no tar or streaming-archive parsing. No application route invokes the affected streaming parser. A checksum-pinned backport is recorded."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-15308"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The verifier hashes exact request-body bytes and neither imports nor invokes html.parser.HTMLParser. It exposes no HTML-processing endpoint."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-3298"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "component_not_present",
+      "impact_statement": "The vulnerable Proactor implementation is Windows-only. The immutable reviewed artifact is Linux/amd64 and contains no Windows Proactor runtime."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-3644"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The verifier does not read, emit or mutate cookies and does not invoke the affected http.cookies.Morsel behavior. A checksum-pinned backport is recorded."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-4224"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The verifier accepts no XML, imports no XML or Expat parser and invokes no DTD or ElementDeclHandler processing. A checksum-pinned backport is recorded."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-4786"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The verifier invokes no webbrowser functionality and has no browser, shell, subprocess, dynamic-command or downstream-command facility."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-6100"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The verifier performs no lzma, bz2 or gzip decompression and exposes no file-processing endpoint. The affected reuse-after-MemoryError behavior is not invoked."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-7210"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The verifier accepts no XML and does not invoke Expat. The exact image also records the Expat and CPython entropy mitigations. Any future XML functionality requires reassessment."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-9669"},
+      "products": [{"@id": "codestra/qwen-auth-verifier@sha256:a0423439705ee7f3466666e5d999b318067159335cbbd88dc9a1b5a4c2ffeaef", "subcomponents": [{"@id": "pkg:generic/python@3.12.13"}]}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The verifier performs no BZ2 decompression and does not invoke the affected reuse-after-error behavior. A checksum-pinned Python 3.12 backport is recorded."
+    }
+  ]
+}

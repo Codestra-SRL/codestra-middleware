@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exact public OpenAPI and contract digests bound to this review"
+regexTarget = "match"
+regexes = [
+  '''590ceab381e42c71f2eed69a92c096b3f1425f4e927e28d48745a0880eaf67ac''',
+  '''ffab29882b514041c438d7568bec5d8ec8c32c461560d6f4e8e9e32ae89d1b2d'''
+]
