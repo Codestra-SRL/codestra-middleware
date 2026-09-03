@@ -1,0 +1,225 @@
+{
+  "$defs": {
+    "CommandType": {
+      "enum": [
+        "campaign.register",
+        "campaign.provision",
+        "campaign.activate",
+        "campaign.pause",
+        "agent.provision",
+        "agent.move",
+        "agent.suspend",
+        "agent.terminate",
+        "extension.reserve",
+        "extension.assign",
+        "extension.retire",
+        "endpoint.provision",
+        "endpoint.revoke",
+        "vicidial.campaign.create",
+        "vicidial.list.create",
+        "vicidial.lead.upsert",
+        "vicidial.agent.provision",
+        "vicidial.phone.provision",
+        "vicidial.disposition.write",
+        "callback.schedule",
+        "callback.dispatch",
+        "callback.cancel",
+        "transfer.authorize",
+        "transfer.begin_consultation",
+        "transfer.complete",
+        "transfer.recover",
+        "feature.prepare",
+        "feature.activate",
+        "feature.deactivate",
+        "reconciliation.run",
+        "dead_letter.replay"
+      ],
+      "title": "CommandType",
+      "type": "string"
+    },
+    "Environment": {
+      "enum": [
+        "development",
+        "test",
+        "staging",
+        "production"
+      ],
+      "title": "Environment",
+      "type": "string"
+    },
+    "PiiClassification": {
+      "enum": [
+        "NONE",
+        "INTERNAL",
+        "PERSONAL",
+        "SENSITIVE",
+        "REGULATED"
+      ],
+      "title": "PiiClassification",
+      "type": "string"
+    },
+    "RequesterType": {
+      "enum": [
+        "USER",
+        "SERVICE",
+        "WORKFLOW",
+        "SYSTEM"
+      ],
+      "title": "RequesterType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "aggregate_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+      "title": "Aggregate Id",
+      "type": "string"
+    },
+    "aggregate_type": {
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "title": "Aggregate Type",
+      "type": "string"
+    },
+    "approved_by_id": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Approved By Id"
+    },
+    "business_unit_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+      "title": "Business Unit Id",
+      "type": "string"
+    },
+    "campaign_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "causation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causation Id"
+    },
+    "command_id": {
+      "format": "uuid",
+      "title": "Command Id",
+      "type": "string"
+    },
+    "command_type": {
+      "$ref": "#/$defs/CommandType"
+    },
+    "correlation_id": {
+      "format": "uuid",
+      "title": "Correlation Id",
+      "type": "string"
+    },
+    "desired_version": {
+      "minimum": 1,
+      "title": "Desired Version",
+      "type": "integer"
+    },
+    "environment": {
+      "$ref": "#/$defs/Environment"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "organization_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+      "title": "Organization Id",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "payload_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Payload Hash",
+      "type": "string"
+    },
+    "pii_classification": {
+      "$ref": "#/$defs/PiiClassification"
+    },
+    "policy_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Policy Hash",
+      "type": "string"
+    },
+    "policy_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "requested_at": {
+      "format": "date-time",
+      "title": "Requested At",
+      "type": "string"
+    },
+    "requested_by_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+      "title": "Requested By Id",
+      "type": "string"
+    },
+    "requested_by_type": {
+      "$ref": "#/$defs/RequesterType"
+    },
+    "schema_version": {
+      "const": "codestra.command.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "command_id",
+    "command_type",
+    "idempotency_key",
+    "correlation_id",
+    "organization_id",
+    "business_unit_id",
+    "campaign_id",
+    "aggregate_type",
+    "aggregate_id",
+    "environment",
+    "policy_version",
+    "policy_hash",
+    "requested_by_type",
+    "requested_by_id",
+    "requested_at",
+    "expires_at",
+    "pii_classification",
+    "desired_version",
+    "payload_hash",
+    "payload"
+  ],
+  "title": "CommonCommandEnvelope",
+  "type": "object"
+}
