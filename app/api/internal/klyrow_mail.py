@@ -18,6 +18,23 @@ from app.db.session import get_session
 
 PATH = "/internal/provider-events/klyrow"
 router = APIRouter(tags=["klyrow-mail"])
+KLYROW_DELIVERY_EVENT_TYPES = {
+    "klyrow.email.accepted",
+    "klyrow.email.queued",
+    "klyrow.email.submitted",
+    "klyrow.email.sent",
+    "klyrow.email.delivered",
+    "klyrow.email.deferred",
+    "klyrow.email.bounced",
+    "klyrow.email.complained",
+    "klyrow.email.rejected",
+    "klyrow.email.failed",
+    "klyrow.email.cancelled",
+    "klyrow.email.unknown_outcome",
+    "klyrow.email.opened",
+    "klyrow.email.clicked",
+    "klyrow.email.unsubscribed",
+}
 
 
 class Attachment(BaseModel):
@@ -58,11 +75,14 @@ class KlyrowInboundEvent(BaseModel):
 class KlyrowDeliveryEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: str = Field(min_length=8, max_length=200)
+    schema_version: str = Field(pattern=r"^1\.0$")
     source_system: str
-    event_type: str = Field(pattern=r"^klyrow\.email\.(submitted|sent|delivered|deferred|bounced|complained|failed)$")
+    event_type: str = Field(pattern=r"^klyrow\.email\.(accepted|queued|submitted|sent|delivered|deferred|bounced|complained|rejected|failed|cancelled|unknown_outcome|opened|clicked|unsubscribed)$")
     event_version: str = Field(pattern=r"^1\.0$")
     occurred_at: str
     tenant_id: str = Field(min_length=1, max_length=200)
+    operation_id: str = Field(min_length=1, max_length=200)
+    payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     message_id: str = Field(min_length=1, max_length=998)
     provider_message_id: str = Field(min_length=1, max_length=998)
     stream: str = Field(pattern=r"^(transactional|security|system|marketing|bulk)$")
@@ -75,6 +95,20 @@ class KlyrowDeliveryEvent(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+class KlyrowUsageEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_id: str = Field(min_length=8, max_length=200)
+    source_system: str
+    event_type: str = Field(pattern=r"^klyrow\.usage\.recorded$")
+    timestamp: str
+    usage_event_id: str = Field(min_length=8, max_length=200)
+    tenant_id: str = Field(min_length=1, max_length=200)
+    message_id: str = Field(min_length=1, max_length=998)
+    stream: str = Field(pattern=r"^(TRANSACTIONAL|SECURITY|SYSTEM|MARKETING|BULK|transactional|security|system|marketing|bulk)$")
+    billable_units: int = Field(ge=0, le=1_000_000_000)
+    provider_result_category: str = Field(min_length=1, max_length=80)
+
+
 def _one_header(request: Request, name: str) -> str:
     raw_name = name.lower().encode()
     if sum(1 for key, _ in request.scope.get("headers", []) if key == raw_name) != 1:
@@ -82,7 +116,7 @@ def _one_header(request: Request, name: str) -> str:
     return request.headers[name]
 
 
-def _authenticate(request: Request, body: bytes, event: KlyrowInboundEvent | KlyrowDeliveryEvent) -> None:
+def _authenticate(request: Request, body: bytes, event: KlyrowInboundEvent | KlyrowDeliveryEvent | KlyrowUsageEvent) -> None:
     source = _one_header(request, "X-Source-System")
     timestamp = _one_header(request, "X-Klyrow-Timestamp")
     event_id = _one_header(request, "X-Klyrow-Event-Id")
@@ -90,7 +124,7 @@ def _authenticate(request: Request, body: bytes, event: KlyrowInboundEvent | Kly
     if (
         source != "klyrow"
         or event.source_system != "klyrow"
-        or event.event_type not in {"inbound.received", "klyrow.email.submitted", "klyrow.email.sent", "klyrow.email.delivered", "klyrow.email.deferred", "klyrow.email.bounced", "klyrow.email.complained", "klyrow.email.failed"}
+        or event.event_type not in ({"inbound.received", "klyrow.email.inbound_received", "klyrow.usage.recorded"} | KLYROW_DELIVERY_EVENT_TYPES)
     ):
         raise HTTPException(403, "klyrow_identity_rejected")
     if event_id != event.event_id:
@@ -126,11 +160,42 @@ async def receive_klyrow_mail(
         raise HTTPException(415, "application_json_required")
     try:
         raw = json.loads(body)
-        model = KlyrowInboundEvent if raw.get("event_type") == "inbound.received" else KlyrowDeliveryEvent
-        event = model.model_validate(raw)
+        event_type = raw.get("event_type")
+        event: KlyrowInboundEvent | KlyrowDeliveryEvent | KlyrowUsageEvent
+        if event_type in {"inbound.received", "klyrow.email.inbound_received"}:
+            event = KlyrowInboundEvent.model_validate(raw)
+        elif event_type == "klyrow.usage.recorded":
+            event = KlyrowUsageEvent.model_validate(raw)
+        else:
+            event = KlyrowDeliveryEvent.model_validate(raw)
     except ValueError as exc:
         raise HTTPException(422, "invalid_klyrow_mail_event") from exc
     _authenticate(request, body, event)
+    if isinstance(event, KlyrowUsageEvent):
+        payload_hash = hashlib.sha256(body).hexdigest()
+        existing = ((await db.execute(text(
+            "SELECT payload_hash,status FROM klyrow_usage_event_inbox WHERE event_id=:event_id"
+        ), {"event_id": event.event_id})).mappings().first())
+        if existing:
+            if not hmac.compare_digest(existing["payload_hash"], payload_hash):
+                raise HTTPException(409, "klyrow_event_replay_conflict")
+            return {"accepted": True, "duplicate": True, "status": existing["status"]}
+        await db.execute(text("""INSERT INTO klyrow_usage_event_inbox
+          (event_id,payload_hash,received_at,tenant_id,message_id,stream,billable_units,
+           provider_result_category,payload,status)
+          VALUES (:event_id,:hash,now(),:tenant,:message,:stream,:units,:category,
+                  CAST(:payload AS jsonb),'complete')"""), {
+            "event_id": event.event_id,
+            "hash": payload_hash,
+            "tenant": event.tenant_id,
+            "message": event.message_id,
+            "stream": event.stream.lower(),
+            "units": event.billable_units,
+            "category": event.provider_result_category,
+            "payload": json.dumps(event.model_dump()),
+        })
+        await db.commit()
+        return {"accepted": True, "duplicate": False, "status": "complete"}
     if isinstance(event, KlyrowDeliveryEvent):
         payload_hash = hashlib.sha256(body).hexdigest()
         existing = ((await db.execute(text(
