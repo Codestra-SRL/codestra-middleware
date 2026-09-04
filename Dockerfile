@@ -15,7 +15,7 @@ WORKDIR /usr/src
 RUN apk add --no-cache \
       build-base=0.5-r4 \
       bzip2-dev=1.0.8-r6 \
-      curl=8.21.0-r0 \
+      curl=8.22.0-r0 \
       expat-dev=2.8.4-r0 \
       gdbm-dev=1.26-r0 \
       libffi-dev=3.5.2-r1 \
@@ -24,7 +24,6 @@ RUN apk add --no-cache \
       libcrypto3=3.5.8-r0 \
       libssl3=3.5.8-r0 \
       openssl-dev=3.5.8-r0 \
-      patch=2.8-r0 \
       readline-dev=8.3.3-r1 \
       tar=1.35-r5 \
       xz-dev=5.8.3-r0 \
@@ -37,40 +36,12 @@ RUN curl --fail --location --proto '=https' --tlsv1.2 \
       https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/sqlite-dev-3.53.4-r0.apk \
  && apk add --no-cache /tmp/sqlite.apk /tmp/sqlite-dev.apk \
  && rm /tmp/sqlite.apk /tmp/sqlite-dev.apk
-COPY security/python312/*.patch /usr/src/patches/
 RUN curl --fail --location --proto '=https' --tlsv1.2 \
       --output Python-3.12.14.tar.xz \
       https://www.python.org/ftp/python/3.12.14/Python-3.12.14.tar.xz \
  && echo "${PYTHON_SOURCE_SHA256}  Python-3.12.14.tar.xz" | sha256sum -c - \
- && mkdir upstream-patches \
- && while read -r commit checksum; do \
-      curl --fail --location --proto '=https' --tlsv1.2 \
-        --output "upstream-patches/${commit}.patch" \
-        "https://github.com/python/cpython/commit/${commit}.patch"; \
-      echo "${checksum}  upstream-patches/${commit}.patch" | sha256sum -c -; \
-    done <<'PATCHES'
-be13e86f6b9788a6f4d0419dffef72cbae5865c9 7c6208f7240f632779d6b1b33d20f90126888cc4ec9f636abeaa68b5dc875094
-7f0dc59c9a70f8f3b4da33d7c4a2ba552a7acc21 f583351faf1f288bf10b6c3d5f4752cd4a17da881b0043e4eff6395ea7a199f6
-7933f4bf7131aa4140750f9404f5de0aa2969ced d8913b46e769704d0e810994909ee81c8af6aaa7230b79ff4c0d849fe1f305a4
-dae4b1a21f8df4570e30986affd61bbe4ade4cef da243766f48c8f78cc292559df5baedab3046ffcee3f754fb716b27e13952a7c
-642865ddf4b232da1f3b1f7abcfa3254c4bfe785 afcdbd51c751170f703451aef3cfdd40a61bce2c05180cfcf87ff19c2c99f865
-fc9b11ff49cbc82e6f917d07a61517a2b5f3145f e24d1474438cce8df94b8b5e336599326956e6f8cc1cf211932349230fd3ef28
-PATCHES
-RUN tar -xJf Python-3.12.14.tar.xz \
- && awk 'found || index($0, "diff --git a/Include/pyexpat.h") == 1 { found=1; print }' \
-      upstream-patches/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f.patch \
-      > upstream-patches/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f-3.12-rest.patch \
+ && tar -xJf Python-3.12.14.tar.xz \
  && cd Python-3.12.14 \
- && for patch_file in \
-      ../upstream-patches/be13e86f6b9788a6f4d0419dffef72cbae5865c9.patch \
-      ../upstream-patches/7f0dc59c9a70f8f3b4da33d7c4a2ba552a7acc21.patch \
-      ../upstream-patches/7933f4bf7131aa4140750f9404f5de0aa2969ced.patch \
-      ../upstream-patches/dae4b1a21f8df4570e30986affd61bbe4ade4cef.patch \
-      ../upstream-patches/642865ddf4b232da1f3b1f7abcfa3254c4bfe785.patch \
-      ../upstream-patches/fc9b11ff49cbc82e6f917d07a61517a2b5f3145f-3.12-rest.patch \
-      ../patches/expat-hash-salt-3.12.patch; do \
-        patch -p1 --batch --fuzz=0 < "${patch_file}"; \
-    done \
  && ./configure \
       --enable-loadable-sqlite-extensions \
       --enable-option-checking=fatal \
@@ -79,14 +50,15 @@ RUN tar -xJf Python-3.12.14.tar.xz \
       --with-system-expat \
  && make -j"$(nproc)" \
  && make install
+RUN python -c 'import html.parser,http.cookies,inspect,pyexpat,sys,tarfile; assert sys.version_info[:3] == (3,12,14); assert "unfiltered.replace" in inspect.getsource(tarfile.TarFile.makelink_with_filter); assert "_pending_len" in inspect.getsource(html.parser.HTMLParser.feed); assert "_has_control_character" in inspect.getsource(http.cookies.Morsel.update); assert pyexpat.EXPAT_VERSION == "expat_2.8.4"'
 
-FROM ${PYTHON_BASE} AS patched-python
+FROM ${PYTHON_BASE} AS verified-python
 USER root
 RUN apk add --no-cache expat=2.8.4-r0
 RUN rm -rf /usr/local/*
 COPY --from=python-builder /usr/local /usr/local
 
-FROM patched-python AS builder
+FROM verified-python AS builder
 ARG VCS_REF
 ARG BUILD_REVISION
 ARG BUILD_CREATED
@@ -162,7 +134,7 @@ EXPOSE 8095
 ENTRYPOINT []
 CMD ["/opt/venv/bin/python", "-m", "app.entrypoints.integration_api"]
 
-FROM patched-python AS qwen-auth-verifier-runtime
+FROM verified-python AS qwen-auth-verifier-runtime
 ARG VCS_REF
 ARG BUILD_REVISION
 LABEL org.opencontainers.image.title="Codestra Qwen Authentication Verifier" \
