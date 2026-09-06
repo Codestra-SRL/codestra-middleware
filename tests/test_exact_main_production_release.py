@@ -52,6 +52,12 @@ def test_release_is_separate_from_staging_candidate_workflow() -> None:
     assert "exact-main-middleware-production" in value
 
 
+def test_release_requires_the_klyrow_delivery_migration_head() -> None:
+    value = source()
+    assert 'alembic heads' in value
+    assert '= "0056_klyrow_delivery_events"' in value
+
+
 def test_release_uses_protected_production_environment() -> None:
     value = source()
     assert "environment: production-release" in value
